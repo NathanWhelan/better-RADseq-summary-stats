@@ -1,0 +1,142 @@
+Reading /fs/project/whelan.105/virgata/virgata-assembly/post-submission-filtering-tests/virgata_m3M3n3_r80p11_maf025_gt6/populations.snps.vcf ...
+  556 records share a locus ID with another (1,693 distinct loci) -- expected for a SNP VCF, NOT for a haps VCF
+  2,249 loci, 217 samples
+  haplotypes per locus: median 2, max 2; 0.0% of loci are multi-allelic (>2)
+  missing genotype rate: 2.88%
+  populations: LookoutCreek (n=20), FlintRiver_RylandPike (n=20), Sequatchie_Teague (n=20), PaintRock_AL2 (n=20), Dry_Creek (n=20), Pidgeon_River (n=17), Sequatchie_OldYork (n=20), Sequatchie_Inman (n=20), FlintRiver_HWY61 (n=20), BentCreek (n=20), SpringCreek (n=20)
+Loci genotyped in >= 90% of individuals: 2,222 of 2,249
+
+=====================================================================
+  HETEROZYGOSITY BETWEEN POPULATIONS -- individual as the unit
+  2,222 loci, 217 individuals, 11 populations
+=====================================================================
+
+Per-population summary of individual heterozygosity
+            population  n mean_het     sd     se    min    max
+          LookoutCreek 20   0.0762 0.0209 0.0047 0.0509 0.1388
+ FlintRiver_RylandPike 20   0.1209 0.0191 0.0043 0.0988 0.1788
+     Sequatchie_Teague 20   0.1088 0.0216 0.0048 0.0707 0.1455
+         PaintRock_AL2 20   0.1237 0.0185 0.0041 0.0960 0.1518
+             Dry_Creek 20   0.0591 0.0153 0.0034 0.0418 0.0932
+         Pidgeon_River 17   0.1237 0.0230 0.0056 0.0923 0.1744
+    Sequatchie_OldYork 20   0.1132 0.0218 0.0049 0.0772 0.1784
+      Sequatchie_Inman 20   0.1309 0.0223 0.0050 0.0905 0.1779
+      FlintRiver_HWY61 20   0.1449 0.0164 0.0037 0.1222 0.1801
+             BentCreek 20   0.1225 0.0301 0.0067 0.0894 0.1946
+           SpringCreek 20   0.1096 0.0272 0.0061 0.0627 0.1799
+
+Missingness confound check
+  cor(per-individual call rate, heterozygosity) = -0.401  (p = 9.06e-10, n = 217)
+    within LookoutCreek r = -0.361   call rate 0.940-0.982
+    within FlintRiver_RylandPike r = -0.001   call rate 0.945-0.985
+    within Sequatchie_Teague r = -0.530   call rate 0.959-0.989
+    within PaintRock_AL2 r = -0.454   call rate 0.940-0.986
+    within Dry_Creek    r = -0.463   call rate 0.970-0.990
+    within Pidgeon_River r = -0.754   call rate 0.924-0.983
+    within Sequatchie_OldYork r = -0.218   call rate 0.949-0.987
+    within Sequatchie_Inman r = -0.479   call rate 0.915-0.988
+    within FlintRiver_HWY61 r = -0.454   call rate 0.951-0.982
+    within BentCreek    r = -0.701   call rate 0.958-0.982
+    within SpringCreek  r = -0.174   call rate 0.933-0.984
+  No positive association, so heterozygosity is not tracking coverage.
+
+  'sd' is the spread AMONG INDIVIDUALS. That spread, divided by sqrt(n), is
+  the real uncertainty in a population mean -- and it does not shrink at all
+  as you add loci, which is why locus-based tests can be invalid here.
+
+Overdispersion check -- does the locus bootstrap fail on THIS dataset?
+            population  n  obs_sd binomial_sd overdispersion SE_understated_by
+          LookoutCreek 20 0.02087     0.00423           24.3              4.9x
+ FlintRiver_RylandPike 20 0.01906     0.00521           13.4              3.7x
+     Sequatchie_Teague 20 0.02158     0.00529           16.6              4.1x
+         PaintRock_AL2 20 0.01850     0.00499           13.7              3.7x
+             Dry_Creek 20 0.01531     0.00351           19.0              4.4x
+         Pidgeon_River 17 0.02296     0.00539           18.1              4.3x
+    Sequatchie_OldYork 20 0.02175     0.00530           16.8              4.1x
+      Sequatchie_Inman 20 0.02226     0.00584           14.5              3.8x
+      FlintRiver_HWY61 20 0.01641     0.00555            8.8                3x
+             BentCreek 20 0.03014     0.00483           39.0              6.2x
+           SpringCreek 20 0.02717     0.00487           31.1              5.6x
+
+  Overdispersion is LARGE. Individuals differ far more than coin-flip noise,
+  so a locus bootstrap would understate the standard error by the factor in
+  the last column and reject far too often. Use the test below, and inspect
+  the per-individual table for outliers (a bad library looks like one
+  individual with unusually LOW heterozygosity).
+  This is the point made by Van Dongen (1995, Heredity 74:445-447): the unit
+  of resampling changes what the bootstrap means, and loci are usually the
+  wrong unit because they are all measured on the same individuals.
+
+Pairwise tests -- 55 comparisons. Welch's t is the primary test;
+Wilcoxon is the distribution-free check. 'diff' and its CI are from Welch.
+p_*_BH are Benjamini-Hochberg adjusted across all 55 comparisons.
+  (25 most significant pairs; full table written to file)
+                  pop1                  pop2    diff   ci_lo   ci_hi  p_welch
+             Dry_Creek      FlintRiver_HWY61 -0.0858 -0.0960 -0.0756 2.18e-19
+         PaintRock_AL2             Dry_Creek  0.0647  0.0538  0.0756 2.55e-14
+          LookoutCreek      FlintRiver_HWY61 -0.0687 -0.0808 -0.0567 1.09e-13
+             Dry_Creek      Sequatchie_Inman -0.0718 -0.0841 -0.0596 1.32e-13
+ FlintRiver_RylandPike             Dry_Creek  0.0618  0.0507  0.0729 1.89e-13
+             Dry_Creek    Sequatchie_OldYork -0.0541 -0.0662 -0.0420 1.19e-10
+             Dry_Creek         Pidgeon_River -0.0646 -0.0781 -0.0512 1.73e-10
+     Sequatchie_Teague             Dry_Creek  0.0497  0.0377  0.0617 7.87e-10
+          LookoutCreek      Sequatchie_Inman -0.0547 -0.0686 -0.0409 1.09e-09
+          LookoutCreek         PaintRock_AL2 -0.0476 -0.0602 -0.0350 3.85e-09
+             Dry_Creek             BentCreek -0.0634 -0.0789 -0.0480 3.75e-09
+          LookoutCreek FlintRiver_RylandPike -0.0447 -0.0575 -0.0319 2.04e-08
+             Dry_Creek           SpringCreek -0.0505 -0.0648 -0.0363 4.57e-08
+          LookoutCreek         Pidgeon_River -0.0475 -0.0623 -0.0328 2.03e-07
+     Sequatchie_Teague      FlintRiver_HWY61 -0.0361 -0.0484 -0.0238 8.37e-07
+          LookoutCreek             BentCreek -0.0463 -0.0630 -0.0297 2.47e-06
+          LookoutCreek    Sequatchie_OldYork -0.0370 -0.0507 -0.0234 2.82e-06
+    Sequatchie_OldYork      FlintRiver_HWY61 -0.0317 -0.0440 -0.0193 8.55e-06
+          LookoutCreek     Sequatchie_Teague -0.0326 -0.0462 -0.0190 2.09e-05
+      FlintRiver_HWY61           SpringCreek  0.0353  0.0208  0.0497 2.30e-05
+          LookoutCreek           SpringCreek -0.0335 -0.0490 -0.0179 1.04e-04
+ FlintRiver_RylandPike      FlintRiver_HWY61 -0.0240 -0.0354 -0.0126 1.30e-04
+         PaintRock_AL2      FlintRiver_HWY61 -0.0211 -0.0323 -0.0099 4.83e-04
+     Sequatchie_Teague      Sequatchie_Inman -0.0221 -0.0362 -0.0081 2.82e-03
+         Pidgeon_River      FlintRiver_HWY61 -0.0212 -0.0348 -0.0075 3.60e-03
+ p_wilcox hedges_g p_welch_BH p_wilcox_BH
+ 1.45e-11    -5.30   1.20e-17    2.66e-10
+ 1.45e-11     3.73   7.03e-13    2.66e-10
+ 9.72e-10    -3.59   1.81e-12    6.68e-09
+ 2.90e-11    -3.69   1.81e-12    3.99e-10
+ 1.45e-11     3.50   2.08e-12    2.66e-10
+ 2.76e-10    -2.82   1.09e-09    2.17e-09
+ 2.51e-10    -3.30   1.36e-09    2.17e-09
+ 2.02e-09     2.60   5.41e-09    1.23e-08
+ 3.03e-08    -2.49   6.67e-09    1.39e-07
+ 2.32e-08    -2.36   1.92e-08    1.16e-07
+ 1.02e-10    -2.60   1.92e-08    1.12e-09
+ 5.08e-08    -2.19   9.36e-08    2.15e-07
+ 9.92e-09    -2.25   1.93e-07    5.46e-08
+ 1.52e-07    -2.13   7.98e-07    5.99e-07
+ 2.40e-06    -1.85   3.07e-06    7.34e-06
+ 1.69e-07    -1.75   8.49e-06    6.19e-07
+ 7.57e-07    -1.70   9.13e-06    2.60e-06
+ 1.65e-06    -1.61   2.61e-05    5.35e-06
+ 1.14e-05    -1.50   6.05e-05    3.29e-05
+ 1.33e-05     1.54   6.33e-05    3.67e-05
+ 5.21e-05    -1.35   2.71e-04    1.30e-04
+ 3.90e-05    -1.32   3.26e-04    1.02e-04
+ 8.36e-04    -1.18   1.15e-03    1.92e-03
+ 6.72e-03    -0.99   6.46e-03    1.37e-02
+ 2.82e-03    -1.05   7.91e-03    5.96e-03
+
+  pairs significant at BH < 0.05: Welch 30, Wilcoxon 30, of 55
+  Hedges' g is the standardised difference: ~0.2 small, ~0.5 medium, ~0.8 large.
+
+Interpretation notes
+  * Power is limited by the NUMBER OF INDIVIDUALS, not the number of loci.
+    Simulation at n = 15 vs 10 with realistic individual variation gave 52%
+    power for a moderate difference, so a non-significant result here is
+    weak evidence of no difference, not evidence of no difference.
+  * If some individuals are relatives, they are not independent units and
+    even this test is anti-conservative. Check relatedness first.
+  * A single poor-quality library shows up as one individual with unusually
+    LOW heterozygosity. Inspect the per-individual table before trusting a
+    result, especially at small n where one outlier can drive it.
+
+Wrote individual_heterozygosity.tsv and het_between_pops_tests.tsv to het_out
+

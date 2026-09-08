@@ -1,0 +1,344 @@
+
+ Converting data from a Genepop .gen file to a genind object... 
+
+
+File description:  # Stacks v2.68; GenePop v4.1.3; September 04, 2026 
+
+...done.
+
+
+Population sizes after matching to the popmap (double-check this looks right):
+pop_assigned
+            BentCreek             Dry_Creek      FlintRiver_HWY61 
+                   20                    20                    20 
+FlintRiver_RylandPike          LookoutCreek         PaintRock_AL2 
+                   20                    20                    20 
+        Pidgeon_River      Sequatchie_Inman    Sequatchie_OldYork 
+                   17                    20                    20 
+    Sequatchie_Teague           SpringCreek 
+                   20                    20 
+RAD-tag grouping for populations.snps.genepop: read from populations.snps.vcf (1,693 distinct tags on 2,249 records, 1.33 per tag).
+
+--- Per-population Fis with 95% confidence interval (RAD-tag bootstrap) ---
+                   Pop         Fis       lower       upper
+          LookoutCreek -0.18934043 -0.22509175 -0.15112248
+ FlintRiver_RylandPike -0.16359839 -0.19430930 -0.13250976
+     Sequatchie_Teague -0.07406083 -0.10134581 -0.04635052
+         PaintRock_AL2 -0.29140321 -0.32131380 -0.26016400
+             Dry_Creek -0.28878174 -0.33394212 -0.24292351
+         Pidgeon_River -0.13814391 -0.16795151 -0.10711879
+    Sequatchie_OldYork -0.14986679 -0.17353784 -0.12608231
+      Sequatchie_Inman -0.05352555 -0.07721836 -0.02999219
+      FlintRiver_HWY61 -0.22427390 -0.25058672 -0.19669548
+             BentCreek -0.32158981 -0.35132450 -0.29143953
+           SpringCreek -0.23864748 -0.26919630 -0.20708850
+
+--- Pairwise Fis comparisons, BH-corrected ---
+                  PopA                  PopB      diff     p_raw     p_adj
+          LookoutCreek     Sequatchie_Teague -0.115280 0.0002000 0.0003055
+          LookoutCreek         PaintRock_AL2  0.102063 0.0002000 0.0003055
+          LookoutCreek             Dry_Creek  0.099441 0.0002000 0.0003055
+          LookoutCreek      Sequatchie_Inman -0.135815 0.0002000 0.0003055
+          LookoutCreek             BentCreek  0.132249 0.0002000 0.0003055
+ FlintRiver_RylandPike     Sequatchie_Teague -0.089538 0.0002000 0.0003055
+ FlintRiver_RylandPike         PaintRock_AL2  0.127805 0.0002000 0.0003055
+ FlintRiver_RylandPike             Dry_Creek  0.125183 0.0002000 0.0003055
+ FlintRiver_RylandPike      Sequatchie_Inman -0.110073 0.0002000 0.0003055
+ FlintRiver_RylandPike      FlintRiver_HWY61  0.060676 0.0002000 0.0003055
+ FlintRiver_RylandPike             BentCreek  0.157991 0.0002000 0.0003055
+     Sequatchie_Teague         PaintRock_AL2  0.217342 0.0002000 0.0003055
+     Sequatchie_Teague             Dry_Creek  0.214721 0.0002000 0.0003055
+     Sequatchie_Teague    Sequatchie_OldYork  0.075806 0.0002000 0.0003055
+     Sequatchie_Teague      FlintRiver_HWY61  0.150213 0.0002000 0.0003055
+     Sequatchie_Teague             BentCreek  0.247529 0.0002000 0.0003055
+     Sequatchie_Teague           SpringCreek  0.164587 0.0002000 0.0003055
+         PaintRock_AL2         Pidgeon_River -0.153259 0.0002000 0.0003055
+         PaintRock_AL2    Sequatchie_OldYork -0.141536 0.0002000 0.0003055
+         PaintRock_AL2      Sequatchie_Inman -0.237878 0.0002000 0.0003055
+             Dry_Creek         Pidgeon_River -0.150638 0.0002000 0.0003055
+             Dry_Creek    Sequatchie_OldYork -0.138915 0.0002000 0.0003055
+             Dry_Creek      Sequatchie_Inman -0.235256 0.0002000 0.0003055
+         Pidgeon_River      Sequatchie_Inman -0.084618 0.0002000 0.0003055
+         Pidgeon_River      FlintRiver_HWY61  0.086130 0.0002000 0.0003055
+         Pidgeon_River             BentCreek  0.183446 0.0002000 0.0003055
+         Pidgeon_River           SpringCreek  0.100504 0.0002000 0.0003055
+    Sequatchie_OldYork      Sequatchie_Inman -0.096341 0.0002000 0.0003055
+    Sequatchie_OldYork      FlintRiver_HWY61  0.074407 0.0002000 0.0003055
+    Sequatchie_OldYork             BentCreek  0.171723 0.0002000 0.0003055
+    Sequatchie_OldYork           SpringCreek  0.088781 0.0002000 0.0003055
+      Sequatchie_Inman      FlintRiver_HWY61  0.170748 0.0002000 0.0003055
+      Sequatchie_Inman             BentCreek  0.268064 0.0002000 0.0003055
+      Sequatchie_Inman           SpringCreek  0.185122 0.0002000 0.0003055
+      FlintRiver_HWY61             BentCreek  0.097316 0.0002000 0.0003055
+             BentCreek           SpringCreek -0.082942 0.0002000 0.0003055
+ FlintRiver_RylandPike           SpringCreek  0.075049 0.0005999 0.0008683
+         PaintRock_AL2      FlintRiver_HWY61 -0.067129 0.0005999 0.0008683
+     Sequatchie_Teague         Pidgeon_River  0.064083 0.0007999 0.0011281
+         PaintRock_AL2           SpringCreek -0.052756 0.0169983 0.0228026
+             Dry_Creek      FlintRiver_HWY61 -0.064508 0.0169983 0.0228026
+          LookoutCreek         Pidgeon_River -0.051197 0.0365963 0.0479238
+          LookoutCreek           SpringCreek  0.049307 0.0429957 0.0549945
+             Dry_Creek           SpringCreek -0.050134 0.0757924 0.0947405
+          LookoutCreek      FlintRiver_HWY61  0.034933 0.0871913 0.1065671
+          LookoutCreek    Sequatchie_OldYork -0.039474 0.1063894 0.1272047
+         PaintRock_AL2             BentCreek  0.030187 0.1427857 0.1670897
+     Sequatchie_Teague      Sequatchie_Inman -0.020535 0.2033797 0.2330392
+ FlintRiver_RylandPike         Pidgeon_River -0.025454 0.2265773 0.2543215
+             Dry_Creek             BentCreek  0.032808 0.2363764 0.2600140
+          LookoutCreek FlintRiver_RylandPike -0.025742 0.2477752 0.2672086
+ FlintRiver_RylandPike    Sequatchie_OldYork -0.013732 0.4695530 0.4966426
+      FlintRiver_HWY61           SpringCreek  0.014374 0.4917508 0.5103075
+         Pidgeon_River    Sequatchie_OldYork  0.011723 0.5559444 0.5662397
+         PaintRock_AL2             Dry_Creek -0.002621 0.9037096 0.9037096
+ significant
+        TRUE
+        TRUE
+        TRUE
+        TRUE
+        TRUE
+        TRUE
+        TRUE
+        TRUE
+        TRUE
+        TRUE
+        TRUE
+        TRUE
+        TRUE
+        TRUE
+        TRUE
+        TRUE
+        TRUE
+        TRUE
+        TRUE
+        TRUE
+        TRUE
+        TRUE
+        TRUE
+        TRUE
+        TRUE
+        TRUE
+        TRUE
+        TRUE
+        TRUE
+        TRUE
+        TRUE
+        TRUE
+        TRUE
+        TRUE
+        TRUE
+        TRUE
+        TRUE
+        TRUE
+        TRUE
+        TRUE
+        TRUE
+        TRUE
+       FALSE
+       FALSE
+       FALSE
+       FALSE
+       FALSE
+       FALSE
+       FALSE
+       FALSE
+       FALSE
+       FALSE
+       FALSE
+       FALSE
+       FALSE
+
+Significant pairs after BH correction: 42 out of 55 
+
+--- Per-individual heterozygosity, summarised by population ---
+                   Pop  n mean_Ho     sd     se
+          LookoutCreek 20  0.0786 0.0209 0.0047
+ FlintRiver_RylandPike 20  0.1241 0.0191 0.0043
+     Sequatchie_Teague 20  0.1087 0.0216 0.0048
+         PaintRock_AL2 20  0.1244 0.0184 0.0041
+             Dry_Creek 20  0.0590 0.0153 0.0034
+         Pidgeon_River 17  0.1236 0.0231 0.0056
+    Sequatchie_OldYork 20  0.1129 0.0218 0.0049
+      Sequatchie_Inman 20  0.1314 0.0223 0.0050
+      FlintRiver_HWY61 20  0.1464 0.0163 0.0036
+             BentCreek 20  0.1227 0.0303 0.0068
+           SpringCreek 20  0.1106 0.0275 0.0061
+
+cor(per-individual call rate, heterozygosity) = -0.418 (p = 1.42e-10)
+  No worrying positive association -- heterozygosity doesn't appear
+  to just be tracking who got sequenced better.
+
+--- Pairwise Ho comparisons, INDIVIDUAL as the replicate, BH-corrected ---
+                  PopA                  PopB    diff   p_welch  p_wilcox
+             Dry_Creek      FlintRiver_HWY61 -0.0873 1.012e-19 1.451e-11
+         PaintRock_AL2             Dry_Creek  0.0654 1.693e-14 1.451e-11
+ FlintRiver_RylandPike             Dry_Creek  0.0651 4.210e-14 1.451e-11
+             Dry_Creek      Sequatchie_Inman -0.0723 1.112e-13 2.902e-11
+          LookoutCreek      FlintRiver_HWY61 -0.0678 1.525e-13 9.721e-10
+             Dry_Creek    Sequatchie_OldYork -0.0538 1.396e-10 4.353e-10
+             Dry_Creek         Pidgeon_River -0.0646 2.104e-10 2.515e-10
+     Sequatchie_Teague             Dry_Creek  0.0496 8.270e-10 2.829e-09
+          LookoutCreek      Sequatchie_Inman -0.0528 2.619e-09 5.084e-08
+             Dry_Creek             BentCreek -0.0637 3.863e-09 1.016e-10
+          LookoutCreek         PaintRock_AL2 -0.0458 8.795e-09 2.317e-08
+          LookoutCreek FlintRiver_RylandPike -0.0456 1.337e-08 3.938e-08
+             Dry_Creek           SpringCreek -0.0516 3.739e-08 9.924e-09
+     Sequatchie_Teague      FlintRiver_HWY61 -0.0377 3.725e-07 1.126e-06
+          LookoutCreek         Pidgeon_River -0.0450 6.163e-07 5.632e-07
+    Sequatchie_OldYork      FlintRiver_HWY61 -0.0335 3.369e-06 9.249e-07
+          LookoutCreek             BentCreek -0.0441 5.927e-06 6.178e-07
+          LookoutCreek    Sequatchie_OldYork -0.0343 1.027e-05 4.909e-06
+      FlintRiver_HWY61           SpringCreek  0.0357 2.133e-05 1.136e-05
+          LookoutCreek     Sequatchie_Teague -0.0301 6.666e-05 3.899e-05
+          LookoutCreek           SpringCreek -0.0320 1.953e-04 1.192e-04
+         PaintRock_AL2      FlintRiver_HWY61 -0.0220 2.884e-04 7.474e-04
+ FlintRiver_RylandPike      FlintRiver_HWY61 -0.0222 3.248e-04 1.551e-04
+          LookoutCreek             Dry_Creek  0.0196 1.796e-03 6.676e-04
+         Pidgeon_River      FlintRiver_HWY61 -0.0228 2.015e-03 1.408e-03
+     Sequatchie_Teague      Sequatchie_Inman -0.0227 2.293e-03 7.331e-03
+      FlintRiver_HWY61             BentCreek  0.0237 4.499e-03 6.676e-04
+    Sequatchie_OldYork      Sequatchie_Inman -0.0185 1.149e-02 5.618e-03
+      Sequatchie_Inman           SpringCreek  0.0207 1.266e-02 1.319e-02
+     Sequatchie_Teague         PaintRock_AL2 -0.0157 1.805e-02 1.809e-02
+      Sequatchie_Inman      FlintRiver_HWY61 -0.0150 2.034e-02 2.108e-02
+ FlintRiver_RylandPike     Sequatchie_Teague  0.0155 2.141e-02 4.298e-02
+     Sequatchie_Teague         Pidgeon_River -0.0149 5.210e-02 9.095e-02
+         PaintRock_AL2           SpringCreek  0.0138 7.171e-02 4.018e-02
+ FlintRiver_RylandPike           SpringCreek  0.0135 7.938e-02 5.589e-02
+         PaintRock_AL2    Sequatchie_OldYork  0.0115 7.903e-02 4.909e-02
+ FlintRiver_RylandPike    Sequatchie_OldYork  0.0113 8.945e-02 5.240e-02
+     Sequatchie_Teague             BentCreek -0.0140 1.011e-01 2.036e-01
+         Pidgeon_River           SpringCreek  0.0130 1.281e-01 1.103e-01
+         Pidgeon_River    Sequatchie_OldYork  0.0107 1.581e-01 1.675e-01
+             BentCreek           SpringCreek  0.0121 1.950e-01 2.888e-01
+    Sequatchie_OldYork             BentCreek -0.0098 2.468e-01 3.983e-01
+ FlintRiver_RylandPike      Sequatchie_Inman -0.0072 2.782e-01 1.595e-01
+         PaintRock_AL2      Sequatchie_Inman -0.0070 2.870e-01 3.834e-01
+         Pidgeon_River      Sequatchie_Inman -0.0078 3.077e-01 2.087e-01
+      Sequatchie_Inman             BentCreek  0.0087 3.092e-01 1.344e-01
+     Sequatchie_Teague    Sequatchie_OldYork -0.0042 5.449e-01 6.980e-01
+    Sequatchie_OldYork           SpringCreek  0.0022 7.770e-01 7.180e-01
+     Sequatchie_Teague           SpringCreek -0.0020 8.038e-01 9.467e-01
+         PaintRock_AL2             BentCreek  0.0017 8.323e-01 4.291e-01
+ FlintRiver_RylandPike             BentCreek  0.0015 8.565e-01 4.135e-01
+         PaintRock_AL2         Pidgeon_River  0.0008 9.104e-01 7.980e-01
+         Pidgeon_River             BentCreek  0.0009 9.188e-01 7.066e-01
+ FlintRiver_RylandPike         Pidgeon_River  0.0006 9.376e-01 7.519e-01
+ FlintRiver_RylandPike         PaintRock_AL2 -0.0002 9.688e-01 8.201e-01
+ p_welch_BH p_wilcox_BH significant
+  5.565e-18   2.660e-10        TRUE
+  4.655e-13   2.660e-10        TRUE
+  7.718e-13   2.660e-10        TRUE
+  1.528e-12   3.990e-10        TRUE
+  1.678e-12   6.683e-09        TRUE
+  1.280e-09   3.420e-09        TRUE
+  1.653e-09   2.305e-09        TRUE
+  5.686e-09   1.729e-08        TRUE
+  1.601e-08   2.151e-07        TRUE
+  2.125e-08   1.117e-09        TRUE
+  4.398e-08   1.159e-07        TRUE
+  6.130e-08   1.805e-07        TRUE
+  1.582e-07   5.458e-08        TRUE
+  1.463e-06   3.643e-06        TRUE
+  2.260e-06   2.213e-06        TRUE
+  1.158e-05   3.179e-06        TRUE
+  1.918e-05   2.265e-06        TRUE
+  3.137e-05   1.500e-05        TRUE
+  6.175e-05   3.288e-05        TRUE
+  1.833e-04   1.072e-04        TRUE
+  5.116e-04   3.122e-04        TRUE
+  7.209e-04   1.644e-03        TRUE
+  7.768e-04   3.878e-04        TRUE
+  4.116e-03   1.530e-03        TRUE
+  4.433e-03   2.979e-03        TRUE
+  4.850e-03   1.440e-02        TRUE
+  9.165e-03   1.530e-03        TRUE
+  2.258e-02   1.144e-02        TRUE
+  2.400e-02   2.502e-02        TRUE
+  3.310e-02   3.317e-02        TRUE
+  3.609e-02   3.739e-02        TRUE
+  3.680e-02   7.164e-02        TRUE
+  8.683e-02   1.352e-01       FALSE
+  1.160e-01   6.905e-02       FALSE
+  1.213e-01   8.539e-02       FALSE
+  1.213e-01   7.941e-02       FALSE
+  1.330e-01   8.234e-02       FALSE
+  1.463e-01   2.666e-01       FALSE
+  1.806e-01   1.596e-01       FALSE
+  2.173e-01   2.247e-01       FALSE
+  2.615e-01   3.610e-01       FALSE
+  3.232e-01   4.762e-01       FALSE
+  3.558e-01   2.193e-01       FALSE
+  3.588e-01   4.686e-01       FALSE
+  3.697e-01   2.669e-01       FALSE
+  3.697e-01   1.896e-01       FALSE
+  6.376e-01   7.743e-01       FALSE
+  8.903e-01   7.743e-01       FALSE
+  9.023e-01   9.467e-01       FALSE
+  9.155e-01   4.917e-01       FALSE
+  9.237e-01   4.839e-01       FALSE
+  9.535e-01   8.281e-01       FALSE
+  9.535e-01   7.743e-01       FALSE
+  9.550e-01   7.953e-01       FALSE
+  9.688e-01   8.353e-01       FALSE
+
+Significant pairs after BH correction: 32 out of 55 
+
+ Converting data from a Genepop .gen file to a genind object... 
+
+
+File description:  Stacks v2.68; GenePop v4.1.3; September 04, 2026 
+
+...done.
+
+
+Population sizes after matching to the popmap (double-check this looks right):
+pop_assigned
+            BentCreek             Dry_Creek      FlintRiver_HWY61 
+                   20                    20                    20 
+FlintRiver_RylandPike          LookoutCreek         PaintRock_AL2 
+                   20                    20                    20 
+        Pidgeon_River      Sequatchie_Inman    Sequatchie_OldYork 
+                   17                    20                    20 
+    Sequatchie_Teague           SpringCreek 
+                   20                    20 
+
+Rarefying allelic richness to g = 34 gene copies (2x smallest population, n=17)
+
+--- Rarefied allelic richness (per locus) ---
+                   Pop     Ar Ar_n Ar_total_loci
+          LookoutCreek 1.3530 1693          1693
+ FlintRiver_RylandPike 1.4812 1692          1693
+     Sequatchie_Teague 1.5107 1693          1693
+         PaintRock_AL2 1.4608 1693          1693
+             Dry_Creek 1.2532 1692          1693
+         Pidgeon_River 1.7897 1693          1693
+    Sequatchie_OldYork 1.5078 1693          1693
+      Sequatchie_Inman 1.6273 1693          1693
+      FlintRiver_HWY61 1.5480 1693          1693
+             BentCreek 1.4213 1693          1693
+           SpringCreek 1.4553 1693          1693
+Ar_n: how many loci actually had >= g gene copies for THAT population and
+  contributed to its Ar average (out of Ar_total_loci available).
+RAD-tag grouping for populations.haps.genepop: read from populations.haps.vcf (1,693 distinct tags on 1,693 records, 1.00 per tag).
+
+--- Private allele richness: raw count vs analytically rarefied ---
+                   Pop Raw privAr privAr_lo privAr_hi privAr_n priv_total
+          LookoutCreek  11 0.0063    0.0019    0.0120      856        5.4
+ FlintRiver_RylandPike  12 0.0038    0.0002    0.0084      856        3.2
+     Sequatchie_Teague   0 0.0002    0.0000    0.0006      856        0.2
+         PaintRock_AL2  51 0.0308    0.0198    0.0427      856       26.4
+             Dry_Creek   6 0.0023    0.0001    0.0055      856        2.0
+         Pidgeon_River  54 0.0229    0.0135    0.0332      856       19.6
+    Sequatchie_OldYork   7 0.0043    0.0010    0.0090      856        3.7
+      Sequatchie_Inman  12 0.0040    0.0005    0.0086      856        3.4
+      FlintRiver_HWY61  17 0.0123    0.0059    0.0199      856       10.6
+             BentCreek  85 0.0579    0.0426    0.0741      856       49.5
+           SpringCreek 109 0.0795    0.0611    0.0988      856       68.0
+privAr_n: how many of this file's 1693 loci had EVERY population at
+  >= g gene copies simultaneously (private richness needs everyone comparable
+  at the same sample size at once, so this is often less than Ar_n above --
+  though the two aren't quite the same statistic: Ar_n comes from hierfstat's
+  own allelic.richness(), privAr_n from the rare_private() code just above,
+  so treat this as 'in the same ballpark', not 'exactly comparable').
+
+Done.

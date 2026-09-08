@@ -1,0 +1,146 @@
+Reading /fs/project/whelan.105/virgata/virgata-assembly/post-submission-filtering-tests/virgata_m3M3n3_r80p11_maf025_gt10_single/populations.snps.vcf ...
+  1,303 loci, 217 samples
+  haplotypes per locus: median 2, max 2; 0.0% of loci are multi-allelic (>2)
+  missing genotype rate: 2.51%
+  populations: LookoutCreek (n=20), FlintRiver_RylandPike (n=20), Sequatchie_Teague (n=20), PaintRock_AL2 (n=20), Dry_Creek (n=20), Pidgeon_River (n=17), Sequatchie_OldYork (n=20), Sequatchie_Inman (n=20), FlintRiver_HWY61 (n=20), BentCreek (n=20), SpringCreek (n=20)
+  record type: SNP (one site per record)
+  1,303 records on 1,303 RAD loci (1.00 per locus)
+Available-data mode (min_n = 2): 1,303 of 1,303 records usable by >= 1 population
+  14,333 of 14,333 locus-by-population cells meet min_n (100.0%)
+    LookoutCreek           1,303 of 1,303 loci usable (typed-n there: mean 19.5, min 16, max 20)
+    FlintRiver_RylandPike  1,303 of 1,303 loci usable (typed-n there: mean 19.3, min 16, max 20)
+    Sequatchie_Teague      1,303 of 1,303 loci usable (typed-n there: mean 19.5, min 16, max 20)
+    PaintRock_AL2          1,303 of 1,303 loci usable (typed-n there: mean 19.6, min 16, max 20)
+    Dry_Creek              1,303 of 1,303 loci usable (typed-n there: mean 19.7, min 16, max 20)
+    Pidgeon_River          1,303 of 1,303 loci usable (typed-n there: mean 16.4, min 14, max 17)
+    Sequatchie_OldYork     1,303 of 1,303 loci usable (typed-n there: mean 19.6, min 16, max 20)
+    Sequatchie_Inman       1,303 of 1,303 loci usable (typed-n there: mean 19.5, min 16, max 20)
+    FlintRiver_HWY61       1,303 of 1,303 loci usable (typed-n there: mean 19.5, min 16, max 20)
+    BentCreek              1,303 of 1,303 loci usable (typed-n there: mean 19.5, min 16, max 20)
+    SpringCreek            1,303 of 1,303 loci usable (typed-n there: mean 19.5, min 16, max 20)
+Engine: hierfstat::basic.stats()
+Rarefying to g = 28 gene copies (smallest population has 34)
+  cross-check vs hierfstat::allelic.richness(): max diff 0.00e+00
+Bootstrapping 10,000 replicates over 1,303 RAD loci ...
+
+=====================================================================
+  DIVERSITY -- 11 populations, 1,303 records on 1,303 RAD loci
+  He = Nei & Chesser (1983) Hs, the hierfstat quantity
+  FIS = 1 - sum(Ho)/sum(Hs), a ratio of sums, monomorphic loci included
+  Ar / private Ar rarefied to 28 GENE COPIES (Kalinowski 2004)
+  14,333 of 14,333 locus-by-population cells meet min_n = 2 (100.0%)
+  Each population's Ho/He/Fis is a ratio of sums over whichever loci it
+    cleared min_n at -- see the per-population lines printed above.
+  95% CI from 10,000 replicates resampling RAD LOCI
+=====================================================================
+
+            population  n     Ho     He     Fis  Fis_lo  Fis_hi pct_poly
+          LookoutCreek 20 0.0712 0.0613 -0.1614 -0.2061 -0.1159     26.1
+ FlintRiver_RylandPike 20 0.1242 0.1079 -0.1511 -0.1850 -0.1163     36.4
+     Sequatchie_Teague 20 0.1114 0.1035 -0.0758 -0.1081 -0.0431     39.1
+         PaintRock_AL2 20 0.1312 0.1011 -0.2976 -0.3286 -0.2657     37.3
+             Dry_Creek 20 0.0570 0.0438 -0.3002 -0.3565 -0.2444     19.0
+         Pidgeon_River 17 0.1267 0.1119 -0.1318 -0.1610 -0.1026     39.5
+    Sequatchie_OldYork 20 0.1156 0.0990 -0.1676 -0.1952 -0.1409     38.2
+      Sequatchie_Inman 20 0.1358 0.1289 -0.0529 -0.0816 -0.0236     47.8
+      FlintRiver_HWY61 20 0.1531 0.1257 -0.2184 -0.2492 -0.1878     42.2
+             BentCreek 20 0.1233 0.0944 -0.3063 -0.3390 -0.2737     33.8
+           SpringCreek 20 0.1122 0.0896 -0.2522 -0.2861 -0.2173     35.0
+
+            population     Ar Ar_n  Ar_lo  Ar_hi privAr privAr_n privAr_lo privAr_hi priv_total
+          LookoutCreek 1.2401 1303 1.2180 1.2625 0.0040     1303    0.0012    0.0075        5.2
+ FlintRiver_RylandPike 1.3458 1303 1.3210 1.3708 0.0013     1303    0.0002    0.0032        1.7
+     Sequatchie_Teague 1.3699 1303 1.3447 1.3949 0.0001     1303    0.0000    0.0002        0.1
+         PaintRock_AL2 1.3488 1303 1.3242 1.3738 0.0236     1303    0.0163    0.0319       30.8
+             Dry_Creek 1.1745 1303 1.1551 1.1946 0.0003     1303    0.0000    0.0009        0.4
+         Pidgeon_River 1.3831 1303 1.3576 1.4092 0.0247     1303    0.0170    0.0332       32.1
+    Sequatchie_OldYork 1.3563 1303 1.3315 1.3813 0.0009     1303    0.0001    0.0026        1.2
+      Sequatchie_Inman 1.4505 1303 1.4253 1.4763 0.0040     1303    0.0012    0.0074        5.2
+      FlintRiver_HWY61 1.4019 1303 1.3770 1.4276 0.0059     1303    0.0025    0.0100        7.7
+             BentCreek 1.3176 1303 1.2935 1.3421 0.0426     1303    0.0326    0.0535       55.5
+           SpringCreek 1.3250 1303 1.3013 1.3498 0.0515     1303    0.0401    0.0636       67.1
+  Ar_n / privAr_n: how many of the 1,303 loci had a defined value for that population
+  (Ar needs only THAT population at >= g gene copies; privAr needs EVERY
+  population at >= g simultaneously, so privAr_n <= Ar_n, often far less
+  under available data -- see MINIMAL_WORKFLOW.md if privAr_n is small).
+  Ar and privAr are PER LOCUS (the HP-RARE / ADZE convention);
+  priv_total is the dataset-wide sum over privAr_n loci. Private = absent from all 10 others,
+  so it is not comparable to a dataset with a different number of populations.
+  NOTE: Ar is capped at 2 because these are biallelic SNPs, so rarefaction
+  has almost nothing to correct. Run this on the HAPLOTYPE VCF for a
+  richness worth reporting; private allelic richness is still informative.
+
+Two estimators of the same parameter (gene diversity per variant record)
+  He_NeiChesser  (n/(n-1))(1 - sum p^2 - Ho/2n)   unbiased at any FIS
+  He_2n_corr     (2n/(2n-1))(1 - sum p^2)         unbiased only if FIS = 0
+                 -- this is the estimator behind Stacks' `Pi` column.
+            population He_NeiChesser He_2n_corr pct_diff Fis_NeiChesser Fis_2n_corr
+          LookoutCreek        0.0613     0.0616   +0.43%        -0.1614     -0.1564
+ FlintRiver_RylandPike        0.1079     0.1083   +0.41%        -0.1511     -0.1464
+     Sequatchie_Teague        0.1035     0.1037   +0.20%        -0.0758     -0.0736
+         PaintRock_AL2        0.1011     0.1019   +0.80%        -0.2976     -0.2873
+             Dry_Creek        0.0438     0.0442   +0.82%        -0.3002     -0.2896
+         Pidgeon_River        0.1119     0.1124   +0.42%        -0.1318     -0.1271
+    Sequatchie_OldYork        0.0990     0.0995   +0.45%        -0.1676     -0.1623
+      Sequatchie_Inman        0.1289     0.1291   +0.14%        -0.0529     -0.0514
+      FlintRiver_HWY61        0.1257     0.1264   +0.59%        -0.2184     -0.2113
+             BentCreek        0.0944     0.0952   +0.83%        -0.3063     -0.2956
+           SpringCreek        0.0896     0.0902   +0.67%        -0.2522     -0.2438
+  He barely moves; FIS moves ~(1-F)/F times as much, because FIS divides by
+  the small quantity the two estimators disagree about. So Stacks' Pi is safe
+  to quote and its Fis is not (and its Fis carries a second, larger error:
+  it is a mean of per-locus ratios).
+  Compare against `Pi`, never `Exp_Het`: Pi = Exp_Het * 2n/(2n-1) = x1.026 at n=20, x1.026 at n=20, x1.026 at n=20, x1.026 at n=20, x1.026 at n=20, x1.030 at n=17, x1.026 at n=20, x1.026 at n=20, x1.026 at n=20, x1.026 at n=20, x1.026 at n=20.
+  -> MINIMAL_WORKFLOW.md, "Formulas, and what maps onto what in Stacks"
+
+What the Ho and He numbers are
+  Scaled to 222,111 sequenced sites via all 1,303 variant records (0.587% variant);
+  He estimated using 1,303 of 1,303 records (100.0% of them, available-data, min_n = 2).
+            population Ho_autosomal He_autosomal
+          LookoutCreek    0.0004179    0.0003598
+ FlintRiver_RylandPike    0.0007286    0.0006330
+     Sequatchie_Teague    0.0006533    0.0006072
+         PaintRock_AL2    0.0007697    0.0005932
+             Dry_Creek    0.0003344    0.0002572
+         Pidgeon_River    0.0007432    0.0006567
+    Sequatchie_OldYork    0.0006783    0.0005809
+      Sequatchie_Inman    0.0007965    0.0007564
+      FlintRiver_HWY61    0.0008983    0.0007373
+             BentCreek    0.0007232    0.0005537
+           SpringCreek    0.0006585    0.0005258
+  He_autosomal is the SAME per-site quantity as He above, averaged over every
+  sequenced site instead of over variant records. That denominator is what
+  makes it nucleotide diversity (pi). There is no column named `pi`.
+  Compare against Stacks' `Pi` from the All-positions block -- not the
+  variant-positions block, and not `Exp_Het` (Schmidt et al. 2021).
+  -> MINIMAL_WORKFLOW.md, "Formulas, and what maps onto what in Stacks"
+
+---------------------------------------------------------------------
+  TAKE FROM THIS RUN:  Ho, He, pct_poly, Ho_autosomal, He_autosomal.
+  Run populations.haps.vcf for Fis, Ar and privAr: on biallelic SNPs
+  rarefied richness is bounded at 2, and Fis is more precise from
+  multi-allelic loci.
+  
+  Fis is comparable between the two files; Ho and He are NOT (haplotype Ho
+  asks 'is this tag heterozygous', per-site Ho asks 'is this site'). Label
+  every table row with the file it came from.
+  
+  He and Ho above are averaged over ALL retained records including those
+  monomorphic within a population -- the POOLED denominator, matching
+  Stacks' Variant-positions block. Report pct_poly beside them:
+      He(pooled) = He(polymorphic within pop) x pct_poly/100   (exactly)
+  Do not switch to the within-population denominator; it conditions on the
+  outcome and can reverse a real difference.
+  -> MINIMAL_WORKFLOW.md, "Which file for which statistic"
+---------------------------------------------------------------------
+
+Weir & Cockerham via hierfstat::wc():  FST 0.5308   FIS -0.1829
+  wc()'s FIS is the metapopulation value across all populations; the
+  per-population column above is the one to report per population.
+
+hierfstat::basic.stats() overall
+     Ho      Hs      Ht     Dst     Htp    Dstp     Fst    Fstp     Fis    Dest 
+ 0.1147  0.0970  0.1956  0.0986  0.2055  0.1085  0.5041  0.5279 -0.1827  0.1201 
+
+Wrote diversity_per_population.snps.tsv and diversity_richness.snps.tsv
+

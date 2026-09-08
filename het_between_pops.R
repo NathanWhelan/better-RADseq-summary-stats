@@ -20,7 +20,7 @@
 #  soon as they differ, which is exactly what inbreeding produces. Welch's t on
 #  per-individual heterozygosity held 5% throughout. `--selftest` reproduces
 #  that table. The objection is old (Van Dongen 1995); most papers ignore it.
-#  Full discussion in MINIMAL_WORKFLOW.md, "Step 3".
+#  Full discussion in README.md, "Step 3".
 #
 #  WHAT TO READ, IN ORDER
 #    1. the missingness confound check -- if call rate correlates with
@@ -131,7 +131,7 @@ A1 <- H$A1[, ids, drop = FALSE]; A2 <- H$A2[, ids, drop = FALSE]
 ## raw per-individual table and the missingness confound check) -- not for
 ## anything that compares populations to each other. A pooled threshold lets
 ## a locus pass because the larger population's coverage carries the smaller
-## one's (see MINIMAL_WORKFLOW.md's warning against -R for this same reason),
+## one's (see README.md's warning against -R for this same reason),
 ## which is exactly the asymmetry a BETWEEN-population estimate must avoid.
 ## The population summary, overdispersion check, and pairwise tests further
 ## down use a genuinely per-population/per-pair criterion instead (see below).

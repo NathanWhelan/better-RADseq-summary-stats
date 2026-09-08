@@ -41,3 +41,14 @@ parameterization (`m3M3n2gt01`, vs. the `m3M3n3` used by every other
 `results/virgata_*` dataset) and missing the SNP-level outputs and
 `het_out/` directory its siblings have. Includes a stray chat-log file
 (`chat_log_2026-09-05_diversity_discussion.md`) that was left inside it.
+
+## `README.internal.md` and `MINIMAL_WORKFLOW.internal.md`
+
+The pre-public-release versions of the project's `README.md` and
+`MINIMAL_WORKFLOW.md`, preserved exactly as they stood before the repo was
+made public. The two were merged into a single public `README.md` at the
+project root, genericized at a handful of spots that named the actual
+unpublished dataset (real Fᵢₛ numbers, a missingness comparison, "confirmed
+on real virgata data"). These internal copies keep the original, unscrubbed
+text — including those real-data specifics — for the team's own reference.
+Do not link to these from anywhere public; they exist for internal use only.

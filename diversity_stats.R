@@ -21,7 +21,7 @@
 #               coverage simulation found they badly undercover the true
 #               value for every statistic with a finite-sample correction
 #               (He, Fis, Ar, privAr), getting WORSE as locus count grows --
-#               see MINIMAL_WORKFLOW.md, "Bootstrap mode" for the numbers.
+#               see README.md, "Bootstrap mode" for the numbers.
 #               Applies uniformly to every CI in both output tables. Every
 #               metric also gets a `_se` column -- a delete-one-block
 #               jackknife over RAD loci (Weir 1996), independent of --boot
@@ -47,7 +47,7 @@
 #
 #  WHY THE NUMBERS DIFFER FROM STACKS -- one line each. The full explanation,
 #  and the formulas with every Stacks column matched to its counterpart here,
-#  are in MINIMAL_WORKFLOW.md. This header deliberately does not restate them.
+#  are in README.md. This header deliberately does not restate them.
 #
 #    He     Nei & Chesser (1983), not Stacks' `Pi`, whose correction assumes
 #           FIS = 0. Both printed side by side.            [-> "Formulas"]
@@ -57,7 +57,7 @@
 #           resampling linked SNPs as independent gave intervals ~1.8x too
 #           narrow. `--boot=individuals`/`--boot=both` exist for comparison
 #           only -- they badly undercover He/Fis/Ar/privAr (see
-#           MINIMAL_WORKFLOW.md, "Bootstrap mode"). Do NOT use any of these
+#           README.md, "Bootstrap mode"). Do NOT use any of these
 #           to compare populations -- that is het_between_pops.R. [-> "Step 3"]
 #    sites  DEFAULT: a locus is used by a population once that population has
 #           >= min_n typed individuals there (available-data, per population,
@@ -66,7 +66,7 @@
 #           2021). Watch the retention lines either way.
 #
 #  Engine: hierfstat when installed, internal fallback otherwise; the run says
-#  which. Validation provenance is in MINIMAL_WORKFLOW.md, Step 0.
+#  which. Validation provenance is in README.md, Step 0.
 #
 ###############################################################################
 
@@ -80,7 +80,7 @@ print_usage <- function() {
   cat("  --nboot=N  bootstrap replicates (default 10000, 0 = none)\n")
   cat("  --boot=MODE  loci | individuals | both (default loci; the other two\n")
   cat("             are comparison-only -- they undercover, see\n")
-  cat("             MINIMAL_WORKFLOW.md, \"Bootstrap mode\").\n")
+  cat("             README.md, \"Bootstrap mode\").\n")
   cat("  --sites=N  sequenced nucleotide sites, for autosomal heterozygosity\n")
   cat("  --min-n=N  available-data mode only: min typed individuals per population\n")
   cat("             per locus (default 2). Ignored with --complete-case.\n")
@@ -137,7 +137,7 @@ min_n <- if (!is.null(flags[["min-n"]])) as.integer(flags[["min-n"]]) else 2L
 boot_explicit <- !is.null(flags$boot)
 ## DEFAULT IS "loci", not "both" -- an empirical coverage simulation (single-
 ## population, known-truth He/Fis/Ar, --nboot=500, 150-300 simulated datasets;
-## see MINIMAL_WORKFLOW.md, "Bootstrap mode") found individual-resampling
+## see README.md, "Bootstrap mode") found individual-resampling
 ## ("individuals" and "both") gives SEVERE undercoverage for every statistic
 ## that carries a finite-sample correction factor (He/Fis via Nei-Chesser's
 ## n/(n-1); Ar/privAr via the hypergeometric rarefaction formula's dependence
@@ -469,7 +469,7 @@ min_n_eff <- if (complete_case) 2L else min_n
 ## diversity_core.R unmodified -- only how the input counts are built differs.
 ##
 ## Mechanism (Owen & Eckles 2012 product-weight bootstrap, r=2 crossed
-## factors: locus x individual -- see MINIMAL_WORKFLOW.md, "Bootstrap mode"):
+## factors: locus x individual -- see README.md, "Bootstrap mode"):
 ## draw ONE fresh individual weight vector per population (step 1), reuse it
 ## for every locus in `sel` including repeats (step 2), which is equivalent
 ## to duplicating each resampled individual's row that many times and
@@ -491,7 +491,7 @@ min_n_eff <- if (complete_case) 2L else min_n
 ## found this drives coverage of the TRUE value as low as 0%, and it WORSENS
 ## as locus count grows (the bias is fixed; the bootstrap spread shrinks).
 ## Ho (no correction factor) was unaffected (88-92% coverage). See
-## MINIMAL_WORKFLOW.md, "Bootstrap mode" for the full numbers. --boot=loci is
+## README.md, "Bootstrap mode" for the full numbers. --boot=loci is
 ## therefore the default for every statistic; this function only runs under
 ## an explicit --boot=individuals/both comparison request.
 stat_from_resampled <- function(sel) {
@@ -586,7 +586,7 @@ point <- stat_from(seq_len(L))
 ## duplicates anything -- it just drops one whole RAD-locus block -- so it
 ## does NOT have the compositional-duplication bias that made individual-
 ## resampling undercover He/Fis/Ar (see "Bootstrap mode" in
-## MINIMAL_WORKFLOW.md). It needs no random numbers and no --nboot: with nL
+## README.md). It needs no random numbers and no --nboot: with nL
 ## RAD loci there are exactly nL delete-one replicates, deterministic and
 ## reproducible run to run.
 ##
@@ -659,7 +659,7 @@ if (complete_case) {
 }
 if (nboot > 0) cat("  95% CI from ", format(nboot, big.mark = ","),
                    " replicates, --boot=", boot_mode,
-                   " (see MINIMAL_WORKFLOW.md, \"Bootstrap mode\")\n", sep = "")
+                   " (see README.md, \"Bootstrap mode\")\n", sep = "")
 cat("=====================================================================\n\n")
 gv <- function(pfx) point[paste0(pfx, names(pops))]
 lo <- function(pfx) ci[paste0(pfx, names(pops)), 1]
@@ -697,7 +697,7 @@ cat("  Ar_n / privAr_n: how many of the", format(L, big.mark = ","),
     "loci had a defined value for that population\n")
 cat("  (Ar needs only THAT population at >= g gene copies; privAr needs EVERY\n")
 cat("  population at >= g simultaneously, so privAr_n <= Ar_n, often far less\n")
-cat("  under available data -- see MINIMAL_WORKFLOW.md if privAr_n is small).\n")
+cat("  under available data -- see README.md if privAr_n is small).\n")
 if (min(pr_n) < 0.5 * L)
   cat(sprintf("  WARNING: privAr_n is below 50%% of loci for at least one population --\n  its rarefied private richness rests on a minority of loci. Consider a\n  smaller g (rarefaction target), currently %d gene copies.\n", g))
 cat("  Ar and privAr are PER LOCUS (the HP-RARE / ADZE convention);\n")
@@ -710,11 +710,11 @@ if (all(is.na(arv))) {
   cat("  NOTE: Ar is capped at 2 because these are biallelic SNPs, so rarefaction\n  has almost nothing to correct. Run this on the HAPLOTYPE VCF for a\n  richness worth reporting; private allelic richness is still informative.\n")
 }
 
-## Print an indented paragraph. Long explanations live in MINIMAL_WORKFLOW.md;
+## Print an indented paragraph. Long explanations live in README.md;
 ## the script prints the numbers plus a pointer to the section that explains
 ## them, rather than restating the document at the terminal.
 note <- function(...) cat(paste0("  ", c(...), "\n"), sep = "")
-see  <- function(sec) cat(paste0("  -> MINIMAL_WORKFLOW.md, \"", sec, "\"\n"))
+see  <- function(sec) cat(paste0("  -> README.md, \"", sec, "\"\n"))
 
 ## ---------------------------------------------------------------------------
 ## Side by side with the estimator behind Stacks' `Pi` column

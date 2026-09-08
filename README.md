@@ -1,4 +1,6 @@
-# RADseq diversity workflow — H<sub>o</sub>, H<sub>e</sub>, F<sub>IS</sub>, and whether two populations differ
+# RADseq diversity workflow — H<sub>o</sub>, H<sub>e</sub>, F<sub>IS</sub>, Allelic Richness, and Private Alleles. 
+
+## PLEASE NOTE: This was written by Claude AI and has been minimally edited. If something seems off, please take the author into consideration. If you notice something that's horrible wrong, I would love to hear feedback. --N. Whelan (Sept 8, 2026).
 
 H<sub>o</sub>, H<sub>e</sub>, π, F<sub>IS</sub>, rarefied allelic richness and
 rarefied private allelic richness from Stacks output, plus a correctly

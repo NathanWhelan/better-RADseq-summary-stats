@@ -64,6 +64,30 @@ particular flags and estimators, what each one fixes, and what to write in a
 methods section. Read Step 0 through Step 4 in order the first time; after
 that, use the section headers to jump to whatever a reviewer is asking about.
 
+### Interactive use (R / RStudio)
+
+The same two functions the command-line scripts call are also exported by
+the package, so once it's installed (`devtools::install()`), the Quick
+start commands above have a direct interactive equivalent that returns the
+result tables instead of only writing them to disk:
+
+```r
+library(RADdiversity)
+
+res_haps <- diversity_stats("out/populations.haps.vcf", "popmap.tsv", g = 20, nboot = 10000)
+res_snps <- diversity_stats("out/populations.snps.vcf", "popmap.tsv", g = 20, nboot = 10000,
+                             sites = 123456789)  # the `Sites` column described above
+res_test <- het_between_pops("out/populations.snps.vcf", "popmap.tsv", min_call = 0.9, outdir = "het_out")
+
+res_haps$per_population   # the same table diversity_per_population.haps.tsv holds
+res_haps$richness         # the same table diversity_richness.haps.tsv holds
+```
+
+Every argument and every printed line of output is identical to the
+command-line form; `diversity_stats()`/`het_between_pops()` just also hand
+back the tables as data frames. See `?diversity_stats` and
+`?het_between_pops` for the full argument list.
+
 ---
 
 ## Step 0 — what you need
@@ -80,8 +104,13 @@ that, use the section headers to jump to whatever a reviewer is asking about.
   over RAD loci, and the autosomal conversion are in no package and are
   implemented here, validated against brute-force Monte Carlo in
   `diversity_core.R --selftest`.
-- These four scripts, **in one directory** (they `source()` each other):
-  `haps_common.R`, `diversity_core.R`, `diversity_stats.R`, `het_between_pops.R`.
+- This repo is an R package (**RADdiversity**). Install it once from the
+  repo root: `R CMD INSTALL .`, or from an R session, `devtools::install()`.
+  The command-line scripts below (`diversity_stats.R`, `diversity_core.R`,
+  `het_between_pops.R`) are thin wrappers that call the installed package,
+  so nothing about the commands changes. Prefer to work from R/RStudio
+  instead? `library(RADdiversity)` gives you the same functionality as
+  ordinary functions — see "Interactive use" below.
 
 Check both scripts run before you point them at real data:
 
@@ -1422,19 +1451,27 @@ differentiated populations. You called SNPs once, jointly. Why?"**
 
 ## Files
 
+This repo is the source of the **RADdiversity** R package. The package's
+functions live under `R/`; the files below are what you actually interact
+with.
+
 | file | what it is |
 |---|---|
-| `diversity_stats.R` | diversity statistics with block-bootstrap intervals |
-| `het_between_pops.R` | between-population test, individual as the replicate |
-| `diversity_core.R` | estimators, rarefaction, self-tests (`--selftest`) |
-| `haps_common.R` | VCF and popmap readers |
+| `diversity_stats.R` | command-line wrapper for `RADdiversity::diversity_stats()` |
+| `het_between_pops.R` | command-line wrapper for `RADdiversity::het_between_pops()` |
+| `diversity_core.R` | command-line wrapper for `RADdiversity::diversity_core_selftest()` (`--selftest`) |
+| `R/` | the package itself: estimators, VCF/popmap readers, `diversity_stats()`, `het_between_pops()`, both self-tests |
 | `test/` | test infrastructure: `run_tests.sh` (full suite), fixtures, golden values |
+| `tests/` | `testthat` suite exercised by `R CMD check` |
 | `archive/` | superseded/abandoned material, kept for history (see `archive/README.md`) |
 
 ## Requirements
 
-R. Base R is sufficient. `hierfstat` is used as the engine when installed and
-the scripts fall back to validated internal code otherwise; each run says which.
+R (>= 3.5). Base R is sufficient. `hierfstat` is used as the engine when
+installed and the package falls back to validated internal code otherwise;
+each run says which. Install the package once from the repo root —
+`R CMD INSTALL .` or, from an R session, `devtools::install()` — before
+using either the command-line scripts or `library(RADdiversity)`.
 
 ## Testing
 

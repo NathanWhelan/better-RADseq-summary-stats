@@ -1,9 +1,9 @@
 ###############################################################################
 #
-#  haps_common.R  --  shared reader for Stacks `populations.haps.vcf`
+#  R/vcf_io.R  --  shared reader for Stacks `populations.haps.vcf`
 #
-#  Sourced by diversity_stats.R and het_between_pops.R so
-#  all three parse the file identically.
+#  Used by diversity_stats() and het_between_pops() so all callers parse the
+#  file identically.
 #
 #  WHAT A HAPS VCF IS
 #  ------------------
@@ -29,6 +29,20 @@
 #
 ###############################################################################
 
+#' Read a Stacks haplotype or SNP VCF
+#'
+#' Parses `populations.haps.vcf` or `populations.snps.vcf` (gzip-compressed or
+#' not) into genotype matrices plus locus/allele metadata. Used by
+#' [diversity_stats()] and [het_between_pops()].
+#'
+#' @param path Path to the VCF file (`.vcf` or `.vcf.gz`).
+#' @param verbose Print progress/summary messages. Default `TRUE`.
+#' @return A list with elements `A1`, `A2` (allele-index matrices, one row per
+#'   record, one column per sample), `locus` (unique per-record locus names),
+#'   `locus_raw` (locus grouping, shared across SNPs on one RAD tag),
+#'   `alleles` (list of allele strings per record), `n_alleles`, `samples`,
+#'   and `fields` (the raw parsed VCF field matrix).
+#' @export
 read_haps_vcf <- function(path, verbose = TRUE) {
 
   if (grepl("\\.gz$", path)) {
@@ -126,20 +140,33 @@ read_haps_vcf <- function(path, verbose = TRUE) {
   if (verbose) {
     message(sprintf("  %s loci, %d samples", format(nrow(f), big.mark = ","), length(samples)))
     message(sprintf("  haplotypes per locus: median %d, max %d; %.1f%% of loci are multi-allelic (>2)",
-                    as.integer(median(n_alleles)), max(n_alleles),
+                    as.integer(stats::median(n_alleles)), max(n_alleles),
                     100 * mean(n_alleles > 2)))
     message(sprintf("  missing genotype rate: %.2f%%", 100 * mean(is.na(A1))))
     unrec <- setdiff(unique(as.vector(gt)[bad]), c("./.", ".", "", "./", "/."))
     if (length(unrec))
-      message("  treated as missing: ", paste(head(unrec, 8), collapse = ", "))
+      message("  treated as missing: ", paste(utils::head(unrec, 8), collapse = ", "))
   }
 
   list(A1 = A1, A2 = A2, locus = locus, locus_raw = locus_raw, alleles = alleles,
        n_alleles = n_alleles, samples = samples, fields = f)
 }
 
+#' Read a Stacks-style popmap
+#'
+#' Parses a two-column, no-header popmap TSV (`sample_id <TAB> population`)
+#' and splits sample IDs by population, restricted to samples present in
+#' `samples`.
+#'
+#' @param path Path to the popmap TSV.
+#' @param samples Character vector of sample IDs to keep (typically the VCF's
+#'   sample columns).
+#' @param verbose Print progress/summary messages. Default `TRUE`.
+#' @return A named list of character vectors, one per population, each
+#'   holding that population's sample IDs.
+#' @export
 read_popmap <- function(path, samples, verbose = TRUE) {
-  pm <- read.delim(path, header = FALSE, stringsAsFactors = FALSE,
+  pm <- utils::read.delim(path, header = FALSE, stringsAsFactors = FALSE,
                    col.names = c("sample", "pop"))
   pm <- pm[pm$sample %in% samples, , drop = FALSE]
   if (!nrow(pm)) stop("No popmap sample names match the VCF.")
@@ -148,7 +175,7 @@ read_popmap <- function(path, samples, verbose = TRUE) {
   dupd <- unique(pm$sample[duplicated(pm$sample)])
   if (length(dupd))
     stop(length(dupd), " sample(s) appear more than once in the popmap: ",
-         paste(head(dupd, 10), collapse = ", "),
+         paste(utils::head(dupd, 10), collapse = ", "),
          "\n  Each individual must be assigned to exactly one population.")
   drop <- setdiff(samples, pm$sample)
   if (length(drop) && verbose)

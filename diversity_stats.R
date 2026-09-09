@@ -1,8 +1,7 @@
 #!/usr/bin/env Rscript
 ###############################################################################
 #
-#  diversity_stats.R -- Ho, He, FIS, rarefied allelic richness and rarefied
-#  private allelic richness from a Stacks VCF, in one run.
+#  diversity_stats.R -- command-line entry point for RADdiversity::diversity_stats().
 #
 #  USAGE
 #     Rscript diversity_stats.R <vcf> <popmap.tsv> --g=N [--nboot=N] [--boot=MODE] [--sites=N] [--min-n=N]
@@ -17,60 +16,27 @@
 #               the DEFAULT -- matches hierfstat), `individuals` (individuals
 #               within each population, matches diveRsity), or `both` (both
 #               at once, the Owen & Eckles 2012 crossed-factor scheme).
-#               `individuals`/`both` are COMPARISON modes only: an empirical
-#               coverage simulation found they badly undercover the true
-#               value for every statistic with a finite-sample correction
-#               (He, Fis, Ar, privAr), getting WORSE as locus count grows --
-#               see README.md, "Bootstrap mode" for the numbers.
-#               Applies uniformly to every CI in both output tables. Every
-#               metric also gets a `_se` column -- a delete-one-block
-#               jackknife over RAD loci (Weir 1996), independent of --boot
-#               mode and available even at --nboot=0.  [-> "Standard errors"]
+#               `individuals`/`both` are COMPARISON modes only -- see
+#               README.md, "Bootstrap mode".
 #     --sites=N total sequenced sites -- the `Sites` column of the "All
 #               positions (variant and fixed)" block of
 #               populations.sumstats_summary.tsv. Adds per-sequenced-site Ho
 #               and He. Omit for per-record values only.
 #     --min-n=N DEFAULT (available-data) mode only: minimum typed individuals
 #               a population needs at a locus to use that locus for that
-#               population. Default 2, the mathematical floor below which
-#               Hs/FIS are undefined. Decided PER POPULATION, independently,
-#               locus by locus -- one population's missing individuals do not
-#               cost any other population that locus.
+#               population. Default 2.
 #     --complete-case   use the OLD, stricter rule instead: a record is used
 #               only if EVERY individual of EVERY population is genotyped
-#               there (Schmidt et al. 2021 recommendation (b)). `min_n` is
-#               ignored in this mode.
+#               there (Schmidt et al. 2021 recommendation (b)).
 #
 #  Run it TWICE. populations.snps.vcf gives Ho, He, pct_poly and the
 #  per-sequenced-site values; populations.haps.vcf gives FIS, Ar and privAr.
-#  Each run prints which of its numbers to take.
 #
-#  WHY THE NUMBERS DIFFER FROM STACKS -- one line each. The full explanation,
-#  and the formulas with every Stacks column matched to its counterpart here,
-#  are in README.md. This header deliberately does not restate them.
-#
-#    He     Nei & Chesser (1983), not Stacks' `Pi`, whose correction assumes
-#           FIS = 0. Both printed side by side.            [-> "Formulas"]
-#    FIS    ratio of sums, not Stacks' mean of per-locus ratios, and not
-#           divided by Pi.                                 [-> "Formulas"]
-#    CIs    bootstrap over RAD LOCI (--boot=loci, the default), not SNP rows:
-#           resampling linked SNPs as independent gave intervals ~1.8x too
-#           narrow. `--boot=individuals`/`--boot=both` exist for comparison
-#           only -- they badly undercover He/Fis/Ar/privAr (see
-#           README.md, "Bootstrap mode"). Do NOT use any of these
-#           to compare populations -- that is het_between_pops.R. [-> "Step 3"]
-#    sites  DEFAULT: a locus is used by a population once that population has
-#           >= min_n typed individuals there (available-data, per population,
-#           per locus). Pass --complete-case for the old rule: kept only where
-#           EVERY individual of EVERY population is genotyped (Schmidt et al.
-#           2021). Watch the retention lines either way.
-#
-#  Engine: hierfstat when installed, internal fallback otherwise; the run says
-#  which. Validation provenance is in README.md, Step 0.
+#  This script is a thin wrapper: all the logic lives in the RADdiversity
+#  package's diversity_stats() function (R/diversity_stats.R), which can also
+#  be called directly from an R/RStudio session after library(RADdiversity).
 #
 ###############################################################################
-
-args_raw <- commandArgs(trailingOnly = TRUE)
 
 print_usage <- function() {
   cat("Usage: Rscript diversity_stats.R <vcf> <popmap.tsv> --g=N [--nboot=N] [--boot=MODE] [--sites=N] [--min-n=N]\n")
@@ -88,9 +54,33 @@ print_usage <- function() {
   cat("             population genotyped at a record before using it at all.\n")
 }
 
-## Split argv into flags (--name=value or bare --complete-case) and
+## ---------------------------------------------------------------------------
+## Load the package: installed copy if available, else source R/*.R straight
+## from this script's own directory (so `bash test/run_tests.sh` and any
+## other dev workflow keep working on a fresh clone with nothing installed).
+## ---------------------------------------------------------------------------
+.self <- sub("^--file=", "", grep("^--file=", commandArgs(FALSE), value = TRUE)[1])
+.d <- if (is.na(.self)) NA_character_ else dirname(.self)
+if (!requireNamespace("RADdiversity", quietly = TRUE)) {
+  if (is.na(.d) || !file.exists(file.path(.d, "R"))) {
+    stop("RADdiversity is not installed, and this script's own directory ",
+         "could not be resolved to fall back to its R/ sources (invoke via ",
+         "`Rscript /path/to/diversity_stats.R ...`, or run ",
+         "`R CMD INSTALL .` / `devtools::install()` from the package root ",
+         "first).")
+  }
+  for (f in list.files(file.path(.d, "R"), pattern = "\\.R$", full.names = TRUE))
+    source(f)
+} else {
+  library(RADdiversity)
+}
+
+## ---------------------------------------------------------------------------
+## Parse argv into flags (--name=value or bare --complete-case) and
 ## positional args, rather than relying on fixed argument positions -- so
 ## `g` can be set without also having to supply `sites` as a placeholder.
+## ---------------------------------------------------------------------------
+args_raw <- commandArgs(trailingOnly = TRUE)
 flag_names <- c("nboot", "sites", "g", "min-n", "boot")
 flags <- list()
 positional <- character(0)
@@ -120,9 +110,8 @@ complete_case <- "--complete-case" %in% args_raw
 
 if (length(positional) != 2) {
   print_usage()
-  q(status = 1)
+  quit(status = 1, save = "no")
 }
-vcf_file <- positional[1]; popmap_f <- positional[2]
 ## Parse and validate every flag before touching the filesystem: fail fast on
 ## a missing/bad flag rather than reading (potentially large) files first
 ## only to error out anyway.
@@ -130,754 +119,25 @@ if (is.null(flags$g)) {
   print_usage()
   stop("Missing required --g=N (rarefaction size in gene copies). See usage above.")
 }
-g_arg <- as.integer(flags$g)
-nboot <- if (!is.null(flags$nboot)) as.integer(flags$nboot) else 10000L
-n_sites_seq <- if (!is.null(flags$sites)) suppressWarnings(as.numeric(flags$sites)) else 0
-min_n <- if (!is.null(flags[["min-n"]])) as.integer(flags[["min-n"]]) else 2L
-boot_explicit <- !is.null(flags$boot)
-## DEFAULT IS "loci", not "both" -- an empirical coverage simulation (single-
-## population, known-truth He/Fis/Ar, --nboot=500, 150-300 simulated datasets;
-## see README.md, "Bootstrap mode") found individual-resampling
-## ("individuals" and "both") gives SEVERE undercoverage for every statistic
-## that carries a finite-sample correction factor (He/Fis via Nei-Chesser's
-## n/(n-1); Ar/privAr via the hypergeometric rarefaction formula's dependence
-## on total gene copies) -- coverage of the TRUE value as low as 0%, and it
-## gets WORSE, not better, as the number of loci grows, because the bias is
-## fixed while the bootstrap spread shrinks. Only Ho (no correction factor)
-## was unaffected. `individuals`/`both` remain available as explicit
-## comparison modes (e.g. against diveRsity/hierfstat conventions) but are
-## not valid as a default CI and must not be treated as publication-ready.
-boot_mode <- if (boot_explicit) flags$boot else "loci"
-if (is.na(g_arg)) stop("--g must be an integer (gene copies).")
-if (is.na(nboot) || nboot < 0) stop("--nboot must be a non-negative integer.")
-if (is.na(n_sites_seq) || n_sites_seq < 0)
-  stop("--sites must be a non-negative count of sequenced nucleotides.")
-if (is.na(min_n) || min_n < 2)
-  stop("--min-n must be an integer >= 2 (Hs/FIS are undefined below n = 2).")
-if (!(boot_mode %in% c("loci", "individuals", "both"))) {
-  print_usage()
-  stop("--boot must be one of: loci, individuals, both (got: ", boot_mode, ")")
-}
-if (!file.exists(vcf_file))
-  stop("VCF file not found: ", vcf_file, "\n  Check the path and try again.")
-if (!file.exists(popmap_f))
-  stop("Popmap file not found: ", popmap_f, "\n  Check the path and try again.")
-set.seed(2024)
-## Printed tables must not line-wrap: this output is meant to be greppable and
-## diffable (check_labels.R, run_tests.sh, a human comparing two runs), and
-## the default 80-column width wraps the richness table now that it carries
-## Ar_n/privAr_n. Non-interactive output should not depend on terminal width.
-options(width = 200)
 
-.self <- sub("^--file=", "", grep("^--file=", commandArgs(FALSE), value = TRUE)[1])
-.d <- if (is.na(.self)) NA_character_ else dirname(.self)
-for (f in c("haps_common.R", "diversity_core.R")) {
-  p <- if (is.na(.d)) f else file.path(.d, f)
-  if (is.na(.d) || !file.exists(p)) {
-    ## Could not resolve this script's own directory (e.g. invoked via
-    ## `R -e 'source(...)'` rather than `Rscript path/to/diversity_stats.R`).
-    ## Falling back to the working directory could silently source an
-    ## unrelated same-named file sitting there instead of this project's --
-    ## warn so that possibility is visible rather than silent.
-    warning("Could not resolve this script's own directory; looking for ", f,
-            " in the current working directory (", getwd(), ") instead. ",
-            "Run via `Rscript /path/to/diversity_stats.R ...` to avoid this.")
-    p <- f
+## ---------------------------------------------------------------------------
+## Call the package function; any error becomes a printed message and a
+## non-zero exit status, since diversity_stats() itself must never call
+## quit()/q() (that would kill an interactive RStudio session too).
+## ---------------------------------------------------------------------------
+res <- tryCatch(
+  diversity_stats(
+    vcf_file      = positional[1],
+    popmap_f      = positional[2],
+    g             = flags$g,
+    nboot         = if (!is.null(flags$nboot)) flags$nboot else 10000L,
+    boot          = if (!is.null(flags$boot)) flags$boot else "loci",
+    sites         = if (!is.null(flags$sites)) flags$sites else 0,
+    min_n         = if (!is.null(flags[["min-n"]])) flags[["min-n"]] else 2L,
+    complete_case = complete_case
+  ),
+  error = function(e) {
+    message("Error: ", conditionMessage(e))
+    quit(status = 1, save = "no")
   }
-  if (!file.exists(p)) stop(f, " must sit alongside this script.")
-  source(p)
-}
-
-have_hf <- requireNamespace("hierfstat", quietly = TRUE)
-
-message("Reading ", vcf_file, " ...")
-H <- read_haps_vcf(vcf_file)
-pops <- read_popmap(popmap_f, H$samples)
-r <- length(pops)
-if (r < 2) stop("Need at least 2 populations.")
-nmax <- lengths(pops)
-## A population of one individual has no defined Hs, and every statistic
-## downstream then silently reads as 0 rather than as missing, because
-## colSums(na.rm = TRUE) drops the NA from the numerator while the record is
-## still counted in the denominator. Refuse rather than print zeros.
-tiny <- names(pops)[nmax < 2]
-if (length(tiny))
-  stop("Population(s) with fewer than 2 individuals: ", paste(tiny, collapse = ", "),
-       "\n  Expected heterozygosity is undefined at n = 1, and rarefaction to ",
-       "2 gene\n  copies is meaningless. Drop these populations or merge them.")
-
-## Check --g against the population sizes now, right after they're known,
-## rather than after the (potentially slow) per-locus work below -- a bad
-## --g value should fail in seconds, not minutes.
-g <- g_arg
-if (g > 2L * min(nmax))
-  stop("g = ", g, " gene copies exceeds the smallest population's ",
-       2L * min(nmax), ". g is in GENE COPIES: 10 diploids = 20.")
-if (g < 2) stop("g must be at least 2 gene copies.")
-
-## Is this a haplotype VCF? Two independent signals: Stacks writes multi-
-## nucleotide alleles ("AC", "CA") for haplotype records and single bases for
-## SNP records, and haplotype records are frequently multi-allelic. Either one
-## is decisive. This matters because the autosomal conversion below is only
-## nucleotide diversity when one record is one SITE.
-is_hapvcf <- max(H$n_alleles) > 2L ||
-             any(nchar(unlist(H$alleles, use.names = FALSE)) > 1L)
-message(sprintf("  record type: %s",
-                if (is_hapvcf) "HAPLOTYPE (one multi-allelic locus per RAD tag)"
-                else "SNP (one site per record)"))
-
-## RAD locus of each record: several SNPs share one in a SNP VCF, one per
-## record in a haplotype VCF. This is the bootstrap resampling unit.
-rad <- H$locus_raw
-n_rec <- nrow(H$A1)
-message(sprintf("  %s records on %s RAD loci (%.2f per locus)",
-                format(n_rec, big.mark = ","),
-                format(length(unique(rad)), big.mark = ","),
-                n_rec / length(unique(rad))))
-
-## ---------------------------------------------------------------------------
-## Locus inclusion.
-##
-## `n_typed[j, p]` = individuals of population p genotyped at record j. Kept
-## for every record (not just the ones ultimately used) because it drives the
-## per-cell threshold below, the reporting, and (for --complete-case) the old
-## joint filter.
-## ---------------------------------------------------------------------------
-n_typed <- matrix(NA_integer_, n_rec, r, dimnames = list(NULL, names(pops)))
-for (p in names(pops))
-  n_typed[, p] <- rowSums(!is.na(H$A1[, pops[[p]], drop = FALSE]))
-
-if (complete_case) {
-  ## OLD rule: a record is used only if EVERY individual of EVERY population
-  ## is genotyped there (Schmidt et al. 2021 recommendation (b)) -- a JOINT
-  ## condition across all populations on the SAME record, so one population's
-  ## missing individual costs every other population that record too.
-  keep <- rep(TRUE, n_rec)
-  for (p in names(pops)) keep <- keep & (n_typed[, p] == nmax[[p]])
-  message(sprintf("Complete-data locus set (--complete-case): %s of %s records (%.1f%%)",
-                  format(sum(keep), big.mark = ","), format(n_rec, big.mark = ","),
-                  100 * mean(keep)))
-  if (sum(keep) < 0.05 * n_rec)
-    message("  WARNING: under 5% survive. Report a looser threshold alongside this.")
-  if (!sum(keep)) stop("No record is genotyped in every individual. With many ",
-                       "populations this is common; drop --complete-case or drop the worst individuals.")
-} else {
-  ## DEFAULT rule: available data, decided PER POPULATION, independently,
-  ## locus by locus. A record is worth keeping at all once >= 1 population
-  ## clears min_n there; which population's cells actually get used is
-  ## decided later, per (locus, population) cell (see the Ho/Hs loop below).
-  keep <- rowSums(n_typed >= min_n) > 0
-  cells_used  <- sum(n_typed >= min_n)
-  cells_total <- n_rec * r
-  message(sprintf("Available-data mode (min_n = %d): %s of %s records usable by >= 1 population",
-                  min_n, format(sum(keep), big.mark = ","), format(n_rec, big.mark = ",")))
-  message(sprintf("  %s of %s locus-by-population cells meet min_n (%.1f%%)",
-                  format(cells_used, big.mark = ","), format(cells_total, big.mark = ","),
-                  100 * cells_used / cells_total))
-  for (p in names(pops)) {
-    ok_p <- n_typed[, p] >= min_n
-    message(sprintf("    %-22s %s of %s loci usable (typed-n there: mean %.1f, min %d, max %d)",
-                    p, format(sum(ok_p), big.mark = ","), format(n_rec, big.mark = ","),
-                    mean(n_typed[ok_p, p]), min(n_typed[ok_p, p]), max(n_typed[ok_p, p])))
-  }
-  if (!sum(keep)) stop("No record has >= min_n typed individuals in any population. ",
-                       "Lower min_n (currently ", min_n, ") or check that genotypes were parsed.")
-}
-idx <- which(keep); L <- length(idx)
-rad_k <- rad[idx]; uloc <- unique(rad_k); li <- match(rad_k, uloc); nL <- length(uloc)
-
-## ---------------------------------------------------------------------------
-## hierfstat-format data frame: population, then one column per locus,
-## genotypes as 3-digits-per-allele integers.
-## ---------------------------------------------------------------------------
-ids <- unlist(pops, use.names = FALSE)
-popvec <- rep(seq_len(r), lengths(pops))
-Gm <- matrix(NA_integer_, length(ids), L)
-for (j in seq_len(L)) {
-  a <- H$A1[idx[j], ids]; b <- H$A2[idx[j], ids]
-  Gm[, j] <- pmin(a, b) * 1000L + pmax(a, b)
-}
-dat <- data.frame(pop = popvec, Gm)
-names(dat)[-1] <- paste0("L", seq_len(L))
-
-## ---------------------------------------------------------------------------
-## Per-locus Ho and Hs
-## ---------------------------------------------------------------------------
-if (have_hf) {
-  message("Engine: hierfstat::basic.stats()")
-  bs <- hierfstat::basic.stats(dat, diploid = TRUE, digits = 12)
-  Ho <- as.matrix(bs$Ho); Hs <- as.matrix(bs$Hs)
-  colnames(Ho) <- colnames(Hs) <- names(pops)
-} else {
-  message("Engine: internal (hierfstat not installed).")
-  message("  Validated against hierfstat's source: Hs to 5.0e-13, FIS to 3.2e-13.")
-  Ho <- Hs <- matrix(NA_real_, L, r, dimnames = list(NULL, names(pops)))
-  for (j in seq_len(L)) for (i in seq_len(r)) {
-    a <- H$A1[idx[j], pops[[i]]]; b <- H$A2[idx[j], pops[[i]]]
-    ok <- !is.na(a); n <- sum(ok)
-    if (n < 2) next
-    ho <- mean(a[ok] != b[ok])
-    cnt <- tabulate(c(a[ok], b[ok]), nbins = H$n_alleles[idx[j]])
-    Ho[j, i] <- ho; Hs[j, i] <- hs_from_counts(cnt, ho, n)
-  }
-}
-## Enforce `min_n` uniformly regardless of engine, but ONLY in available-data
-## mode: min_n is documented as ignored under --complete-case, and every used
-## cell there already has n_typed == that population's own size by
-## construction (the joint filter above), so this would be a no-op anyway
-## unless a user passed a min_n exceeding a population's size together with
-## --complete-case -- skip it outright rather than depend on that coincidence.
-## hierfstat::basic.stats() computes Ho/Hs from whatever individuals are
-## non-missing at each cell (down to n = 1, where Hs is undefined and it
-## already reports NaN/NA) -- it has no way to know the user's chosen floor,
-## so apply it here rather than trusting each engine to enforce the same
-## threshold independently.
-if (!complete_case) {
-  nt_idx <- n_typed[idx, , drop = FALSE]
-  lown <- nt_idx < min_n
-  Ho[lown] <- NA_real_; Hs[lown] <- NA_real_
-}
-n_all <- matrix(NA_integer_, L, r, dimnames = list(NULL, names(pops)))
-## Hp: the SAME per-locus quantity computed with the estimator behind Stacks'
-## `Pi` column, so the two can be reported side by side and the reader can see
-## exactly where they diverge. Not used for anything downstream.
-Hp <- matrix(NA_real_, L, r, dimnames = list(NULL, names(pops)))
-cmats <- vector("list", L)
-for (j in seq_len(L)) {
-  m <- matrix(0L, r, H$n_alleles[idx[j]], dimnames = list(names(pops), NULL))
-  for (i in seq_len(r)) {
-    a <- H$A1[idx[j], pops[[i]]]; b <- H$A2[idx[j], pops[[i]]]
-    v <- c(a, b); v <- v[!is.na(v)]
-    m[i, ] <- tabulate(v, nbins = H$n_alleles[idx[j]])
-    Hp[j, i] <- gene_div_2n_counts(m[i, ])
-  }
-  cmats[[j]] <- m; n_all[j, ] <- rowSums(m > 0)
-}
-
-## ---------------------------------------------------------------------------
-## Rarefied allelic and private allelic richness, over GENE COPIES
-## (g checked and set right after nmax was computed, above)
-## ---------------------------------------------------------------------------
-message(sprintf("Rarefying to g = %d gene copies (smallest population has %d)",
-                g, 2L * min(nmax)))
-Ar <- Pr <- matrix(NA_real_, L, r, dimnames = list(NULL, names(pops)))
-for (j in seq_len(L)) {
-  for (i in seq_len(r)) Ar[j, i] <- rare_richness(cmats[[j]][i, ], g)
-  Pr[j, ] <- rare_private_all(cmats[[j]], g)
-}
-## Enforce `min_n` on Ar/Pr too, mirroring the Ho/Hs mask above (same
-## available-data-mode-only scope, same reasoning). Without this, --min-n
-## changes Ho/He/Fis but silently has no effect on allelic richness: `cmats`
-## above is built from every typed individual regardless of min_n, so a
-## locus/population cell with, say, only 1 typed individual would otherwise
-## still contribute an Ar/privAr value even after raising --min-n past that.
-## `lown` (built above from the same `n_typed[idx, ]` matrix) has matching
-## dimensions, so it applies directly.
-if (!complete_case) {
-  Ar[lown] <- NA_real_; Pr[lown] <- NA_real_
-}
-if (have_hf) {
-  hfar <- try(hierfstat::allelic.richness(dat, min.n = g)$Ar, silent = TRUE)
-  ## hierfstat pads a "dummy.loc" row onto its result when given exactly one
-  ## locus, so hfar and Ar disagree in shape and cannot be diffed. That only
-  ## happens when very few records survived the locus filter -- a dataset too
-  ## thin to trust anyway -- so warn instead of crashing.
-  if (inherits(hfar, "try-error") ||
-      !identical(dim(as.matrix(hfar)), dim(Ar))) {
-    warning("Skipped the hierfstat::allelic.richness() cross-check: its ",
-            "result has a different shape than this run's (", L,
-            " locus/loci). This usually means too few loci survived the ",
-            "locus filter to trust these numbers.")
-  } else {
-    d <- max(abs(as.matrix(hfar) - Ar), na.rm = TRUE)
-    message(sprintf("  cross-check vs hierfstat::allelic.richness(): max diff %.2e", d))
-    if (d > 1e-8) warning("Allelic richness disagrees with hierfstat.")
-  }
-}
-
-## ---------------------------------------------------------------------------
-## Point estimates and a BLOCK bootstrap over RAD loci
-## ---------------------------------------------------------------------------
-poly <- n_all > 1
-## Numerator and denominator must count the SAME records. Summing with
-## na.rm = TRUE while dividing by length(sel) silently turns an undefined
-## locus into a zero, which then looks like a measurement.
-usable <- is.finite(Ho) & is.finite(Hs)
-n_drop <- sum(!usable)
-if (n_drop)
-  message(sprintf("  %s locus-by-population cells have no defined Ho/Hs and are ",
-                  format(n_drop, big.mark = ",")),
-          "excluded from that population's means (not counted as zero).")
-stat_from <- function(sel) {
-  Hos <- Ho[sel, , drop = FALSE]; Hss <- Hs[sel, , drop = FALSE]
-  Hps <- Hp[sel, , drop = FALSE]
-  us  <- usable[sel, , drop = FALSE]
-  nsp <- colSums(us)                       # per-population record count
-  ho <- colSums(ifelse(us, Hos, 0)); hs <- colSums(ifelse(us, Hss, 0))
-  nsp[nsp == 0] <- NA
-  ## Stacks-Pi comparison, on its own matched mask so numerator and denominator
-  ## always count the same records even if the two estimators differ in which
-  ## cells they can define.
-  usp  <- us & is.finite(Hps)
-  nspp <- colSums(usp); nspp[nspp == 0] <- NA
-  hop <- colSums(ifelse(usp, Hos, 0)); hpp <- colSums(ifelse(usp, Hps, 0))
-  ## priv_total: the dataset-wide sum of privAr over whichever loci in `sel`
-  ## have a defined value for that population (repeats in `sel`, from a
-  ## resampled multiset, contribute their value that many times -- this is a
-  ## literal sum, not the mean*count rescaling the point estimate used to use,
-  ## though the two agree exactly whenever every locus in `sel` is counted
-  ## once). A population with NO defined locus gets NA here, not the 0/0 NaN
-  ## the old rescaling silently produced -- distinct from a population that
-  ## HAS defined loci and simply carries zero private alleles at all of them.
-  prm <- Pr[sel, , drop = FALSE]
-  pr_def <- colSums(!is.na(prm))
-  PrTot_ <- colSums(ifelse(is.na(prm), 0, prm))
-  PrTot_[pr_def == 0] <- NA_real_
-  ## Ar_/Pr_ (below): colMeans(..., na.rm = TRUE) on an all-NA column is 0/0,
-  ## which R evaluates to NaN, not NA -- a population with Ar/privAr undefined
-  ## at EVERY locus in `sel` (Bug A's "Ar undefined for every population"
-  ## case) would otherwise print the literal text "NaN" instead of "NA", and
-  ## propagate NaN into any downstream jackknife/bootstrap arithmetic built
-  ## on this point estimate. Force it explicitly, the same guard already
-  ## applied to PrTot_ above.
-  arm <- Ar[sel, , drop = FALSE]
-  ar_def <- colSums(!is.na(arm))
-  Ar_ <- colMeans(arm, na.rm = TRUE); Ar_[ar_def == 0] <- NA_real_
-  Pr_ <- colMeans(prm, na.rm = TRUE); Pr_[pr_def == 0] <- NA_real_
-  c(setNames(ho / nsp, paste0("Ho_", names(pops))),
-    setNames(hs / nsp, paste0("He_", names(pops))),
-    setNames(ifelse(hs > 0, 1 - ho / hs, NA_real_), paste0("Fis_", names(pops))),
-    setNames(hpp / nspp, paste0("He2n_", names(pops))),
-    setNames(ifelse(hpp > 0, 1 - hop / hpp, NA_real_), paste0("Fis2n_", names(pops))),
-    setNames(Ar_, paste0("Ar_", names(pops))),
-    setNames(Pr_, paste0("Pr_", names(pops))),
-    setNames(100 * colSums(ifelse(us, poly[sel, , drop = FALSE], 0)) / nsp,
-             paste0("poly_", names(pops))),
-    setNames(PrTot_, paste0("PrTot_", names(pops))))
-}
-
-## min_n is documented as ignored under --complete-case (every used cell
-## already has every individual typed there by construction); the floor of
-## 2 is the mathematical minimum below which Hs/FIS are undefined regardless.
-min_n_eff <- if (complete_case) 2L else min_n
-
-## The `--boot=individuals`/`--boot=both` engine: recomputes every statistic
-## from a fresh per-population individual reweighting, for a given locus
-## multiset `sel` (either every locus once, or a resampled multiset with
-## repeats, exactly like `stat_from()`'s `sel`). Reuses `hs_from_counts()`,
-## `gene_div_2n_counts()`, `rare_richness()`, `rare_private_all()` from
-## diversity_core.R unmodified -- only how the input counts are built differs.
-##
-## Mechanism (Owen & Eckles 2012 product-weight bootstrap, r=2 crossed
-## factors: locus x individual -- see README.md, "Bootstrap mode"):
-## draw ONE fresh individual weight vector per population (step 1), reuse it
-## for every locus in `sel` including repeats (step 2), which is equivalent
-## to duplicating each resampled individual's row that many times and
-## recomputing directly (Rubin 1981 exchangeable weighting) -- cheaper here
-## because a weight vector is drawn once per replicate, not once per locus.
-##
-## hierfstat's own functions cannot accept a weighted/resampled individual
-## set, so this always uses this package's internal formulas (validated
-## against hierfstat's source to 5.0e-13/3.2e-13), even when hierfstat is
-## installed and used for the point estimate and for --boot=loci.
-##
-## COVERAGE CAVEAT (why this is not the default): a duplicated individual
-## (weight > 1) makes the resample's He/Fis/Ar/privAr come out biased low,
-## because those statistics carry a finite-sample correction (Nei-Chesser's
-## n/(n-1) for He/Fis; the hypergeometric rarefaction formula's dependence
-## on total gene copies for Ar/privAr) that assumes n DISTINCT draws -- a
-## with-replacement resample violates that. An empirical coverage simulation
-## (known-truth He/Fis/Ar, n=10-15, nboot=500, 150-300 simulated datasets)
-## found this drives coverage of the TRUE value as low as 0%, and it WORSENS
-## as locus count grows (the bias is fixed; the bootstrap spread shrinks).
-## Ho (no correction factor) was unaffected (88-92% coverage). See
-## README.md, "Bootstrap mode" for the full numbers. --boot=loci is
-## therefore the default for every statistic; this function only runs under
-## an explicit --boot=individuals/both comparison request.
-stat_from_resampled <- function(sel) {
-  w <- lapply(seq_len(r), function(i)
-    tabulate(sample.int(nmax[i], nmax[i], replace = TRUE), nbins = nmax[i]))
-
-  ## Compute once per DISTINCT locus row in `sel`, then weight by how many
-  ## times that row appears in `sel` when aggregating below -- mathematically
-  ## identical to summing over `sel` with repeats (each repeat sees the same
-  ## locus data and the same replicate's weight vectors), cheaper to compute.
-  urow <- unique(sel)
-  mult <- tabulate(match(sel, urow), nbins = length(urow))
-  nU <- length(urow)
-
-  Ho_w <- Hs_w <- Hp_w <- Ar_w <- Pr_w <- matrix(NA_real_, nU, r,
-                                                  dimnames = list(NULL, names(pops)))
-  poly_w <- matrix(FALSE, nU, r, dimnames = list(NULL, names(pops)))
-
-  for (k in seq_len(nU)) {
-    j <- urow[k]
-    na <- H$n_alleles[idx[j]]
-    wm <- matrix(0, r, na, dimnames = list(names(pops), NULL))
-    for (i in seq_len(r)) {
-      a <- H$A1[idx[j], pops[[i]]]; b <- H$A2[idx[j], pops[[i]]]
-      ok <- !is.na(a)
-      wi <- w[[i]]
-      typed_w <- sum(wi[ok])
-      if (typed_w < min_n_eff) next
-      het <- a[ok] != b[ok]
-      ho_w <- sum(wi[ok][het]) / typed_w
-      cnt <- tabulate(rep.int(a[ok], wi[ok]), nbins = na) +
-             tabulate(rep.int(b[ok], wi[ok]), nbins = na)
-      wm[i, ] <- cnt
-      Ho_w[k, i] <- ho_w
-      Hs_w[k, i] <- hs_from_counts(cnt, ho_w, typed_w)
-      Hp_w[k, i] <- gene_div_2n_counts(cnt)
-      poly_w[k, i] <- sum(cnt > 0) > 1
-    }
-    for (i in seq_len(r)) Ar_w[k, i] <- rare_richness(wm[i, ], g)
-    Pr_w[k, ] <- rare_private_all(wm, g)
-  }
-
-  usable_w <- is.finite(Ho_w) & is.finite(Hs_w)
-  nsp <- colSums(usable_w * mult); nsp[nsp == 0] <- NA
-  ho <- colSums(ifelse(usable_w, Ho_w, 0) * mult)
-  hs <- colSums(ifelse(usable_w, Hs_w, 0) * mult)
-  usp  <- usable_w & is.finite(Hp_w)
-  nspp <- colSums(usp * mult); nspp[nspp == 0] <- NA
-  hop <- colSums(ifelse(usp, Ho_w, 0) * mult)
-  hpp <- colSums(ifelse(usp, Hp_w, 0) * mult)
-
-  ar_ok <- is.finite(Ar_w)
-  ar_cnt <- colSums(ar_ok * mult); ar_cnt[ar_cnt == 0] <- NA
-  Ar_ <- colSums(ifelse(ar_ok, Ar_w, 0) * mult) / ar_cnt
-
-  pr_ok <- is.finite(Pr_w)
-  pr_cnt <- colSums(pr_ok * mult)
-  PrSum_ <- colSums(ifelse(pr_ok, Pr_w, 0) * mult)
-  pr_cnt_na <- pr_cnt; pr_cnt_na[pr_cnt_na == 0] <- NA
-  Pr_ <- PrSum_ / pr_cnt_na
-  PrTot_ <- PrSum_; PrTot_[pr_cnt == 0] <- NA_real_
-
-  c(setNames(ho / nsp, paste0("Ho_", names(pops))),
-    setNames(hs / nsp, paste0("He_", names(pops))),
-    setNames(ifelse(hs > 0, 1 - ho / hs, NA_real_), paste0("Fis_", names(pops))),
-    setNames(hpp / nspp, paste0("He2n_", names(pops))),
-    setNames(ifelse(hpp > 0, 1 - hop / hpp, NA_real_), paste0("Fis2n_", names(pops))),
-    setNames(Ar_, paste0("Ar_", names(pops))),
-    setNames(Pr_, paste0("Pr_", names(pops))),
-    setNames(100 * colSums(ifelse(usable_w, poly_w, 0) * mult) / nsp,
-             paste0("poly_", names(pops))),
-    setNames(PrTot_, paste0("PrTot_", names(pops))))
-}
-
-if (!any(poly, na.rm = TRUE))
-  stop("No locus is polymorphic in any population, so He, FIS and allelic\n",
-       "  richness are all degenerate. Check that genotypes were parsed: the\n",
-       "  missing-genotype rate reported above should not be near 100%.")
-point <- stat_from(seq_len(L))
-
-## ---------------------------------------------------------------------------
-## Delete-one-BLOCK jackknife over RAD loci -- a standard error alongside the
-## bootstrap CI, computed the way population-genetics software has long done
-## it (Weir 1996, "Genetic Data Analysis II"; the same method behind
-## GENEPOP/FSTAT's Fst/Fis standard errors), on the SAME loci axis this
-## project's own coverage simulation validated. Always uses stat_from() (the
-## unweighted, --boot=loci mechanism) regardless of which --boot mode is
-## active: jackknife-over-loci is a cross-check for that one validated axis,
-## not a per-mode option.
-##
-## Unlike a with-replacement bootstrap, a jackknife replicate never
-## duplicates anything -- it just drops one whole RAD-locus block -- so it
-## does NOT have the compositional-duplication bias that made individual-
-## resampling undercover He/Fis/Ar (see "Bootstrap mode" in
-## README.md). It needs no random numbers and no --nboot: with nL
-## RAD loci there are exactly nL delete-one replicates, deterministic and
-## reproducible run to run.
-##
-##   theta_bar         = mean over the nL delete-one estimates
-##   SE_jackknife       = sqrt( (nL-1)/nL * sum_b (theta_(-b) - theta_bar)^2 )
-jack_se <- function() {
-  jk <- vapply(seq_len(nL), function(b) stat_from(which(li != b)),
-               numeric(length(point)))
-  theta_bar <- rowMeans(jk)
-  se <- sqrt(((nL - 1) / nL) * rowSums((jk - theta_bar)^2))
-  names(se) <- names(point)
-  se
-}
-se_jk <- jack_se()
-
-## Ar/Pr coverage: how many loci actually contributed a defined value per
-## population. rare_richness() is single-population (a locus counts for
-## population i once i itself has >= g gene copies there), but
-## rare_private_all() is a JOINT statistic across ALL populations at once --
-## "private" only means something when every population's presence/absence
-## at that locus is defined at the SAME rarefaction depth g, so one
-## population short of g gene copies at a locus makes privAr undefined for
-## every population there, not just the short one. Under --complete-case this
-## was unreachable (every used locus had exactly nmax gene copies everywhere,
-## and g <= 2*min(nmax) by the check below); under available-data, per-locus
-## coverage varies, so report it rather than let it silently shrink privAr's
-## effective locus set.
-ar_n <- colSums(!is.na(Ar[seq_len(L), , drop = FALSE]))
-pr_n <- colSums(!is.na(Pr[seq_len(L), , drop = FALSE]))
-if (nboot > 0) {
-  boot_desc <- switch(boot_mode,
-    loci        = sprintf("%s RAD loci", format(nL, big.mark = ",")),
-    individuals = "individuals within each population",
-    both        = sprintf("%s RAD loci AND individuals within each population",
-                          format(nL, big.mark = ",")))
-  message(sprintf("Bootstrapping %s replicates over %s (--boot=%s) ...",
-                  format(nboot, big.mark = ","), boot_desc, boot_mode))
-  rows_of <- split(seq_len(L), li)
-  resample_loci <- function() unlist(rows_of[sample.int(nL, nL, replace = TRUE)], use.names = FALSE)
-  bt <- switch(boot_mode,
-    loci        = replicate(nboot, stat_from(resample_loci())),
-    individuals = replicate(nboot, stat_from_resampled(seq_len(L))),
-    both        = replicate(nboot, stat_from_resampled(resample_loci())))
-  ci <- t(apply(bt, 1, quantile, c(0.025, 0.975), na.rm = TRUE))
-} else {
-  bt <- NULL
-  ci <- matrix(NA_real_, length(point), 2, dimnames = list(names(point), NULL))
-}
-
-## ---------------------------------------------------------------------------
-## Report
-## ---------------------------------------------------------------------------
-cat("\n=====================================================================\n")
-cat("  DIVERSITY --", r, "populations,", format(L, big.mark = ","), "records on",
-    format(nL, big.mark = ","), "RAD loci\n")
-cat("  He = Nei & Chesser (1983) Hs, the hierfstat quantity\n")
-cat("  FIS = 1 - sum(Ho)/sum(Hs), a ratio of sums, monomorphic loci included\n")
-cat("  Ar / private Ar rarefied to", g, "GENE COPIES (Kalinowski 2004)\n")
-if (complete_case) {
-  cat(sprintf("  %s of %s variant records have complete data and were used (%.1f%%)\n",
-              format(L, big.mark = ","), format(n_rec, big.mark = ","),
-              100 * L / n_rec))
-  if (L / n_rec < 0.5)
-    cat("  ^ most records were dropped for missing data. --complete-case keeps a\n    record only if genotyped in EVERY individual (Schmidt et al. 2021), so a\n    few poor libraries can cost most of the dataset. Check the per-individual\n    table from het_between_pops.R (individual_heterozygosity.tsv, loci_called\n    column) before accepting this -- or drop --complete-case.\n")
-} else {
-  cat(sprintf("  %s of %s locus-by-population cells meet min_n = %d (%.1f%%)\n",
-              format(cells_used, big.mark = ","), format(cells_total, big.mark = ","),
-              min_n, 100 * cells_used / cells_total))
-  cat("  Each population's Ho/He/Fis is a ratio of sums over whichever loci it\n    cleared min_n at -- see the per-population lines printed above.\n")
-}
-if (nboot > 0) cat("  95% CI from ", format(nboot, big.mark = ","),
-                   " replicates, --boot=", boot_mode,
-                   " (see README.md, \"Bootstrap mode\")\n", sep = "")
-cat("=====================================================================\n\n")
-gv <- function(pfx) point[paste0(pfx, names(pops))]
-lo <- function(pfx) ci[paste0(pfx, names(pops)), 1]
-hi <- function(pfx) ci[paste0(pfx, names(pops)), 2]
-sej <- function(pfx) se_jk[paste0(pfx, names(pops))]
-tab <- data.frame(population = names(pops), n = as.integer(nmax),
-                  Ho = round(gv("Ho_"), 4), Ho_se = round(sej("Ho_"), 4),
-                  Ho_lo = round(lo("Ho_"), 4), Ho_hi = round(hi("Ho_"), 4),
-                  He = round(gv("He_"), 4), He_se = round(sej("He_"), 4),
-                  He_lo = round(lo("He_"), 4), He_hi = round(hi("He_"), 4),
-                  Fis = round(gv("Fis_"), 4), Fis_se = round(sej("Fis_"), 4),
-                  Fis_lo = round(lo("Fis_"), 4), Fis_hi = round(hi("Fis_"), 4),
-                  pct_poly = round(gv("poly_"), 1), row.names = NULL)
-print(tab, row.names = FALSE)
-cat("  _se columns: delete-one-block jackknife over RAD loci (Weir 1996) --\n")
-cat("  always available (no --nboot needed), on the same loci axis as _lo/_hi.\n")
-cat("\n")
-rich <- data.frame(population = names(pops),
-                   Ar = round(gv("Ar_"), 4), Ar_se = round(sej("Ar_"), 4), Ar_n = ar_n,
-                   Ar_lo = round(lo("Ar_"), 4), Ar_hi = round(hi("Ar_"), 4),
-                   privAr = round(gv("Pr_"), 4), privAr_se = round(sej("Pr_"), 4), privAr_n = pr_n,
-                   privAr_lo = round(lo("Pr_"), 4), privAr_hi = round(hi("Pr_"), 4),
-                   ## priv_total: the dataset-wide sum of privAr over whichever
-                   ## loci had a defined value for that population (PrTot_ is a
-                   ## direct sum, computed in lockstep with the CI in every
-                   ## --boot mode -- see the comment above PrTot_ in stat_from()).
-                   ## NA means no locus was defined for that population at all,
-                   ## not "zero private alleles" -- those are different claims.
-                   priv_total = round(gv("PrTot_"), 1), priv_total_se = round(sej("PrTot_"), 1),
-                   priv_total_lo = round(lo("PrTot_"), 1),
-                   priv_total_hi = round(hi("PrTot_"), 1), row.names = NULL)
-print(rich, row.names = FALSE)
-cat("  _se columns: delete-one-block jackknife over RAD loci, same as above.\n")
-cat("  Ar_n / privAr_n: how many of the", format(L, big.mark = ","),
-    "loci had a defined value for that population\n")
-cat("  (Ar needs only THAT population at >= g gene copies; privAr needs EVERY\n")
-cat("  population at >= g simultaneously, so privAr_n <= Ar_n, often far less\n")
-cat("  under available data -- see README.md if privAr_n is small).\n")
-if (min(pr_n) < 0.5 * L)
-  cat(sprintf("  WARNING: privAr_n is below 50%% of loci for at least one population --\n  its rarefied private richness rests on a minority of loci. Consider a\n  smaller g (rarefaction target), currently %d gene copies.\n", g))
-cat("  Ar and privAr are PER LOCUS (the HP-RARE / ADZE convention);\n")
-cat("  priv_total is the dataset-wide sum over privAr_n loci. Private = absent from all", r - 1, "others,\n")
-cat("  so it is not comparable to a dataset with a different number of populations.\n")
-arv <- gv("Ar_")
-if (all(is.na(arv))) {
-  cat(sprintf("  NOTE: Ar is undefined for every population -- no locus has any\n  population at >= g = %d gene copies (see Ar_n above). That is too little\n  data at this rarefaction target, not a biallelic-SNP ceiling; try a smaller g.\n", g))
-} else if (max(arv, na.rm = TRUE) <= 2.001) {
-  cat("  NOTE: Ar is capped at 2 because these are biallelic SNPs, so rarefaction\n  has almost nothing to correct. Run this on the HAPLOTYPE VCF for a\n  richness worth reporting; private allelic richness is still informative.\n")
-}
-
-## Print an indented paragraph. Long explanations live in README.md;
-## the script prints the numbers plus a pointer to the section that explains
-## them, rather than restating the document at the terminal.
-note <- function(...) cat(paste0("  ", c(...), "\n"), sep = "")
-see  <- function(sec) cat(paste0("  -> README.md, \"", sec, "\"\n"))
-
-## ---------------------------------------------------------------------------
-## Side by side with the estimator behind Stacks' `Pi` column
-## ---------------------------------------------------------------------------
-cat("\nTwo estimators of the same parameter (gene diversity per variant record)\n")
-note("He_NeiChesser  (n/(n-1))(1 - sum p^2 - Ho/2n)   unbiased at any FIS",
-     "He_2n_corr     (2n/(2n-1))(1 - sum p^2)         unbiased only if FIS = 0",
-     "               -- this is the estimator behind Stacks' `Pi` column.")
-## He_ can be legitimately 0 (a population monomorphic at every retained
-## locus), which turns the ratio below into 0/0 or x/0 -- print "n/a" rather
-## than the literal "NaN%"/"Inf%" that sprintf would otherwise produce.
-he_ <- gv("He_"); he2n_ <- gv("He2n_")
-pct_diff <- ifelse(is.na(he_) | is.na(he2n_), NA_character_,
-                   ifelse(he_ > 0, sprintf("%+.2f%%", 100 * (he2n_ / he_ - 1)),
-                          "n/a (He=0)"))
-cmp <- data.frame(population = names(pops),
-                  He_NeiChesser = round(gv("He_"), 4),
-                  He_2n_corr    = round(gv("He2n_"), 4),
-                  pct_diff = pct_diff,
-                  Fis_NeiChesser = round(gv("Fis_"), 4),
-                  Fis_2n_corr    = round(gv("Fis2n_"), 4),
-                  row.names = NULL)
-print(cmp, row.names = FALSE)
-note("He barely moves; FIS moves ~(1-F)/F times as much, because FIS divides by",
-     "the small quantity the two estimators disagree about. So Stacks' Pi is safe",
-     "to quote and its Fis is not (and its Fis carries a second, larger error:",
-     "it is a mean of per-locus ratios).",
-     sprintf("Compare against `Pi`, never `Exp_Het`: Pi = Exp_Het * 2n/(2n-1) = %s.",
-             paste(sprintf("x%.3f at n=%d", (2 * nmax) / (2 * nmax - 1), nmax),
-                   collapse = ", ")))
-see("Formulas, and what maps onto what in Stacks")
-
-cat("\nWhat the Ho and He numbers are\n")
-if (n_sites_seq >= n_rec && is_hapvcf) {
-  note("`sites` was supplied but this is a HAPLOTYPE VCF, so the autosomal",
-       "conversion was SKIPPED: He here is per-tag gene diversity, not per-site,",
-       "and dividing by sequenced sites would understate nucleotide diversity.",
-       "Re-run on populations.snps.vcf with the same `sites` for He_autosomal.")
-  see("Which file for which statistic")
-} else if (n_sites_seq >= n_rec) {
-  retain <- L / n_rec
-  aut <- data.frame(population = names(pops),
-    Ho_autosomal = signif(autosomal_het(gv("Ho_"), n_rec, n_sites_seq), 4),
-    He_autosomal = signif(autosomal_het(gv("He_"), n_rec, n_sites_seq), 4),
-    row.names = NULL)
-  note(sprintf("Scaled to %s sequenced sites via all %s variant records (%.3f%% variant);",
-               format(n_sites_seq, big.mark = ",", scientific = FALSE),
-               format(n_rec, big.mark = ","), 100 * n_rec / n_sites_seq),
-       sprintf("He estimated using %s of %s records (%.1f%% of them, %s).",
-               format(L, big.mark = ","), format(n_rec, big.mark = ","), 100 * retain,
-               if (complete_case) "complete-case"
-               else sprintf("available-data, min_n = %d", min_n)))
-  print(aut, row.names = FALSE)
-  note(sprintf("%s is the SAME per-site quantity as He above, averaged over every",
-               names(aut)[3]),
-       "sequenced site instead of over variant records. That denominator is what",
-       "makes it nucleotide diversity (pi). There is no column named `pi`.",
-       "Compare against Stacks' `Pi` from the All-positions block -- not the",
-       "variant-positions block, and not `Exp_Het` (Schmidt et al. 2021).")
-  see("Formulas, and what maps onto what in Stacks")
-  if (complete_case && retain < 0.5)
-    note(sprintf("NOTE: only %.0f%% of variant records have complete data, so this rests on",
-                 100 * retain),
-         "them being representative. If missingness is concentrated in a few poor",
-         "libraries it is not -- drop --complete-case (the new default already uses",
-         "available data per population) or drop those individuals and re-run.")
-} else {
-  if (n_sites_seq > 0)
-    note(sprintf("`sites` = %s was supplied but is LESS than the %s variant records",
-                 format(n_sites_seq, big.mark = ",", scientific = FALSE),
-                 format(n_rec, big.mark = ",")),
-         "this run called, which is not a plausible sequenced-site count -- it was",
-         "IGNORED rather than used. Pass the `Sites` column of the All-positions",
-         "block of populations.sumstats_summary.tsv, which should be orders of",
-         "magnitude larger than the number of variant records.")
-  else
-    note("Per ASCERTAINED record: the denominator is however many markers this run",
-         "called. Valid for comparing these populations to each other and nothing",
-         "else. Pass `sites` (the `Sites` column of the All-positions block of",
-         "populations.sumstats_summary.tsv) to get the autosomal value.")
-  see("Denominators, and where nucleotide diversity fits")
-}
-
-## ---------------------------------------------------------------------------
-## What to take from THIS run
-## ---------------------------------------------------------------------------
-cat("\n---------------------------------------------------------------------\n")
-if (is_hapvcf) {
-  note("TAKE FROM THIS RUN:  Fis, Ar, privAr.",
-       "NOT Ho / He: haplotype gene diversity has no fixed ceiling, so it moves",
-       "with read length, enzyme and filters and is not comparable across",
-       "studies. Run populations.snps.vcf for those. Fis is a ratio, so the",
-       "scale cancels -- which is why it belongs here.")
-} else {
-  note("TAKE FROM THIS RUN:  Ho, He, pct_poly, Ho_autosomal, He_autosomal.",
-       "Run populations.haps.vcf for Fis, Ar and privAr: on biallelic SNPs",
-       "rarefied richness is bounded at 2, and Fis is more precise from",
-       "multi-allelic loci.")
-}
-note("",
-     "Fis is comparable between the two files; Ho and He are NOT (haplotype Ho",
-     "asks 'is this tag heterozygous', per-site Ho asks 'is this site'). Label",
-     "every table row with the file it came from.",
-     "",
-     "He and Ho above are averaged over ALL retained records including those",
-     "monomorphic within a population -- the POOLED denominator, matching",
-     "Stacks' Variant-positions block. Report pct_poly beside them:",
-     "    He(pooled) = He(polymorphic within pop) x pct_poly/100   (exactly)",
-     "Do not switch to the within-population denominator; it conditions on the",
-     "outcome and can reverse a real difference.")
-see("Which file for which statistic")
-cat("---------------------------------------------------------------------\n")
-
-## Weir & Cockerham, straight from the package
-if (have_hf) {
-  w <- try(hierfstat::wc(dat), silent = TRUE)
-  if (!inherits(w, "try-error")) {
-    cat(sprintf("\nWeir & Cockerham via hierfstat::wc():  FST %.4f   FIS %.4f\n",
-                w$FST, w$FIS))
-    cat("  wc()'s FIS is the metapopulation value across all populations; the\n")
-    cat("  per-population column above is the one to report per population.\n")
-  }
-  bsov <- try(round(bs$overall, 4), silent = TRUE)
-  if (!inherits(bsov, "try-error")) {
-    cat("\nhierfstat::basic.stats() overall\n"); print(bsov)
-  }
-} else {
-  cat("\nInstall hierfstat for Weir & Cockerham FST: install.packages(\"hierfstat\")\n")
-}
-
-if (nboot > 0 && r == 2) {
-  p1 <- names(pops)[1]; p2 <- names(pops)[2]
-  d <- bt[paste0("He_", p1), ] - bt[paste0("He_", p2), ]
-  cat(sprintf("\nHe difference (%s - %s): %+.4f  95%% CI [%+.4f, %+.4f]\n",
-              p1, p2, point[[paste0("He_", p1)]] - point[[paste0("He_", p2)]],
-              quantile(d, .025), quantile(d, .975)))
-  if (boot_mode == "loci") {
-    cat("  CAUTION: this interval treats LOCI as the replicate (--boot=loci). For a\n")
-    cat("  comparison of population MEAN heterozygosity that is pseudoreplication --\n")
-    cat("  the uncertainty is dominated by which INDIVIDUALS you sampled. Use\n")
-    cat("  het_between_pops.R for the p-value you report.\n")
-  } else {
-    cat(sprintf("  This interval also resamples INDIVIDUALS (--boot=%s), unlike a plain\n", boot_mode))
-    cat("  locus bootstrap -- but it is still not a paired individual-level test. Use\n")
-    cat("  het_between_pops.R for the p-value you report.\n")
-  }
-}
-
-## The workflow runs this script TWICE, on the haplotype VCF and the SNP VCF.
-## Fixed output names would mean the second run silently overwrote the first,
-## so the input stem is carried into the filename: populations.haps.vcf ->
-## diversity_per_population.haps.tsv.
-stem <- sub("\\.gz$", "", basename(vcf_file))
-stem <- sub("\\.vcf$", "", stem)
-stem <- sub("^.*\\.", "", stem)                     # populations.haps -> haps
-if (!nzchar(stem) || grepl("[^A-Za-z0-9_-]", stem)) stem <- "out"
-## Encode --boot in the filename ONLY when passed explicitly and non-default,
-## so a comparison run (e.g. --boot=individuals against diveRsity convention)
-## cannot silently overwrite the default output -- an explicit --boot=loci
-## reproduces the default exactly and so does not need its own suffix.
-boot_suffix <- if (boot_explicit && boot_mode != "loci") paste0(".boot-", boot_mode) else ""
-f1 <- sprintf("diversity_per_population.%s%s.tsv", stem, boot_suffix)
-f2 <- sprintf("diversity_richness.%s%s.tsv", stem, boot_suffix)
-write.table(tab,  f1, sep = "\t", quote = FALSE, row.names = FALSE)
-write.table(rich, f2, sep = "\t", quote = FALSE, row.names = FALSE)
-cat(sprintf("\nWrote %s and %s\n\n", f1, f2))
+)

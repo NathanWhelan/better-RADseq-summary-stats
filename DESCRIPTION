@@ -1,0 +1,26 @@
+Package: RADdiversity
+Title: Population Diversity Statistics from Stacks RADseq Output
+Version: 0.1.0
+Authors@R: person("Nathan", "Whelan", email = "nathan.whelan@gmail.com", role = c("aut", "cre"))
+Description: Computes observed and expected heterozygosity, Nei & Chesser
+    (1983) FIS as a ratio of sums, rarefied allelic richness, and rarefied
+    private allelic richness from Stacks 2 'populations' VCF output, with
+    block-bootstrap confidence intervals and delete-one-block jackknife
+    standard errors over RAD loci. Also provides a correctly calibrated
+    test of whether two populations differ in mean heterozygosity, using
+    the individual (not the locus) as the unit of replication. See
+    'README.md' for the statistical rationale.
+License: MIT + file LICENSE
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.3
+Depends: R (>= 3.5)
+Imports:
+    stats,
+    utils
+Suggests:
+    hierfstat,
+    testthat (>= 3.0.0)
+Config/testthat/edition: 3
+URL: https://github.com/NathanWhelan/better-RADseq-summary-stats
+BugReports: https://github.com/NathanWhelan/better-RADseq-summary-stats/issues

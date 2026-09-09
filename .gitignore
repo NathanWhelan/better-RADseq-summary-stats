@@ -9,3 +9,10 @@ test/*.tsv
 # Claude Code's own local session state, not project content.
 .claude/settings.local.json
 .claude/scheduled_tasks.lock
+
+# R package build/check artifacts -- not source.
+/*.Rcheck/
+/RADdiversity_*.tar.gz
+.Rhistory
+.RData
+.Rproj.user

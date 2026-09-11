@@ -139,3 +139,25 @@ per-sequenced-site values; \code{populations.haps.vcf} gives FIS, Ar and
 privAr. Each run prints which of its numbers to take. See \code{README.md}
 ("Which file for which statistic") for the full reasoning.
 }
+\examples{
+# A toy dataset shipped with the package: 80 RAD loci, 2 populations of 4
+# and 3 individuals (real studies need far more individuals).
+haps   <- system.file("extdata", "small.haps.vcf", package = "RADdiversity")
+snps   <- system.file("extdata", "small.snps.vcf", package = "RADdiversity")
+popmap <- system.file("extdata", "small_popmap.tsv", package = "RADdiversity")
+
+# Haplotype VCF: FIS, allelic richness, private allelic richness.
+res <- diversity_stats(haps, popmap, g = 4, nboot = 100)
+res$per_population
+res$richness
+
+# SNP VCF with each population's own sequenced-site count, read from Stacks'
+# populations.sumstats_summary.tsv: Ho and He per sequenced site.
+sumstats <- system.file("extdata", "populations.sumstats_summary.tsv",
+                        package = "RADdiversity")
+res_snps <- diversity_stats(snps, popmap, g = 4, nboot = 0, sites = sumstats)
+res_snps$autosomal
+
+# The full report, as the command-line script prints it:
+print(res_snps)
+}

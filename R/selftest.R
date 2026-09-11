@@ -16,6 +16,10 @@
 #'   caller's own RNG state is restored when this function returns, so
 #'   calling it interactively does not affect subsequent random draws in
 #'   the caller's session.
+#' @examples
+#' \donttest{
+#' diversity_core_selftest()   # about 20 seconds of Monte Carlo
+#' }
 #' @export
 diversity_core_selftest <- function() {
 
@@ -206,6 +210,10 @@ diversity_core_selftest <- function() {
 #' @return Invisibly, `TRUE`. The caller's own RNG state is restored when
 #'   this function returns, so calling it interactively does not affect
 #'   subsequent random draws in the caller's session.
+#' @examples
+#' \donttest{
+#' het_between_pops_selftest()   # a few seconds of simulation
+#' }
 #' @export
 het_between_pops_selftest <- function() {
   ## Restore the caller's RNG state on exit -- see the matching comment in

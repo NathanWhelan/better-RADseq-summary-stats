@@ -17,3 +17,8 @@ Reproduces the checks run by \verb{Rscript diversity_core.R --selftest}: every
 estimator here against brute-force Monte Carlo, and the Stacks formulas
 against real published Stacks output. Prints a report to the console.
 }
+\examples{
+\donttest{
+diversity_core_selftest()   # about 20 seconds of Monte Carlo
+}
+}

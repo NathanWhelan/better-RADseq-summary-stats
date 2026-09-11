@@ -23,3 +23,9 @@ Parses a two-column, no-header popmap TSV (\verb{sample_id <TAB> population})
 and splits sample IDs by population, restricted to samples present in
 \code{samples}.
 }
+\examples{
+H <- read_stacks_vcf(system.file("extdata", "small.haps.vcf",
+                                 package = "RADdiversity"), verbose = FALSE)
+read_popmap(system.file("extdata", "small_popmap.tsv", package = "RADdiversity"),
+            H$samples)
+}

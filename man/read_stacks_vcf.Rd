@@ -30,3 +30,10 @@ not) into genotype matrices plus locus/allele metadata. Used by
 \code{read_haps_vcf()} is this function's former name (it reads SNP VCFs too),
 kept as an alias for one release.
 }
+\examples{
+H <- read_stacks_vcf(system.file("extdata", "small.haps.vcf",
+                                 package = "RADdiversity"))
+dim(H$A1)          # records x samples
+H$alleles[[1]]     # the haplotype alleles of the first RAD locus
+H$A1[1:3, 1:4]     # first allele of each genotype (1 = REF, 2 = first ALT, ...)
+}

@@ -17,3 +17,8 @@ heterozygosity, comparing the rejection rate of Welch's t / Wilcoxon
 (individual-level) against a locus bootstrap, for a nominal 5\% test.
 Prints a report to the console.
 }
+\examples{
+\donttest{
+het_between_pops_selftest()   # a few seconds of simulation
+}
+}

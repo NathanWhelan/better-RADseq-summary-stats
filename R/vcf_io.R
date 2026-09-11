@@ -45,6 +45,12 @@
 #'   `locus_raw` (locus grouping, shared across SNPs on one RAD tag),
 #'   `alleles` (list of allele strings per record), `n_alleles`, `samples`,
 #'   and `fields` (the raw parsed VCF field matrix).
+#' @examples
+#' H <- read_stacks_vcf(system.file("extdata", "small.haps.vcf",
+#'                                  package = "RADdiversity"))
+#' dim(H$A1)          # records x samples
+#' H$alleles[[1]]     # the haplotype alleles of the first RAD locus
+#' H$A1[1:3, 1:4]     # first allele of each genotype (1 = REF, 2 = first ALT, ...)
 #' @export
 read_stacks_vcf <- function(path, verbose = TRUE) {
 
@@ -268,6 +274,11 @@ read_haps_vcf <- function(path, verbose = TRUE) read_stacks_vcf(path, verbose = 
 #' @param verbose Print progress/summary messages. Default `TRUE`.
 #' @return A named list of character vectors, one per population, each
 #'   holding that population's sample IDs.
+#' @examples
+#' H <- read_stacks_vcf(system.file("extdata", "small.haps.vcf",
+#'                                  package = "RADdiversity"), verbose = FALSE)
+#' read_popmap(system.file("extdata", "small_popmap.tsv", package = "RADdiversity"),
+#'             H$samples)
 #' @export
 read_popmap <- function(path, samples, verbose = TRUE) {
   ## colClasses = "character": without it read.delim() guesses each column's

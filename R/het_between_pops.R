@@ -77,6 +77,15 @@
 #'   checks. With `outdir`, the two tables are also written to
 #'   `individual_heterozygosity.<stem>.tsv` and
 #'   `het_between_pops_tests.<stem>.tsv`.
+#' @examples
+#' # A toy dataset shipped with the package (4 and 3 individuals -- far too
+#' # few for a real test, which needs individuals, not loci).
+#' vcf    <- system.file("extdata", "small.haps.vcf", package = "RADdiversity")
+#' popmap <- system.file("extdata", "small_popmap.tsv", package = "RADdiversity")
+#' res <- het_between_pops(vcf, popmap, min_call = 0.5)
+#' res$individual_heterozygosity
+#' res$pairwise_tests
+#' print(res)   # the full report, with the confound and overdispersion checks
 #' @export
 het_between_pops <- function(vcf_file, popmap_f, min_call = 0.9, outdir = NULL,
                               seed = 2024, verbose = TRUE, stem = NULL) {

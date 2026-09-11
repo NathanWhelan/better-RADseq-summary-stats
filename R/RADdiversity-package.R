@@ -1,13 +1,22 @@
-#' RADdiversity: Population Diversity Statistics from Stacks RADseq Output
+#' RADdiversity: Population Genetic Statistics from RAD-seq Data
 #'
-#' Computes Ho, He, FIS (Nei & Chesser 1983, ratio of sums), rarefied allelic
-#' richness and rarefied private allelic richness from Stacks 2 `populations`
-#' VCF output, with block-bootstrap confidence intervals and delete-one-block
-#' jackknife standard errors over RAD loci ([diversity_stats()]). Also
-#' provides a correctly calibrated test of whether two populations differ in
-#' mean heterozygosity, using the individual (not the locus) as the unit of
-#' replication ([het_between_pops()]). See `README.md` in the package source
-#' for the full statistical rationale.
+#' Summary statistics for RAD-seq data, designed around Stacks 2
+#' `populations` output:
+#'
+#' * [diversity_stats()]: Ho, He (Nei & Chesser 1983), FIS as a ratio of sums,
+#'   rarefied allelic and private allelic richness, per-sequenced-site Ho/He.
+#' * [het_between_pops()]: do populations differ in heterozygosity, with the
+#'   individual (not the locus) as the unit of replication.
+#' * [differentiation_stats()]: Weir & Cockerham FST, Jost's D and Weir &
+#'   Goudet's beta.
+#' * [kinship_check()] and [hwe_test()]: a relatedness screen and an exact
+#'   Hardy-Weinberg test (a report, never a filter).
+#' * [read_stacks_vcf()], the `filter_*()` functions and the `write_*()`
+#'   functions: read, filter and export.
+#'
+#' Standard errors and confidence intervals resample whole RAD loci. The
+#' command-line scripts are in `system.file("scripts", package =
+#' "RADdiversity")`; the statistical rationale is in the package README.
 #'
 #' @keywords internal
 "_PACKAGE"

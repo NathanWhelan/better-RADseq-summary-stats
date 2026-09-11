@@ -75,3 +75,13 @@ bootstrap would have misled on this dataset. Returns the result tables;
 printing the result shows the same report as the \code{het_between_pops.R}
 command-line script, and \code{outdir} writes the tables to TSV files.
 }
+\examples{
+# A toy dataset shipped with the package (4 and 3 individuals -- far too
+# few for a real test, which needs individuals, not loci).
+vcf    <- system.file("extdata", "small.haps.vcf", package = "RADdiversity")
+popmap <- system.file("extdata", "small_popmap.tsv", package = "RADdiversity")
+res <- het_between_pops(vcf, popmap, min_call = 0.5)
+res$individual_heterozygosity
+res$pairwise_tests
+print(res)   # the full report, with the confound and overdispersion checks
+}

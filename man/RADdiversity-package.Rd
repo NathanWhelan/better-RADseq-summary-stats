@@ -4,16 +4,27 @@
 \name{RADdiversity-package}
 \alias{RADdiversity}
 \alias{RADdiversity-package}
-\title{RADdiversity: Population Diversity Statistics from Stacks RADseq Output}
+\title{RADdiversity: Population Genetic Statistics from RAD-seq Data}
 \description{
-Computes Ho, He, FIS (Nei & Chesser 1983, ratio of sums), rarefied allelic
-richness and rarefied private allelic richness from Stacks 2 \code{populations}
-VCF output, with block-bootstrap confidence intervals and delete-one-block
-jackknife standard errors over RAD loci (\code{\link[=diversity_stats]{diversity_stats()}}). Also
-provides a correctly calibrated test of whether two populations differ in
-mean heterozygosity, using the individual (not the locus) as the unit of
-replication (\code{\link[=het_between_pops]{het_between_pops()}}). See \code{README.md} in the package source
-for the full statistical rationale.
+Summary statistics for RAD-seq data, designed around Stacks 2
+\code{populations} output:
+}
+\details{
+\itemize{
+\item \code{\link[=diversity_stats]{diversity_stats()}}: Ho, He (Nei & Chesser 1983), FIS as a ratio of sums,
+rarefied allelic and private allelic richness, per-sequenced-site Ho/He.
+\item \code{\link[=het_between_pops]{het_between_pops()}}: do populations differ in heterozygosity, with the
+individual (not the locus) as the unit of replication.
+\item \code{\link[=differentiation_stats]{differentiation_stats()}}: Weir & Cockerham FST, Jost's D and Weir &
+Goudet's beta.
+\item \code{\link[=kinship_check]{kinship_check()}} and \code{\link[=hwe_test]{hwe_test()}}: a relatedness screen and an exact
+Hardy-Weinberg test (a report, never a filter).
+\item \code{\link[=read_stacks_vcf]{read_stacks_vcf()}}, the \verb{filter_*()} functions and the \verb{write_*()}
+functions: read, filter and export.
+}
+
+Standard errors and confidence intervals resample whole RAD loci. The
+command-line scripts are in \code{system.file("scripts", package = "RADdiversity")}; the statistical rationale is in the package README.
 }
 \seealso{
 Useful links:

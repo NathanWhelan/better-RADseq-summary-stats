@@ -58,7 +58,11 @@ read_stacks_vcf <- function(path, verbose = TRUE) {
     stop("Expected exactly one '#CHROM' header line; found ", length(hdr_i), ".")
 
   hdr  <- strsplit(sub("^#", "", lines[hdr_i]), "\t", fixed = TRUE)[[1]]
-  body <- lines[(hdr_i + 1L):length(lines)]
+  ## Everything after the header. Not (hdr_i + 1):length(lines): when the
+  ## header is the last line that sequence counts DOWN, picking up an NA and
+  ## the header itself, and a header-only file then failed as "malformed"
+  ## instead of "no variant records".
+  body <- lines[-seq_len(hdr_i)]
   body <- body[nzchar(body)]
   if (!length(body)) stop("No variant records found.")
 

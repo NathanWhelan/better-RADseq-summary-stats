@@ -1,14 +1,4 @@
-^diversity_core\.R$
-^diversity_stats\.R$
-^het_between_pops\.R$
-^test$
-^archive$
-^results$
-^session_log_.*\.md$
-^stacks_bug_report_.*\.md$
 ^\.claude$
-^Owen and Eckles \(2012\) -BOOTSTRAPPINGDATAARRAYS-2012\.pdf$
 ^\.github$
-^README\.Rmd$
 ^LICENSE\.md$
 ^populations\.

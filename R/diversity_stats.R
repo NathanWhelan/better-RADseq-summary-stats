@@ -262,9 +262,16 @@ diversity_stats <- function(vcf_file, popmap_f, g, nboot = 10000L,
                     100 * cells_used / cells_total))
     for (p in names(pops)) {
       ok_p <- n_typed[, p] >= min_n
-      message(sprintf("    %-22s %s of %s loci usable (typed-n there: mean %.1f, min %d, max %d)",
+      ## Typed-n summary only where the population has any usable locus:
+      ## min() of nothing is Inf, which sprintf("%d") cannot print, and the
+      ## all-missing case must reach the clear error just below instead.
+      message(sprintf("    %-22s %s of %s loci usable%s",
                       p, format(sum(ok_p), big.mark = ","), format(n_rec, big.mark = ","),
-                      mean(n_typed[ok_p, p]), min(n_typed[ok_p, p]), max(n_typed[ok_p, p])))
+                      if (any(ok_p))
+                        sprintf(" (typed-n there: mean %.1f, min %d, max %d)",
+                                mean(n_typed[ok_p, p]), min(n_typed[ok_p, p]),
+                                max(n_typed[ok_p, p]))
+                      else ""))
     }
     if (!sum(keep)) stop("No record has >= min_n typed individuals in any population. ",
                          "Lower min_n (currently ", min_n, ") or check that genotypes were parsed.")

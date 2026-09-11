@@ -86,7 +86,7 @@ populations --in-path ./stacks_out --popmap popmap.tsv -O ./out \
             --max-obs-het 0.70 --fstats --vcf --genepop --fasta-samples -t 8
 ```
 
-* `--min-gt-depth 10` (Stacks ≥ 2.67): a heterozygote seen in only a few
+* `--min-gt-depth 6` (Stacks ≥ 2.67): a heterozygote seen in only a few
   reads is sometimes called a confident homozygote. This does not mean the
   allele call is wrong, but it could be. The --min-gt-depth # makes such genotypes
   missing data instead. Values of 6 or 10 could be justified. Not filtering by gt-depth

@@ -32,7 +32,7 @@ The reasoning behind each answer is in `vignette("rationale", package = "RADdive
 ### Methods (adapt the numbers)
 
 > Loci were exported with Stacks 2 `populations` requiring a minimum genotype
-> depth of 10 reads (`--min-gt-depth 10`), retaining loci genotyped in ≥80% of
+> depth of 6 reads (`--min-gt-depth 6`), retaining loci genotyped in ≥80% of
 > individuals within each population and present in both populations
 > (`-r 0.8 -p 2`); a per-population rather than pooled threshold was used so that
 > the two samples were filtered symmetrically. A minor allele count of ≥3 was

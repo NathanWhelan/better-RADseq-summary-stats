@@ -33,11 +33,11 @@ README; for what to write in a paper and how to answer reviewers, see
 
 ```bash
 populations --in-path ./stacks_out --popmap popmap.tsv -O ./out \
-            --min-gt-depth 10 \
+            --min-gt-depth 6 \
             -r 0.8 -p 2 \
             --min-mac 3 \
             --max-obs-het 0.70 \
-            --fstats --vcf -t 8
+            --fstats --vcf --genepop --fasta-samples -t 8
 ```
 
 This writes `out/populations.snps.vcf` and `out/populations.haps.vcf`. Stacks 2
@@ -47,15 +47,13 @@ underscores (`--min_gt_depth`, `--max_obs_het`) and needed `-H` for the
 haplotype VCF — run `populations -h` and match your own build rather than
 copying this verbatim.
 
-### The two flags that matter
-
-**`--min-gt-depth 10`** is the single most important flag in the pipeline.
+### The flags that matter
 
 A genotype is called from the reads that happened to be sequenced. If a true
 heterozygote is covered by only a few reads, there is a real chance that every
-read came from the same chromosome, and the genotyper then calls a **confident
-homozygote** — not a low-quality call, a confident wrong one. The probability is
-2<sup>1−d</sup> at depth *d*:
+read came from the same chromosome, and the genotyper calls it a homozygote
+instead — not necessarily a low-quality call, but possibly an incorrect one.
+The probability is 2<sup>1−d</sup> at depth *d*:
 
 | reads backing the genotype | chance a true heterozygote is called homozygous |
 |---|---|
@@ -64,16 +62,19 @@ homozygote** — not a low-quality call, a confident wrong one. The probability 
 | 10 | 0.2% |
 | 15 | 0.006% |
 
-The flag turns any genotype below the threshold into a blank instead. It will
-**raise** your missing-data rate, and that is the point: a visible blank is
-better than an invisible mistake. This is the entire cure for stochastic
-dropout — at 10 reads the problem is essentially gone.
+`--min-gt-depth` turns any genotype below the threshold into a blank instead.
+It will **raise** your missing-data rate, and that is the point: a visible
+blank is better than an invisible mistake. Values of 6 or 10 could both be
+justified from the table above; in internal tests, not filtering on genotype
+depth at all did not have a meaningful effect on the final diversity
+statistics, so this flag is a reasonable precaution rather than a mandatory
+correction.
 
 **Version requirement.** `--min-gt-depth` was added to `populations` in Stacks
 2.67 (July 2024). This is not a spelling difference like the underscore/hyphen
 change noted below — earlier builds have no equivalent flag in `populations` at
 all. On Stacks < 2.67, apply the depth filter downstream instead (e.g.
-`vcftools --minDP 10 --recode` on `populations.snps.vcf`, then rebuild the
+`vcftools --minDP 6 --recode` on `populations.snps.vcf`, then rebuild the
 haplotype-level calls accordingly) rather than assuming a differently-named
 flag will do it. Check `populations -h` for the flag before assuming it exists.
 
@@ -98,9 +99,10 @@ two populations differently is disqualifying.
 fixed MAF demands different numbers of copies from differently sized samples),
 `--max-obs-het 0.70` (a crude paralog screen; users have reported Stacks
 retaining sites above the stated threshold, so spot-check against your own
-`sumstats.tsv`), `--fstats`, `--vcf`. These are conventional and are **not** part
-of the four changes. Set them how you like; just set them the same way for both
-populations.
+`sumstats.tsv`), `--fstats`, `--vcf`, `--genepop`, `--fasta-samples` (extra
+output formats some workflows want directly). These are conventional and are
+**not** part of the four changes. Set them how you like; just set them the
+same way for both populations.
 
 Note there is no `--hwe` filtering here. A heterozygote deficit is exactly what
 inbreeding produces, so an HWE filter deletes the signal you are trying to

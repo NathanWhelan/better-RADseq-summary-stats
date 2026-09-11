@@ -28,15 +28,16 @@ sumstats <- system.file("extdata", "populations.sumstats_summary.tsv",
 
 ## 1. Run Stacks once
 
-Two `populations` flags matter for everything below: a minimum genotype
-depth, so that heterozygotes are not silently called homozygous, and a
-per-population (not pooled) missing-data filter, so that both populations are
-filtered the same way. There is deliberately no `--hwe` filter.
+A few `populations` flags are worth setting carefully for everything below: a
+minimum genotype depth, so that heterozygotes are not silently called
+homozygous, and a per-population (not pooled) missing-data filter, so that
+both populations are filtered the same way. There is deliberately no `--hwe`
+filter.
 
 ```bash
 populations --in-path ./stacks_out --popmap popmap.tsv -O ./out \
-            --min-gt-depth 10 -r 0.8 -p 2 --min-mac 3 \
-            --max-obs-het 0.70 --fstats --vcf -t 8
+            --min-gt-depth 6 -r 0.8 -p 2 --min-mac 3 \
+            --max-obs-het 0.70 --fstats --vcf --genepop --fasta-samples -t 8
 ```
 
 This writes `populations.snps.vcf` (one record per SNP) and

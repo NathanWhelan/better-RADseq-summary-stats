@@ -1,10 +1,13 @@
 # RADdiversity
 
-Population-genetic statistics from RAD-seq data, built around Stacks 2
-`populations` output: heterozygosity, gene and nucleotide diversity,
-F<sub>IS</sub>, allelic richness, differentiation, individual inbreeding,
-and tests of whether populations differ -- with the choices that most often
-go wrong made carefully, and explained.
+This package provides several methods for calculating population-genetic 
+statistics from RAD-seq data. The package was built with output from STACKS2
+in mind, but data generated with other assembly approaches should work. 
+</br>
+The motivation for this package was a desire to calculate statistics more
+robustly than is done by STACKS. For instance, STACKS calculates F<sub>IS</sub>
+as a mean of ratios, rather than a mean of averages. Thus, F<sub>IS</sub> calculated
+by STACKS has issues when missing genotypes are present in a dataset.
 
 ## Why use it
 

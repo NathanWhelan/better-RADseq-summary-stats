@@ -18,7 +18,8 @@ diversity_stats(
   seed = 2024,
   verbose = TRUE,
   stem = NULL,
-  hierfstat_check = FALSE
+  hierfstat_check = FALSE,
+  se_individuals = FALSE
 )
 
 \method{print}{raddiv_diversity}(x, ...)
@@ -108,6 +109,16 @@ warning if they disagree). Default \code{FALSE}: every number is computed by
 this package either way, the package tests already make this comparison,
 and on large datasets the hierfstat calls were most of the run time. For
 Weir & Cockerham FST, use \code{\link[=differentiation_stats]{differentiation_stats()}}.}
+
+\item{se_individuals}{Also report delete-one-INDIVIDUAL jackknife standard
+errors (\code{Ho_se_ind}, \code{He_se_ind}, \code{Fis_se_ind}, \code{Ar_se_ind},
+\code{privAr_se_ind}): the uncertainty from which individuals were sampled,
+which the locus-based \verb{_se}, \verb{_lo} and \verb{_hi} leave out. They matter when
+individuals differ in inbreeding or include relatives -- check with
+\code{\link[=identity_disequilibrium]{identity_disequilibrium()}} (g2 > 0) -- and are then the ones to report
+for population-level inference. The Ar/privAr ones need
+\code{g <= 2 * (n - 1)} for every population and are \code{NA} otherwise. Default
+\code{FALSE}.}
 
 \item{x}{A \code{raddiv_diversity} object, as returned by \code{diversity_stats()}.}
 

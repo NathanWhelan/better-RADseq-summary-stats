@@ -39,7 +39,9 @@
     "                   (default 2)",
     "  --outdir=DIR     where to write the TSV files (default: current directory)",
     "  --complete-case  use a record only if every individual of every",
-    "                   population is genotyped there (Schmidt et al. 2021)"),
+    "                   population is genotyped there (Schmidt et al. 2021)",
+    "  --se-individuals also report delete-one-individual jackknife SEs",
+    "                   (report these when individuals differ in inbreeding)"),
   het_between_pops = c(
     "Usage: Rscript het_between_pops.R <vcf> <popmap.tsv> [--min-call=X] [--outdir=DIR]",
     "       Rscript het_between_pops.R <vcf> <popmap.tsv> [min_call] [outdir]",
@@ -107,7 +109,7 @@
   run <- switch(cmd,
     diversity_stats = function() {
       p <- .cli_parse(args, c("g", "nboot", "boot", "sites", "min-n", "outdir"),
-                      "complete-case")
+                      c("complete-case", "se-individuals"))
       if (length(p$positional) != 2L) { usage(); return(1L) }
       f <- p$flags
       if (is.null(f$g)) {
@@ -120,6 +122,7 @@
                             sites  = .cli_sites(f$sites),
                             min_n  = if (is.null(f[["min-n"]])) 2L else f[["min-n"]],
                             complete_case = "complete-case" %in% p$switches,
+                            se_individuals = "se-individuals" %in% p$switches,
                             outdir = if (is.null(f$outdir)) "." else f$outdir))
       0L
     },

@@ -117,6 +117,15 @@
 #'   this package either way, the package tests already make this comparison,
 #'   and on large datasets the hierfstat calls were most of the run time. For
 #'   Weir & Cockerham FST, use [differentiation_stats()].
+#' @param se_individuals Also report delete-one-INDIVIDUAL jackknife standard
+#'   errors (`Ho_se_ind`, `He_se_ind`, `Fis_se_ind`, `Ar_se_ind`,
+#'   `privAr_se_ind`): the uncertainty from which individuals were sampled,
+#'   which the locus-based `_se`, `_lo` and `_hi` leave out. They matter when
+#'   individuals differ in inbreeding or include relatives -- check with
+#'   [identity_disequilibrium()] (g2 > 0) -- and are then the ones to report
+#'   for population-level inference. The Ar/privAr ones need
+#'   `g <= 2 * (n - 1)` for every population and are `NA` otherwise. Default
+#'   `FALSE`.
 #' @return An object of class `raddiv_diversity`: a list with elements
 #'   `per_population` (Ho, He, FIS and % polymorphic, with jackknife SEs and
 #'   bootstrap CIs), `richness` (Ar, privAr and priv_total) and `autosomal`
@@ -152,7 +161,8 @@ diversity_stats <- function(vcf_file, popmap_f, g, nboot = 10000L,
                              boot = "loci",
                              sites = 0, min_n = 2L, complete_case = FALSE,
                              outdir = NULL, seed = 2024, verbose = TRUE,
-                             stem = NULL, hierfstat_check = FALSE) {
+                             stem = NULL, hierfstat_check = FALSE,
+                             se_individuals = FALSE) {
 
   g <- as.integer(g)
   if (is.na(g)) stop("g must be an integer (gene copies).")
@@ -587,6 +597,25 @@ diversity_stats <- function(vcf_file, popmap_f, g, nboot = 10000L,
   ## .jack_block_sums() in R/resampling.R).
   se_jk <- .jack_block_sums(S, stat_mat)
 
+  ## Optional delete-one-INDIVIDUAL jackknife (see .jack_individuals() in
+  ## R/resampling.R). Its full-sample recomputation must reproduce the point
+  ## estimates exactly -- a built-in check that the two code paths agree.
+  se_ind <- NULL
+  if (isTRUE(se_individuals)) {
+    message("Delete-one-individual jackknife over ", format(sum(nmax), big.mark = ","),
+            " individuals ...")
+    ji <- .jack_individuals(H, pops, idx, cmats, n_typed[idx, , drop = FALSE], min_n_eff, g)
+    se_ind <- ji$se
+    gap <- suppressWarnings(max(abs(ji$full - point[names(ji$full)]), na.rm = TRUE))
+    if (is.finite(gap) && gap > 1e-8)
+      warning("Individual jackknife: its full-sample estimates differ from the point ",
+              "estimates by ", signif(gap, 3), ". Please report this.")
+    if (g > 2L * (min(nmax) - 1L))
+      message("  Ar/privAr individual SEs are NA for populations with fewer than ",
+              "g/2 + 1 individuals: removing one leaves fewer than g = ", g,
+              " gene copies. Use g <= ", 2L * (min(nmax) - 1L), " to get them.")
+  }
+
   ## Ar/Pr coverage: how many loci actually contributed a defined value per
   ## population. rare_richness() is single-population (a locus counts for
   ## population i once i itself has >= g gene copies there), but
@@ -650,6 +679,20 @@ diversity_stats <- function(vcf_file, popmap_f, g, nboot = 10000L,
                      priv_total = round(gv("PrTot_"), 1), priv_total_se = round(sej("PrTot_"), 1),
                      priv_total_lo = round(lo("PrTot_"), 1),
                      priv_total_hi = round(hi("PrTot_"), 1), row.names = NULL)
+  ## Individual-jackknife SEs, each right after its locus-based counterpart.
+  if (!is.null(se_ind)) {
+    put_after <- function(d, after, name, v) {
+      d[[name]] <- round(unname(v), 4)
+      k <- match(after, names(d))
+      d[c(names(d)[seq_len(k)], name, setdiff(names(d)[-seq_len(k)], name))]
+    }
+    sei <- function(pfx) se_ind[paste0(pfx, names(pops))]
+    tab  <- put_after(tab, "Ho_se", "Ho_se_ind", sei("Ho_"))
+    tab  <- put_after(tab, "He_se", "He_se_ind", sei("He_"))
+    tab  <- put_after(tab, "Fis_se", "Fis_se_ind", sei("Fis_"))
+    rich <- put_after(rich, "Ar_se", "Ar_se_ind", sei("Ar_"))
+    rich <- put_after(rich, "privAr_se", "privAr_se_ind", sei("Pr_"))
+  }
   ## The same parameter with the estimator behind Stacks' `Pi`, side by side.
   ## He can legitimately be 0 (a population monomorphic at every retained
   ## locus): print "n/a" then, rather than "NaN%"/"Inf%".
@@ -713,7 +756,8 @@ diversity_stats <- function(vcf_file, popmap_f, g, nboot = 10000L,
                   cells_used = cells_used, cells_total = cells_total,
                   nboot = nboot, boot = boot_mode, n_ind = nmax, pr_n = pr_n,
                   is_haplotype = is_hapvcf, sites = sites_vec, ok_sites = ok_sites,
-                  estimators = cmp, he_diff = he_diff, files = written))
+                  estimators = cmp, he_diff = he_diff, se_individuals = !is.null(se_ind),
+                  files = written))
 }
 
 #' @rdname diversity_stats
@@ -756,6 +800,12 @@ print.raddiv_diversity <- function(x, ...) {
   print(x$per_population, row.names = FALSE)
   cat("  _se columns: delete-one-block jackknife over RAD loci (Weir 1996) --\n")
   cat("  always available (no nboot needed), on the same loci axis as _lo/_hi.\n")
+  if (isTRUE(rp$se_individuals)) {
+    cat("  _se_ind columns: delete-one-INDIVIDUAL jackknife -- the uncertainty from\n")
+    cat("  which individuals were sampled, which the loci-based _se/_lo/_hi hold fixed.\n")
+    cat("  Report _se_ind when individuals differ in inbreeding (g2 > 0; see\n")
+    cat("  identity_disequilibrium() or the het_between_pops() report).\n")
+  }
   cat("\n")
   print(x$richness, row.names = FALSE)
   cat("  _se columns: delete-one-block jackknife over RAD loci, same as above.\n")

@@ -287,6 +287,18 @@ het_between_pops <- function(vcf_file, popmap_f, min_call = 0.9, outdir = NULL,
                                     else paste0(round(sqrt(od_ratio), 1), "x"))
   }))
 
+  ## Identity disequilibrium g2 in each population (identity_disequilibrium()):
+  ## the same excess variation in individual heterozygosity, in its standard,
+  ## citable form, with a bootstrap CI over individuals.
+  g2 <- do.call(rbind, lapply(names(pops), function(pn) {
+    lp <- keep_pop[, pn]
+    cbind(population = pn,
+          .g2_summary(H$A1[lp, pops[[pn]], drop = FALSE],
+                      H$A2[lp, pops[[pn]], drop = FALSE], nboot = 200L, nperm = 0L))
+  }))
+  g2 <- data.frame(population = g2$population, n = g2$n_ind, g2 = round(g2$g2, 4),
+                   g2_lo = round(g2$g2_lo, 4), g2_hi = round(g2$g2_hi, 4))
+
   ## ---------------------------------------------------------------------------
   ## Pairwise tests. Each pair uses ONLY the loci where BOTH members of that
   ## pair individually clear min_call -- the intersection of their own
@@ -360,7 +372,7 @@ het_between_pops <- function(vcf_file, popmap_f, min_call = 0.9, outdir = NULL,
     class = "raddiv_het",
     report = list(n_loci_pooled = L, n_ind = length(ids), n_pop = r,
                   min_call = min_call, summary = summ, confound = confound,
-                  overdispersion = od,
+                  overdispersion = od, g2 = g2,
                   ## significance counted on the unrounded BH p-values
                   n_sig = c(welch  = sum(tab$p_welch_BH  < 0.05, na.rm = TRUE),
                             wilcox = sum(tab$p_wilcox_BH < 0.05, na.rm = TRUE)),
@@ -523,6 +535,14 @@ print.raddiv_het <- function(x, ...) {
   cat("  This is the point made by Van Dongen (1995, Heredity 74:445-447): the unit\n")
   cat("  of resampling changes what the bootstrap means, and loci are usually the\n")
   cat("  wrong unit because they are all measured on the same individuals.\n")
+
+  cat("\nIdentity disequilibrium g2 (David et al. 2007) -- the standard measure of\n")
+  cat("variance in inbreeding among individuals; 0 when individuals do not differ.\n")
+  print(rp$g2, row.names = FALSE)
+  cat("  95% CI: bootstrap over individuals (see ?identity_disequilibrium). A CI above\n")
+  cat("  0 means individuals differ in inbreeding, so diversity_stats()'s locus-based\n")
+  cat("  intervals are too narrow for population-level inference: report its\n")
+  cat("  individual-jackknife SEs (se_individuals = TRUE) instead.\n")
 
   npair <- nrow(out)
   cat(sprintf("\nPairwise tests -- %d comparison%s. Welch's t is the primary test;\n",

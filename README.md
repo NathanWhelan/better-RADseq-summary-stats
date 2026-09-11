@@ -3,7 +3,7 @@
 This package provides several methods for calculating population-genetic 
 statistics from RAD-seq data. The package was built with output from STACKS2
 in mind, but data generated with other assembly approaches should work. 
-</br>
+</br></br>
 The motivation for this package was a desire to calculate statistics more
 robustly than is done by STACKS. For instance, STACKS calculates F<sub>IS</sub>
 as a mean of ratios, rather than a mean of averages. Thus, F<sub>IS</sub> calculated
@@ -78,22 +78,27 @@ Rscript $RD/het_between_pops.R out/populations.snps.vcf popmap.tsv --min-call=0.
 Run any script with no arguments for its options. `vignette("workflow",
 package = "RADdiversity")` walks through a whole analysis.
 
-## Before you start: two `populations` flags
+## Before you start: STACKS `populations` flags to consider
 
 ```bash
 populations --in-path ./stacks_out --popmap popmap.tsv -O ./out \
-            --min-gt-depth 10 -r 0.8 -p 2 --min-mac 3 \
-            --max-obs-het 0.70 --fstats --vcf -t 8
+            --min-gt-depth 6 -r 0.8 -p 2 --min-mac 3 \
+            --max-obs-het 0.70 --fstats --vcf --genepop --fasta-samples -t 8
 ```
 
 * `--min-gt-depth 10` (Stacks ≥ 2.67): a heterozygote seen in only a few
-  reads is easily called a confident homozygote -- 25% of the time at 3
-  reads, 0.2% at 10. The flag blanks such genotypes instead.
-* `-r 0.8 -p 2`, **not** `-R 0.8`: a missing-data filter applied within each
-  population. A pooled filter lets the larger population's coverage carry the
+  reads is sometimes called a confident homozygote. This does not mean the
+  allele call is wrong, but it could be. The --min-gt-depth # makes such genotypes
+  missing data instead. Values of 6 or 10 could be justified. Not filtering by gt-depth
+  seems unlikely to have a meaningful effect on results based on internal tests. 
+* Use both -r and -p flags, not a global -R: A global -R can result in whole loci missing
+  from any given population. This might produce undesirable genetic diversity estimates.
+  A missing-data filter applied within each population (i.e., -p #numberOfPopulations) ensures each locus that passes the
+  missing data filters will be present in each genotype. This is particularly important when sampling is uneven among
+  populations as -R lets the larger population's coverage carry the
   smaller one, which then carries more missing data -- an artificial
   difference between exactly the two samples you mean to compare.
-* No `--hwe`: a heterozygote deficit is what F<sub>IS</sub> measures.
+
 
 Add `--vcf-all` for an all-sites VCF (Stacks ≥ 2.62), which `pi_allsites()`
 uses to compute nucleotide diversity directly.

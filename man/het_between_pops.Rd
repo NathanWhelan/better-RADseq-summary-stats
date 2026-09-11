@@ -60,12 +60,14 @@ list, which has no filename to derive it from.}
 }
 \value{
 An object of class \code{raddiv_het}: a list with elements
-\code{individual_heterozygosity} (one row per individual) and
-\code{pairwise_tests} (one row per pair of populations). Printing it shows the
-full report, including the missingness-confound and overdispersion
-checks. With \code{outdir}, the two tables are also written to
-\verb{individual_heterozygosity.<stem>.tsv} and
-\verb{het_between_pops_tests.<stem>.tsv}.
+\code{individual_heterozygosity} (one row per individual, with its
+heterozygosity and its \code{F}), \code{pairwise_tests} (heterozygosity, one row per
+pair of populations) and \code{pairwise_F_tests} (the same tests on \code{F}).
+Printing it shows the full report, including the missingness-confound
+and overdispersion checks. With \code{outdir}, the tables are also written to
+\verb{individual_heterozygosity.<stem>.tsv},
+\verb{het_between_pops_tests.<stem>.tsv} and
+\verb{het_between_pops_F_tests.<stem>.tsv}.
 }
 \description{
 Uses the INDIVIDUAL, not the locus, as the unit of replication (Welch's t
@@ -74,6 +76,14 @@ diagnostic and an overdispersion check quantifying how badly a locus
 bootstrap would have misled on this dataset. Returns the result tables;
 printing the result shows the same report as the \code{het_between_pops.R}
 command-line script, and \code{outdir} writes the tables to TSV files.
+}
+\details{
+Two questions, two tests, same machinery. \code{pairwise_tests} compares mean
+individual heterozygosity: do the populations differ in diversity?
+\code{pairwise_F_tests} compares the individual inbreeding coefficient \code{F}
+(\code{\link[=individual_inbreeding]{individual_inbreeding()}}, expected heterozygosity from each individual's
+own population): do they differ in inbreeding? Report the one that matches
+your question -- a difference in FIS is a difference in inbreeding.
 }
 \examples{
 # A toy dataset shipped with the package (4 and 3 individuals -- far too

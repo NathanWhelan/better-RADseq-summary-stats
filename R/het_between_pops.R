@@ -70,13 +70,23 @@
 #'   VCF and a run on the haplotype VCF into the same `outdir` do not
 #'   overwrite each other. Required when `vcf_file` is an already-parsed
 #'   list, which has no filename to derive it from.
+#' @details
+#' Two questions, two tests, same machinery. `pairwise_tests` compares mean
+#' individual heterozygosity: do the populations differ in diversity?
+#' `pairwise_F_tests` compares the individual inbreeding coefficient `F`
+#' ([individual_inbreeding()], expected heterozygosity from each individual's
+#' own population): do they differ in inbreeding? Report the one that matches
+#' your question -- a difference in FIS is a difference in inbreeding.
+#'
 #' @return An object of class `raddiv_het`: a list with elements
-#'   `individual_heterozygosity` (one row per individual) and
-#'   `pairwise_tests` (one row per pair of populations). Printing it shows the
-#'   full report, including the missingness-confound and overdispersion
-#'   checks. With `outdir`, the two tables are also written to
-#'   `individual_heterozygosity.<stem>.tsv` and
-#'   `het_between_pops_tests.<stem>.tsv`.
+#'   `individual_heterozygosity` (one row per individual, with its
+#'   heterozygosity and its `F`), `pairwise_tests` (heterozygosity, one row per
+#'   pair of populations) and `pairwise_F_tests` (the same tests on `F`).
+#'   Printing it shows the full report, including the missingness-confound
+#'   and overdispersion checks. With `outdir`, the tables are also written to
+#'   `individual_heterozygosity.<stem>.tsv`,
+#'   `het_between_pops_tests.<stem>.tsv` and
+#'   `het_between_pops_F_tests.<stem>.tsv`.
 #' @examples
 #' # A toy dataset shipped with the package (4 and 3 individuals -- far too
 #' # few for a real test, which needs individuals, not loci).
@@ -192,20 +202,25 @@ het_between_pops <- function(vcf_file, popmap_f, min_call = 0.9, outdir = NULL,
   cr_pop <- sweep(.typed_by_pop(H, pops), 2L, lengths(pops), "/")
   keep_pop <- cr_pop >= min_call - 1e-9
 
-  ## Per-population individual heterozygosity, each on ITS OWN locus set.
-  pop_het <- stats::setNames(vector("list", r), names(pops))
+  ## Per-population individual heterozygosity and individual inbreeding F
+  ## (see individual_inbreeding()), each on ITS OWN locus set.
+  pop_het <- pop_F <- stats::setNames(vector("list", r), names(pops))
   for (p in names(pops)) {
     lp <- keep_pop[, p]
     a1p <- H$A1[lp, pops[[p]], drop = FALSE]; a2p <- H$A2[lp, pops[[p]], drop = FALSE]
     pop_het[[p]] <- colMeans(a1p != a2p, na.rm = TRUE)
+    pop_F[[p]]   <- stats::setNames(.ind_F(a1p, a2p)$F, pops[[p]])
   }
+  F_all <- unlist(unname(pop_F))
+  ind$F <- round(unname(F_all[ind$sample]), 4)
 
   summ <- do.call(rbind, lapply(names(pops), function(pn) {
     v <- pop_het[[pn]]
     data.frame(population = pn, n = length(v), n_loci = sum(keep_pop[, pn]),
                mean_het = round(mean(v), 4), sd = round(stats::sd(v), 4),
                se = round(stats::sd(v) / sqrt(length(v)), 4),
-               min = round(min(v), 4), max = round(max(v), 4)) }))
+               min = round(min(v), 4), max = round(max(v), 4),
+               mean_F = round(mean(pop_F[[pn]], na.rm = TRUE), 4)) }))
 
   ## ---------------------------------------------------------------------------
   ## MISSINGNESS CONFOUND. An individual's heterozygosity is computed over the
@@ -287,7 +302,7 @@ het_between_pops <- function(vcf_file, popmap_f, min_call = 0.9, outdir = NULL,
   ## populations there are k(k-1)/2 pairs, so p-values are BH-adjusted across
   ## all of them.
   ## ---------------------------------------------------------------------------
-  rows <- list()
+  rows <- rows_F <- list()
   for (i in seq_len(r - 1)) for (j in (i + 1):r) {
     p1 <- names(pops)[i]; p2 <- names(pops)[j]
     lij <- keep_pop[, p1] & keep_pop[, p2]
@@ -297,93 +312,34 @@ het_between_pops <- function(vcf_file, popmap_f, min_call = 0.9, outdir = NULL,
         "  %s vs %s: only %d loci clear %.0f%% call rate in BOTH populations ",
         p1, p2, nloc, 100 * min_call),
         "(need >= 50). Reported as NA for this pair; other pairs are unaffected.")
-      rows[[length(rows) + 1]] <- data.frame(
-        pop1 = p1, pop2 = p2, n_loci = nloc,
-        n1 = length(pops[[p1]]), mean1 = NA_real_,
-        n2 = length(pops[[p2]]), mean2 = NA_real_,
-        diff = NA_real_, ci_lo = NA_real_, ci_hi = NA_real_,
-        p_welch = NA_real_, p_wilcox = NA_real_, hedges_g = NA_real_)
+      na_row <- .na_test_row(p1, p2, nloc, length(pops[[p1]]), length(pops[[p2]]))
+      rows[[length(rows) + 1]] <- na_row; rows_F[[length(rows_F) + 1]] <- na_row
       next
     }
     a1i <- H$A1[lij, pops[[p1]], drop = FALSE]; a2i <- H$A2[lij, pops[[p1]], drop = FALSE]
     a1j <- H$A1[lij, pops[[p2]], drop = FALSE]; a2j <- H$A2[lij, pops[[p2]], drop = FALSE]
     a <- colMeans(a1i != a2i, na.rm = TRUE)
     b <- colMeans(a1j != a2j, na.rm = TRUE)
-    ## An individual can pass the earlier GLOBAL thinning check (>= 50 calls on
-    ## the pooled locus set) yet still be called at NONE of THIS pair's smaller,
-    ## pair-specific locus set, giving colMeans(na.rm = TRUE) = NaN here. Drop
-    ## such individuals from this comparison only -- same reasoning as the
-    ## global thinning step above, just re-applied on the pair's own basis.
-    if (any(!is.finite(a)) || any(!is.finite(b))) {
-      n_bad <- sum(!is.finite(a)) + sum(!is.finite(b))
-      message(sprintf(
-        "  %s vs %s: %d individual(s) called at none of the %d shared loci for ",
-        p1, p2, n_bad, nloc), "this pair; excluded from this comparison only.")
-      a <- a[is.finite(a)]; b <- b[is.finite(b)]
-    }
-    if (length(a) < 2 || length(b) < 2) {
-      message(sprintf(
-        "  %s vs %s: fewer than 2 individuals with a valid value in one group ",
-        p1, p2), "after excluding those above. Reported as NA for this pair.")
-      rows[[length(rows) + 1]] <- data.frame(
-        pop1 = p1, pop2 = p2, n_loci = nloc,
-        n1 = length(a), mean1 = if (length(a)) round(mean(a), 4) else NA_real_,
-        n2 = length(b), mean2 = if (length(b)) round(mean(b), 4) else NA_real_,
-        diff = NA_real_, ci_lo = NA_real_, ci_hi = NA_real_,
-        p_welch = NA_real_, p_wilcox = NA_real_, hedges_g = NA_real_)
-      next
-    }
-    ## Two distinct degenerate cases, both meaning "no variation among
-    ## individuals in one or both populations, so no test is possible":
-    ##   (a) t.test()/wilcox.test() ERROR outright -- happens when both samples
-    ##       are constant at the SAME nonzero value (their pooled variance is 0
-    ##       and R's zero-stderr guard, a RELATIVE check against that shared
-    ##       value, correctly fires).
-    ##   (b) they return SUCCESSFULLY but with p.value/conf.int = NaN -- happens
-    ##       when both samples are constant at exactly ZERO (e.g. a population
-    ##       monomorphic at every retained locus). t.test.default's zero-stderr
-    ##       guard is `stderr < 10*eps*max(abs(mx), abs(my))`; with both means at
-    ##       0 the right-hand side is also 0, so the guard never fires and R
-    ##       hands back a "valid" object full of NaN instead of erroring.
-    ##       wilcox.test() has the same blind spot. Catch both explicitly rather
-    ##       than assuming an error is the only way this fails.
-    tt <- try(stats::t.test(a, b), silent = TRUE)
-    if (inherits(tt, "try-error")) {
-      message(sprintf(
-        "  %s vs %s: t.test() failed (%s). This usually means no variation ",
-        p1, p2, trimws(conditionMessage(attr(tt, "condition")))),
-        "among individuals in one or both populations, so no test is ",
-        "possible. Reported as NA.")
-      tt <- list(p.value = NA_real_, conf.int = c(NA_real_, NA_real_))
-    } else if (is.nan(tt$p.value)) {
-      message(sprintf(
-        "  %s vs %s: t.test() returned NaN (both samples constant at exactly ",
-        p1, p2),
-        "zero -- e.g. monomorphic at every retained locus in both populations). ",
-        "No variation to test. Reported as NA.")
-      tt <- list(p.value = NA_real_, conf.int = c(NA_real_, NA_real_))
-    }
-    wt <- suppressWarnings(try(stats::wilcox.test(a, b), silent = TRUE))
-    if (inherits(wt, "try-error") || is.nan(wt$p.value)) wt <- list(p.value = NA_real_)
-    ## Hedges' g, a sample-size-corrected standardised difference
-    s <- sqrt(((length(a)-1)*stats::var(a) + (length(b)-1)*stats::var(b)) / (length(a)+length(b)-2))
-    d <- if (is.finite(s) && s > 0) (mean(a) - mean(b)) / s else NA_real_
-    J <- 1 - 3 / (4 * (length(a) + length(b)) - 9)
-    rows[[length(rows) + 1]] <- data.frame(
-      pop1 = p1, pop2 = p2, n_loci = nloc,
-      n1 = length(a), mean1 = round(mean(a), 4),
-      n2 = length(b), mean2 = round(mean(b), 4),
-      diff = round(mean(a) - mean(b), 4),
-      ci_lo = round(tt$conf.int[1], 4), ci_hi = round(tt$conf.int[2], 4),
-      p_welch = tt$p.value, p_wilcox = wt$p.value,
-      hedges_g = round(d * J, 2))
+    rows[[length(rows) + 1]] <- .two_sample(a, b, p1, p2, nloc, "heterozygosity")
+    ## The same test on individual F (see individual_inbreeding()), over the
+    ## same loci and the same individuals, with the expected heterozygosity
+    ## taken from each population's own allele frequencies.
+    fa <- .ind_F(a1i, a2i)$F[is.finite(a)]; fb <- .ind_F(a1j, a2j)$F[is.finite(b)]
+    rows_F[[length(rows_F) + 1]] <- .two_sample(fa, fb, p1, p2, nloc, "F")
   }
-  tab <- do.call(rbind, rows)
-  tab$p_welch_BH  <- stats::p.adjust(tab$p_welch,  method = "BH")
-  tab$p_wilcox_BH <- stats::p.adjust(tab$p_wilcox, method = "BH")
-  out <- tab
-  out$p_welch <- signif(out$p_welch, 3); out$p_wilcox <- signif(out$p_wilcox, 3)
-  out$p_welch_BH <- signif(out$p_welch_BH, 3); out$p_wilcox_BH <- signif(out$p_wilcox_BH, 3)
+  ## Benjamini-Hochberg across all k(k-1)/2 pairs, on the unrounded p-values;
+  ## the returned tables round them to 3 significant digits.
+  adjust <- function(t) {
+    t$p_welch_BH  <- stats::p.adjust(t$p_welch,  method = "BH")
+    t$p_wilcox_BH <- stats::p.adjust(t$p_wilcox, method = "BH")
+    t
+  }
+  rounded <- function(t) {
+    for (cl in c("p_welch", "p_wilcox", "p_welch_BH", "p_wilcox_BH")) t[[cl]] <- signif(t[[cl]], 3)
+    t
+  }
+  tab <- adjust(do.call(rbind, rows)); tabF <- adjust(do.call(rbind, rows_F))
+  out <- rounded(tab); outF <- rounded(tabF)
 
   ## Files, only when asked for (`outdir`), named by the input's stem so the
   ## SNP-VCF and haplotype-VCF runs can share a directory.
@@ -392,13 +348,15 @@ het_between_pops <- function(vcf_file, popmap_f, min_call = 0.9, outdir = NULL,
     dir.create(outdir, showWarnings = FALSE, recursive = TRUE)
     stem <- .derive_stem(vcf_file, stem)                # populations.snps.vcf -> "snps"
     written <- file.path(outdir, sprintf(c("individual_heterozygosity.%s.tsv",
-                                           "het_between_pops_tests.%s.tsv"), stem))
-    utils::write.table(ind, written[1], sep = "\t", quote = FALSE, row.names = FALSE)
-    utils::write.table(out, written[2], sep = "\t", quote = FALSE, row.names = FALSE)
+                                           "het_between_pops_tests.%s.tsv",
+                                           "het_between_pops_F_tests.%s.tsv"), stem))
+    utils::write.table(ind,  written[1], sep = "\t", quote = FALSE, row.names = FALSE)
+    utils::write.table(out,  written[2], sep = "\t", quote = FALSE, row.names = FALSE)
+    utils::write.table(outF, written[3], sep = "\t", quote = FALSE, row.names = FALSE)
   }
 
   structure(
-    list(individual_heterozygosity = ind, pairwise_tests = out),
+    list(individual_heterozygosity = ind, pairwise_tests = out, pairwise_F_tests = outF),
     class = "raddiv_het",
     report = list(n_loci_pooled = L, n_ind = length(ids), n_pop = r,
                   min_call = min_call, summary = summ, confound = confound,
@@ -406,7 +364,83 @@ het_between_pops <- function(vcf_file, popmap_f, min_call = 0.9, outdir = NULL,
                   ## significance counted on the unrounded BH p-values
                   n_sig = c(welch  = sum(tab$p_welch_BH  < 0.05, na.rm = TRUE),
                             wilcox = sum(tab$p_wilcox_BH < 0.05, na.rm = TRUE)),
+                  n_sig_F = c(welch  = sum(tabF$p_welch_BH  < 0.05, na.rm = TRUE),
+                              wilcox = sum(tabF$p_wilcox_BH < 0.05, na.rm = TRUE)),
                   files = written))
+}
+
+## Not exported. One all-NA row of the pairwise test table.
+.na_test_row <- function(p1, p2, nloc, n1, n2, mean1 = NA_real_, mean2 = NA_real_)
+  data.frame(pop1 = p1, pop2 = p2, n_loci = nloc, n1 = n1, mean1 = mean1,
+             n2 = n2, mean2 = mean2, diff = NA_real_, ci_lo = NA_real_,
+             ci_hi = NA_real_, p_welch = NA_real_, p_wilcox = NA_real_,
+             hedges_g = NA_real_)
+
+## Not exported. Welch's t (primary), Wilcoxon (the distribution-free check)
+## and Hedges' g for one pair of populations, on one number per individual
+## (`a`, `b`: heterozygosity, or F). Returns one row of the pairwise table.
+.two_sample <- function(a, b, p1, p2, nloc, what) {
+  ## An individual can pass the earlier GLOBAL thinning check (>= 50 calls on
+  ## the pooled locus set) yet still be called at NONE of THIS pair's smaller,
+  ## pair-specific locus set, giving no value here. Drop such individuals from
+  ## this comparison only.
+  if (any(!is.finite(a)) || any(!is.finite(b))) {
+    n_bad <- sum(!is.finite(a)) + sum(!is.finite(b))
+    message(sprintf(
+      "  %s vs %s (%s): %d individual(s) without a value on the %d shared loci ",
+      p1, p2, what, n_bad, nloc), "for this pair; excluded from this comparison only.")
+    a <- a[is.finite(a)]; b <- b[is.finite(b)]
+  }
+  if (length(a) < 2 || length(b) < 2) {
+    message(sprintf(
+      "  %s vs %s (%s): fewer than 2 individuals with a value in one group. ",
+      p1, p2, what), "Reported as NA for this pair.")
+    return(.na_test_row(p1, p2, nloc, length(a), length(b),
+                        if (length(a)) round(mean(a), 4) else NA_real_,
+                        if (length(b)) round(mean(b), 4) else NA_real_))
+  }
+  ## Two distinct degenerate cases, both meaning "no variation among
+  ## individuals in one or both populations, so no test is possible":
+  ##   (a) t.test()/wilcox.test() ERROR outright -- happens when both samples
+  ##       are constant at the SAME nonzero value (their pooled variance is 0
+  ##       and R's zero-stderr guard, a RELATIVE check against that shared
+  ##       value, correctly fires).
+  ##   (b) they return SUCCESSFULLY but with p.value/conf.int = NaN -- happens
+  ##       when both samples are constant at exactly ZERO (e.g. a population
+  ##       monomorphic at every retained locus). t.test.default's zero-stderr
+  ##       guard is `stderr < 10*eps*max(abs(mx), abs(my))`; with both means at
+  ##       0 the right-hand side is also 0, so the guard never fires and R
+  ##       hands back a "valid" object full of NaN instead of erroring.
+  ##       wilcox.test() has the same blind spot. Catch both explicitly.
+  tt <- try(stats::t.test(a, b), silent = TRUE)
+  if (inherits(tt, "try-error")) {
+    message(sprintf(
+      "  %s vs %s (%s): t.test() failed (%s). This usually means no variation ",
+      p1, p2, what, trimws(conditionMessage(attr(tt, "condition")))),
+      "among individuals in one or both populations, so no test is ",
+      "possible. Reported as NA.")
+    tt <- list(p.value = NA_real_, conf.int = c(NA_real_, NA_real_))
+  } else if (is.nan(tt$p.value)) {
+    message(sprintf(
+      "  %s vs %s (%s): t.test() returned NaN (both samples constant at exactly ",
+      p1, p2, what),
+      "zero). No variation to test. Reported as NA.")
+    tt <- list(p.value = NA_real_, conf.int = c(NA_real_, NA_real_))
+  }
+  wt <- suppressWarnings(try(stats::wilcox.test(a, b), silent = TRUE))
+  if (inherits(wt, "try-error") || is.nan(wt$p.value)) wt <- list(p.value = NA_real_)
+  ## Hedges' g, a sample-size-corrected standardised difference
+  s <- sqrt(((length(a)-1)*stats::var(a) + (length(b)-1)*stats::var(b)) / (length(a)+length(b)-2))
+  d <- if (is.finite(s) && s > 0) (mean(a) - mean(b)) / s else NA_real_
+  J <- 1 - 3 / (4 * (length(a) + length(b)) - 9)
+  data.frame(
+    pop1 = p1, pop2 = p2, n_loci = nloc,
+    n1 = length(a), mean1 = round(mean(a), 4),
+    n2 = length(b), mean2 = round(mean(b), 4),
+    diff = round(mean(a) - mean(b), 4),
+    ci_lo = round(tt$conf.int[1], 4), ci_hi = round(tt$conf.int[2], 4),
+    p_welch = tt$p.value, p_wilcox = wt$p.value,
+    hedges_g = round(d * J, 2))
 }
 
 #' @rdname het_between_pops
@@ -504,6 +538,19 @@ print.raddiv_het <- function(x, ...) {
   cat(sprintf("\n  pairs significant at BH < 0.05: Welch %d, Wilcoxon %d, of %d\n",
               rp$n_sig[["welch"]], rp$n_sig[["wilcox"]], npair))
   cat("  Hedges' g is the standardised difference: ~0.2 small, ~0.5 medium, ~0.8 large.\n")
+
+  outF <- x$pairwise_F_tests
+  cat("\nThe same tests on individual inbreeding, F = 1 - observed/expected\n")
+  cat("heterozygosity (expected from each individual's own population; see\n")
+  cat("?individual_inbreeding). Heterozygosity asks whether the populations differ\n")
+  cat("in DIVERSITY; F asks whether they differ in INBREEDING.\n")
+  if (nrow(outF) <= 25) print(outF, row.names = FALSE) else {
+    o <- order(outF$p_welch_BH)
+    cat("  (25 most significant pairs; the full table is x$pairwise_F_tests)\n")
+    print(outF[utils::head(o, 25), ], row.names = FALSE)
+  }
+  cat(sprintf("\n  pairs significant at BH < 0.05: Welch %d, Wilcoxon %d, of %d\n",
+              rp$n_sig_F[["welch"]], rp$n_sig_F[["wilcox"]], nrow(outF)))
 
   cat("\nInterpretation notes\n")
   cat("  * Power is limited by the NUMBER OF INDIVIDUALS, not the number of loci.\n")

@@ -201,7 +201,7 @@ test_that("het_between_pops() returns the expected structure on a small fixture"
                         min_call = 0.5, outdir = outdir)
     )
   ))
-  expect_named(result, c("individual_heterozygosity", "pairwise_tests"))
+  expect_named(result, c("individual_heterozygosity", "pairwise_tests", "pairwise_F_tests"))
   expect_equal(nrow(result$individual_heterozygosity), 7L)
   expect_true(all(c("p_welch", "p_wilcox", "hedges_g") %in% names(result$pairwise_tests)))
   expect_true(file.exists(file.path(outdir, "individual_heterozygosity.haps.tsv")))

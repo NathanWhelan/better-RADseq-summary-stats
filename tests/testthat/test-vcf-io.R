@@ -108,6 +108,6 @@ test_that("diversity_stats()/het_between_pops() accept a pre-parsed H list in pl
     het_result <- het_between_pops(H, fx("small_popmap.tsv"), min_call = 0.5,
                                    outdir = outdir, stem = "test")
   ))
-  expect_named(het_result, c("individual_heterozygosity", "pairwise_tests"))
+  expect_named(het_result, c("individual_heterozygosity", "pairwise_tests", "pairwise_F_tests"))
   expect_true(file.exists(file.path(outdir, "individual_heterozygosity.test.tsv")))
 })

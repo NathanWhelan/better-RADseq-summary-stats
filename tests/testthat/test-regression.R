@@ -27,7 +27,11 @@ expect_golden <- function(actual_file, golden_name) {
   a <- utils::read.delim(actual_file, check.names = FALSE, stringsAsFactors = FALSE)
   g <- utils::read.delim(lg(file.path("golden", golden_name)), check.names = FALSE,
                          stringsAsFactors = FALSE)
-  expect_identical(names(a), names(g), info = golden_name)
+  ## Columns added since the golden files were made are allowed (after the
+  ## golden ones); every golden column must still be there, in order.
+  added_since <- c("F")
+  expect_identical(intersect(names(a), names(g)), names(g), info = golden_name)
+  expect_true(all(setdiff(names(a), names(g)) %in% added_since), info = golden_name)
   expect_identical(nrow(a), nrow(g), info = golden_name)
   for (col in names(g))
     expect_equal(a[[col]], g[[col]], tolerance = 1e-6, info = paste0(golden_name, ": ", col))

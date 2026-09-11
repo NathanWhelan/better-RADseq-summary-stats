@@ -159,7 +159,7 @@ diversity_core_selftest <- function() {
   }
   chk("summary row: Exp_Het 0.4 at N=2 -> Pi", 0.4 * 4 / 3, 0.53333, 1e-5)
   cat("  So: Stacks divides FIS by Pi (which assumes FIS = 0), and averages\n")
-  cat("  per-locus ratios. Two independent errors. See README.md.\n")
+  cat("  per-locus ratios. Two independent errors. See vignette(\"rationale\").\n")
 
   cat("\n--- 11. FIS ratio-of-sums stays unbiased under LOCUS-DRIVEN missingness ---\n")
   ## Real RAD data drops loci in clusters (a locus fails broadly) rather than

@@ -25,6 +25,24 @@ stand-alone scripts:
 None of these change any reported number: on the reference datasets the
 results agree with the previous version to within 5e-13.
 
+## New
+
+* `individual_inbreeding()`, and a test on individual F in
+  `het_between_pops()` (`pairwise_F_tests`): whether populations differ in
+  inbreeding, next to whether they differ in diversity.
+* `identity_disequilibrium()`: g2 per population, also printed by
+  `het_between_pops()`. `diversity_stats(se_individuals = TRUE)` adds
+  delete-one-individual jackknife SEs, for when individuals differ in
+  inbreeding (`inst/sims/coverage_se.R` shows why locus-based intervals are
+  then too narrow).
+* `pi_allsites()`: pi, dxy, Da and per-individual heterozygosity per
+  sequenced site from an all-sites VCF (Stacks `populations --vcf-all`),
+  handling missing data site by site.
+* `read_stacks_vcf(locus_from = ...)`: assigns records to RAD loci for VCFs
+  from other pipelines and for Stacks builds that leave the ID column empty.
+* Three vignettes: `workflow` (one analysis start to finish), `rationale`
+  (most of the former README) and `reviewer-faq`.
+
 ## Bug fixes
 
 * A popmap with all-numeric sample IDs such as `001` was read as numbers, so

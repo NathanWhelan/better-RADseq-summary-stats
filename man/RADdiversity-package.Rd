@@ -24,7 +24,7 @@ functions: read, filter and export.
 }
 
 Standard errors and confidence intervals resample whole RAD loci. The
-command-line scripts are in \code{system.file("scripts", package = "RADdiversity")}; the statistical rationale is in the package README.
+command-line scripts are in \code{system.file("scripts", package = "RADdiversity")}; the statistical rationale is in \code{vignette("rationale")}.
 }
 \seealso{
 Useful links:

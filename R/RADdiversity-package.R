@@ -16,7 +16,7 @@
 #'
 #' Standard errors and confidence intervals resample whole RAD loci. The
 #' command-line scripts are in `system.file("scripts", package =
-#' "RADdiversity")`; the statistical rationale is in the package README.
+#' "RADdiversity")`; the statistical rationale is in `vignette("rationale")`.
 #'
 #' @keywords internal
 "_PACKAGE"

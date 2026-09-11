@@ -47,7 +47,7 @@
 ## are recomputed with the point estimate's formulas (the min_n and >= g
 ## gene-copy rules included). Nobody is ever duplicated, so this carries none
 ## of the Nei-Chesser / rarefaction bias that rules out a bootstrap over
-## individuals ("Bootstrap mode" in the README).
+## individuals ("Bootstrap mode" in vignette("rationale")).
 ##   SE = sqrt( (n - 1)/n * sum_i (theta_(-i) - mean_i theta_(-i))^2 )
 ## `cmats`: per-record allele-count tables (populations x alleles), for the
 ## records `idx`; `n_typed`: typed individuals per record (rows = idx) and

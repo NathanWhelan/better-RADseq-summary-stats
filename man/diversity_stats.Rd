@@ -40,13 +40,14 @@ default -- must be \verb{<= 2x} the smallest population.}
 
 \item{nboot}{Bootstrap replicates. Default \code{10000L}; \code{0} = none.}
 
-\item{boot}{Which axis the bootstrap resamples: one of \code{"loci"} (RAD loci,
-the default -- matches hierfstat), \code{"individuals"} (within each
-population, matches diveRsity), or \code{"both"} (Owen & Eckles 2012
-crossed-factor scheme) -- matched exactly, not partially. \code{"individuals"}/
-\code{"both"} are comparison modes only -- an empirical coverage simulation
-found they badly undercover the true value for every statistic with a
-finite-sample correction; see \code{README.md}, "Bootstrap mode".}
+\item{boot}{Which axis the bootstrap resamples: one of \code{"loci"} (whole RAD
+loci, the default), \code{"individuals"} (within each population, as
+diveRsity does), or \code{"both"} (the Owen & Eckles 2012 crossed-factor
+scheme) -- matched exactly, not partially. \code{"individuals"}/\code{"both"} are
+comparison modes only: an empirical coverage simulation found they badly
+undercover the true value for every statistic with a finite-sample
+correction (\code{vignette("rationale")}, "Bootstrap mode"). For uncertainty
+over individuals use \code{se_individuals = TRUE} instead.}
 
 \item{sites}{Total sequenced sites, for the autosomal Ho/He (nucleotide
 diversity) conversion -- adds \code{Ho_autosomal}/\code{He_autosomal} alongside
@@ -147,8 +148,9 @@ the tables to TSV files.
 \details{
 Run it twice: \code{populations.snps.vcf} gives Ho, He, \code{pct_poly} and the
 per-sequenced-site values; \code{populations.haps.vcf} gives FIS, Ar and
-privAr. Each run prints which of its numbers to take. See \code{README.md}
-("Which file for which statistic") for the full reasoning.
+privAr. Each run prints which of its numbers to take. See
+\code{vignette("rationale")} ("Which file for which statistic") for the full
+reasoning.
 }
 \examples{
 # A toy dataset shipped with the package: 80 RAD loci, 2 populations of 4

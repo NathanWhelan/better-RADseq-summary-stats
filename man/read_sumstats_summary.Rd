@@ -24,7 +24,7 @@ data frame per block, one row per population.
 }
 \details{
 This package's own Ho, He and FIS estimators deliberately differ from
-Stacks' -- see \code{README.md} ("Formulas"): Nei & Chesser's He instead of
+Stacks' -- see \code{vignette("rationale")} ("Formulas"): Nei & Chesser's He instead of
 Stacks' \code{Pi} (which assumes FIS = 0), and FIS as a ratio of sums instead
 of Stacks' mean of per-locus ratios. \strong{Nothing in this package uses the
 values this function returns as an estimate of Ho, He, pi or FIS} --

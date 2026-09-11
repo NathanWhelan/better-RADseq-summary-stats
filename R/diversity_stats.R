@@ -5,7 +5,7 @@
 #
 #  WHY THE NUMBERS DIFFER FROM STACKS -- one line each. The full explanation,
 #  and the formulas with every Stacks column matched to its counterpart here,
-#  are in README.md. This header deliberately does not restate them.
+#  are in vignette("rationale"). This header deliberately does not restate them.
 #
 #    He     Nei & Chesser (1983), not Stacks' `Pi`, whose correction assumes
 #           FIS = 0. Both printed side by side.            [-> "Formulas"]
@@ -15,7 +15,7 @@
 #           resampling linked SNPs as independent gave intervals ~1.8x too
 #           narrow. boot="individuals"/boot="both" exist for comparison
 #           only -- they badly undercover He/Fis/Ar/privAr (see
-#           README.md, "Bootstrap mode"). Do NOT use any of these
+#           vignette("rationale"), "Bootstrap mode"). Do NOT use any of these
 #           to compare populations -- that is het_between_pops(). [-> "Step 3"]
 #    sites  DEFAULT: a locus is used by a population once that population has
 #           >= min_n typed individuals there (available-data, per population,
@@ -25,7 +25,7 @@
 #
 #  Engine: this package's own estimators (R/estimators.R). With
 #  hierfstat_check = TRUE they are cross-checked against hierfstat when it is
-#  installed. Validation provenance is in README.md, Step 0.
+#  installed. Validation: diversity_core_selftest() and the package tests.
 #
 ###############################################################################
 
@@ -41,8 +41,9 @@
 #'
 #' Run it twice: `populations.snps.vcf` gives Ho, He, `pct_poly` and the
 #' per-sequenced-site values; `populations.haps.vcf` gives FIS, Ar and
-#' privAr. Each run prints which of its numbers to take. See `README.md`
-#' ("Which file for which statistic") for the full reasoning.
+#' privAr. Each run prints which of its numbers to take. See
+#' `vignette("rationale")` ("Which file for which statistic") for the full
+#' reasoning.
 #'
 #' @param vcf_file Path to `populations.snps.vcf` or `populations.haps.vcf`
 #'   (optionally gzip-compressed) -- OR, an already-parsed (and optionally
@@ -56,13 +57,14 @@
 #' @param g Rarefaction size in GENE COPIES (10 diploids = 20). Required, no
 #'   default -- must be `<= 2x` the smallest population.
 #' @param nboot Bootstrap replicates. Default `10000L`; `0` = none.
-#' @param boot Which axis the bootstrap resamples: one of `"loci"` (RAD loci,
-#'   the default -- matches hierfstat), `"individuals"` (within each
-#'   population, matches diveRsity), or `"both"` (Owen & Eckles 2012
-#'   crossed-factor scheme) -- matched exactly, not partially. `"individuals"`/
-#'   `"both"` are comparison modes only -- an empirical coverage simulation
-#'   found they badly undercover the true value for every statistic with a
-#'   finite-sample correction; see `README.md`, "Bootstrap mode".
+#' @param boot Which axis the bootstrap resamples: one of `"loci"` (whole RAD
+#'   loci, the default), `"individuals"` (within each population, as
+#'   diveRsity does), or `"both"` (the Owen & Eckles 2012 crossed-factor
+#'   scheme) -- matched exactly, not partially. `"individuals"`/`"both"` are
+#'   comparison modes only: an empirical coverage simulation found they badly
+#'   undercover the true value for every statistic with a finite-sample
+#'   correction (`vignette("rationale")`, "Bootstrap mode"). For uncertainty
+#'   over individuals use `se_individuals = TRUE` instead.
 #' @param sites Total sequenced sites, for the autosomal Ho/He (nucleotide
 #'   diversity) conversion -- adds `Ho_autosomal`/`He_autosomal` alongside
 #'   Ho/He (SNP VCF only; ignored, with a message, on a haplotype VCF).
@@ -472,7 +474,7 @@ diversity_stats <- function(vcf_file, popmap_f, g, nboot = 10000L,
   ## only how the input counts are built differs.
   ##
   ## Mechanism (Owen & Eckles 2012 product-weight bootstrap, r=2 crossed
-  ## factors: locus x individual -- see README.md, "Bootstrap mode"):
+  ## factors: locus x individual -- see vignette("rationale"), "Bootstrap mode"):
   ## draw ONE fresh individual weight vector per population (step 1), reuse it
   ## for every locus in `sel` including repeats (step 2), which is equivalent
   ## to duplicating each resampled individual's row that many times and
@@ -492,7 +494,7 @@ diversity_stats <- function(vcf_file, popmap_f, g, nboot = 10000L,
   ## found this drives coverage of the TRUE value as low as 0%, and it WORSENS
   ## as locus count grows (the bias is fixed; the bootstrap spread shrinks).
   ## Ho (no correction factor) was unaffected (88-92% coverage). See
-  ## README.md, "Bootstrap mode" for the full numbers. boot="loci" is
+  ## vignette("rationale"), "Bootstrap mode" for the full numbers. boot="loci" is
   ## therefore the default for every statistic; this function only runs under
   ## an explicit boot="individuals"/"both" comparison request.
   stat_from_resampled <- function(sel) {
@@ -587,7 +589,7 @@ diversity_stats <- function(vcf_file, popmap_f, g, nboot = 10000L,
   ## duplicates anything -- it just drops one whole RAD-locus block -- so it
   ## does NOT have the compositional-duplication bias that made individual-
   ## resampling undercover He/Fis/Ar (see "Bootstrap mode" in
-  ## README.md). It needs no random numbers and no nboot: with nL
+  ## vignette("rationale")). It needs no random numbers and no nboot: with nL
   ## RAD loci there are exactly nL delete-one replicates, deterministic and
   ## reproducible run to run.
   ##
@@ -771,10 +773,11 @@ print.raddiv_diversity <- function(x, ...) {
   ## and diffable, and 80 columns wraps the richness table. Restored on exit.
   old <- options(width = max(200L, getOption("width")))
   on.exit(options(old), add = TRUE)
-  ## An indented paragraph, and a pointer to the README section that explains
-  ## it: the report prints the numbers, the README holds the long reasoning.
+  ## An indented paragraph, and a pointer to the vignette section that
+  ## explains it: the report prints the numbers, vignette("rationale") holds
+  ## the long reasoning.
   note <- function(...) cat(paste0("  ", c(...), "\n"), sep = "")
-  see  <- function(sec) cat(paste0("  -> README.md, \"", sec, "\"\n"))
+  see  <- function(sec) cat(paste0("  -> vignette(\"rationale\"): \"", sec, "\"\n"))
 
   cat("\n=====================================================================\n")
   cat("  DIVERSITY --", r, "populations,", format(L, big.mark = ","), "records on",
@@ -795,7 +798,7 @@ print.raddiv_diversity <- function(x, ...) {
   }
   if (rp$nboot > 0) cat("  95% CI from ", format(rp$nboot, big.mark = ","),
                         " replicates, boot=\"", rp$boot,
-                        "\" (see README.md, \"Bootstrap mode\")\n", sep = "")
+                        "\" (see vignette(\"rationale\"), \"Bootstrap mode\")\n", sep = "")
   cat("=====================================================================\n\n")
   print(x$per_population, row.names = FALSE)
   cat("  _se columns: delete-one-block jackknife over RAD loci (Weir 1996) --\n")
@@ -813,7 +816,7 @@ print.raddiv_diversity <- function(x, ...) {
       "loci had a defined value for that population\n")
   cat("  (Ar needs only THAT population at >= g gene copies; privAr needs EVERY\n")
   cat("  population at >= g simultaneously, so privAr_n <= Ar_n, often far less\n")
-  cat("  under available data -- see README.md if privAr_n is small).\n")
+  cat("  under available data -- see vignette(\"rationale\") if privAr_n is small).\n")
   if (min(rp$pr_n) < 0.5 * L)
     cat(sprintf("  WARNING: privAr_n is below 50%% of loci for at least one population --\n  its rarefied private richness rests on a minority of loci. Consider a\n  smaller g (rarefaction target), currently %d gene copies.\n", g))
   cat("  Ar and privAr are PER LOCUS (the HP-RARE / ADZE convention);\n")

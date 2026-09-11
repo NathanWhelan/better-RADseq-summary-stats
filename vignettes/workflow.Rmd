@@ -1,0 +1,186 @@
+---
+title: "Workflow: from a Stacks run to a results table"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Workflow: from a Stacks run to a results table}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+```
+
+This vignette walks through one analysis from start to finish, on the toy
+dataset that ships with the package: 80 RAD loci and two populations of 4
+and 3 individuals. That is far too few individuals for real inference -- it
+is here so every step runs in seconds. The reasoning behind each step is in
+`vignette("rationale", package = "RADdiversity")`.
+
+```{r}
+library(RADdiversity)
+haps   <- system.file("extdata", "small.haps.vcf", package = "RADdiversity")
+snps   <- system.file("extdata", "small.snps.vcf", package = "RADdiversity")
+popmap <- system.file("extdata", "small_popmap.tsv", package = "RADdiversity")
+sumstats <- system.file("extdata", "populations.sumstats_summary.tsv",
+                        package = "RADdiversity")
+```
+
+## 1. Run Stacks once
+
+Two `populations` flags matter for everything below: a minimum genotype
+depth, so that heterozygotes are not silently called homozygous, and a
+per-population (not pooled) missing-data filter, so that both populations are
+filtered the same way. There is deliberately no `--hwe` filter.
+
+```bash
+populations --in-path ./stacks_out --popmap popmap.tsv -O ./out \
+            --min-gt-depth 10 -r 0.8 -p 2 --min-mac 3 \
+            --max-obs-het 0.70 --fstats --vcf -t 8
+```
+
+This writes `populations.snps.vcf` (one record per SNP) and
+`populations.haps.vcf` (one record per RAD locus), and
+`populations.sumstats_summary.tsv`. Add `--vcf-all` to also get every
+sequenced site, variable or not, for `pi_allsites()` (section 8).
+
+## 2. Read the data
+
+```{r}
+H <- read_stacks_vcf(haps)
+pops <- read_popmap(popmap, H$samples)
+```
+
+`read_stacks_vcf()` also reads VCFs from other pipelines (ipyrad, dDocent,
+GATK ...). What matters is that each record is assigned to its RAD locus --
+the unit that standard errors resample -- and the message above says how that
+was done; see `locus_from` in `?read_stacks_vcf`.
+
+## 3. Optional: filter loci
+
+The filters take and return the same object, so they chain. Looking before
+filtering is cheap:
+
+```{r}
+head(locus_allele_stats(H))
+H_f <- filter_call_rate(H, min_call = 0.5, pops = pops)
+H_f <- filter_max_het(H_f, max_ho = 0.8)
+```
+
+`filter_maf()`, `filter_mac()`, `filter_thin_one_snp()` and
+`filter_low_conf_alt()` work the same way. A filtered object can go straight
+into the functions below (with `stem =` naming its output files).
+
+## 4. Screen for close relatives
+
+Every between-population test below assumes independent individuals.
+
+```{r}
+kin <- kinship_check(H)
+kin$flagged_pairs
+```
+
+KING-robust misses many real relatives in reduced-representation data
+(McMaster et al. 2025), so a clean result is reassuring, not proof.
+
+## 5. Diversity within each population
+
+Run `diversity_stats()` on both files: the haplotype VCF gives FIS and
+allelic richness, the SNP VCF gives Ho, He and their per-site values.
+
+```{r}
+div_haps <- diversity_stats(haps, popmap, g = 4, nboot = 200)
+div_haps$per_population
+div_haps$richness
+```
+
+```{r}
+div_snps <- diversity_stats(snps, popmap, g = 4, nboot = 200, sites = sumstats)
+div_snps$autosomal
+```
+
+Printing a result shows the full report, including which of its numbers to
+take from this file:
+
+```{r, eval = FALSE}
+print(div_snps)
+```
+
+## 6. Do individuals differ in inbreeding?
+
+The standard errors and intervals above resample loci, holding the sampled
+individuals fixed. That is fine when individuals are exchangeable and too
+optimistic when they differ in inbreeding. g2 answers the question:
+
+```{r}
+identity_disequilibrium(H, pops, nboot = 200, nperm = 200, min_call = 0.5)
+```
+
+If its interval excludes 0, report the individual-jackknife standard errors:
+
+```{r}
+div_ind <- diversity_stats(haps, popmap, g = 4, nboot = 0, se_individuals = TRUE)
+div_ind$per_population[, c("population", "Fis", "Fis_se", "Fis_se_ind")]
+```
+
+## 7. Do the populations differ?
+
+Compare individuals, not loci. `het_between_pops()` tests two things with the
+same machinery: mean individual heterozygosity (diversity) and the individual
+inbreeding coefficient F (inbreeding):
+
+```{r}
+het <- het_between_pops(haps, popmap, min_call = 0.5)
+het$pairwise_tests      # heterozygosity
+het$pairwise_F_tests    # inbreeding
+```
+
+Differentiation between the populations:
+
+```{r}
+dif <- differentiation_stats(haps, popmap, nboot = 200)
+dif$global
+```
+
+## 8. Nucleotide diversity from an all-sites VCF
+
+With `populations --vcf-all` output, `pi_allsites()` computes pi and dxy
+directly, handling missing data site by site. A tiny file shows the shape:
+
+```{r}
+allsites <- tempfile(fileext = ".vcf")
+writeLines(c(
+  "##fileformat=VCFv4.2",
+  "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\ta1\ta2\tb1\tb2",
+  "1\t1\t.\tA\tG\t.\tPASS\t.\tGT\t0/0\t0/1\t1/1\t1/1",
+  "1\t2\t.\tC\t.\t.\tPASS\t.\tGT\t0/0\t0/0\t0/0\t0/0",
+  "2\t1\t.\tT\tC\t.\tPASS\t.\tGT\t0/1\t./.\t0/0\t0/1"), allsites)
+pm4 <- tempfile()
+writeLines(c("a1\tpopA", "a2\tpopA", "b1\tpopB", "b2\tpopB"), pm4)
+pi_allsites(allsites, pm4, nboot = 0)$pi
+```
+
+## 9. Hardy-Weinberg: a report, never a filter
+
+A heterozygote deficit is the signal FIS measures, so no function here removes
+loci on HWE:
+
+```{r}
+hw <- hwe_test(H, pops = pops, n_draws = 1000)
+table(p_below_0.05 = hw$p_value < 0.05, useNA = "ifany")
+```
+
+## 10. Export
+
+```{r, eval = FALSE}
+write_vcf(H_f, "filtered.vcf")
+write_plink(H_f, "filtered", pops = pops, drop_multiallelic = TRUE)
+write_structure(H_f, "filtered.str", pops = pops)
+write_genepop(H_f, "filtered.gen", pops = pops)
+write_radpainter(H_f, "filtered.radpainter")
+```
+
+## What to write
+
+Methods and results text to adapt, and answers to the usual reviewer
+objections, are in `vignette("reviewer-faq", package = "RADdiversity")`.

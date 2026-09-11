@@ -13,7 +13,7 @@
 #  per-individual heterozygosity held 5% throughout. het_between_pops_selftest()
 #  reproduces that table. The objection is old (Van Dongen 1995); most papers
 #  ignore it.
-#  Full discussion in README.md, "Step 3".
+#  Full discussion in vignette("rationale"), "Step 3".
 #
 #  WHAT TO READ, IN ORDER
 #    1. the missingness confound check -- if call rate correlates with
@@ -127,7 +127,7 @@ het_between_pops <- function(vcf_file, popmap_f, min_call = 0.9, outdir = NULL,
   ## raw per-individual table and the missingness confound check) -- not for
   ## anything that compares populations to each other. A pooled threshold lets
   ## a locus pass because the larger population's coverage carries the smaller
-  ## one's (see README.md's warning against -R for this same reason),
+  ## one's (see vignette("rationale")'s warning against -R for this same reason),
   ## which is exactly the asymmetry a BETWEEN-population estimate must avoid.
   ## The population summary, overdispersion check, and pairwise tests further
   ## down use a genuinely per-population/per-pair criterion instead (see below).

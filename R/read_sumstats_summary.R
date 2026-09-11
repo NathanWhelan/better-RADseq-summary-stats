@@ -3,7 +3,7 @@
 #  R/read_sumstats_summary.R -- parser for Stacks' populations.sumstats_summary.tsv
 #
 #  WHAT THIS IS FOR. This package's own Ho, He and FIS estimators
-#  deliberately differ from Stacks' (see README.md, "Formulas": Nei-Chesser
+#  deliberately differ from Stacks' (see vignette("rationale"), "Formulas": Nei-Chesser
 #  He instead of Stacks' `Pi`, which assumes FIS = 0; FIS as a ratio of sums
 #  instead of Stacks' mean of per-locus ratios). NOTHING in this package
 #  treats sumstats_summary.tsv as a source of Ho, He, pi or FIS -- diversity_
@@ -120,7 +120,7 @@
 #' data frame per block, one row per population.
 #'
 #' This package's own Ho, He and FIS estimators deliberately differ from
-#' Stacks' -- see `README.md` ("Formulas"): Nei & Chesser's He instead of
+#' Stacks' -- see `vignette("rationale")` ("Formulas"): Nei & Chesser's He instead of
 #' Stacks' `Pi` (which assumes FIS = 0), and FIS as a ratio of sums instead
 #' of Stacks' mean of per-locus ratios. **Nothing in this package uses the
 #' values this function returns as an estimate of Ho, He, pi or FIS** --

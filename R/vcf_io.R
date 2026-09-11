@@ -295,6 +295,18 @@ read_haps_vcf <- function(path, verbose = TRUE, locus_from = "auto", window_bp =
   out
 }
 
+## Not exported. Allele counts per record: a records x alleles matrix from
+## records x individuals allele matrices `a1`/`a2` (1-based allele numbers,
+## NA = missing), all in one tabulate() call. `k` is the number of allele
+## columns (default: the largest allele number seen).
+.allele_counts <- function(a1, a2, k = max(c(1L, a1, a2), na.rm = TRUE)) {
+  nr <- nrow(a1)
+  codes <- c(a1, a2)
+  rows  <- rep(rep(seq_len(nr), ncol(a1)), 2L)
+  ok    <- !is.na(codes)
+  matrix(tabulate((codes[ok] - 1L) * nr + rows[ok], nbins = nr * k), nr, k)
+}
+
 ## Not exported. H (records `rows`) as the data frame hierfstat expects: a
 ## population number, then one column per locus with each genotype as a
 ## 3-digits-per-allele integer (alleles 1 and 12 -> 1012).

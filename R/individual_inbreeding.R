@@ -36,11 +36,7 @@
   het   <- typed & (a1 != a2)                  # FALSE where untyped
   n_l   <- rowSums(typed)
   ho_l  <- rowSums(het) / n_l
-  ## Allele counts per locus in one tabulate() call (as in
-  ## locus_allele_stats()), then sum p^2 per locus.
-  k <- max(c(1L, a1, a2), na.rm = TRUE)
-  codes <- c(a1, a2); rows <- rep(rep(seq_len(nr), nc), 2L); ok <- !is.na(codes)
-  cnt <- matrix(tabulate((codes[ok] - 1L) * nr + rows[ok], nbins = nr * k), nr, k)
+  cnt  <- .allele_counts(a1, a2)
   hs_l <- hs_nei_chesser(rowSums((cnt / (2 * n_l))^2), ho_l, n_l)   # NA if n < 2
   use  <- is.finite(hs_l)
   obs  <- colSums(het & use)

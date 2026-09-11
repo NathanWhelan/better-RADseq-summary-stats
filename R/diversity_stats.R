@@ -397,51 +397,58 @@ diversity_stats <- function(vcf_file, popmap_f, g, nboot = 10000L,
     message(sprintf("  %s locus-by-population cells have no defined Ho/Hs and are ",
                     format(n_drop, big.mark = ",")),
             "excluded from that population's means (not counted as zero).")
-  stat_from <- function(sel) {
-    Hos <- Ho[sel, , drop = FALSE]; Hss <- Hs[sel, , drop = FALSE]
-    Hps <- Hp[sel, , drop = FALSE]
-    us  <- usable[sel, , drop = FALSE]
-    nsp <- colSums(us)                       # per-population record count
-    ho <- colSums(ifelse(us, Hos, 0)); hs <- colSums(ifelse(us, Hss, 0))
-    nsp[nsp == 0] <- NA
-    ## Stacks-Pi comparison, on its own matched mask so numerator and denominator
-    ## always count the same records even if the two estimators differ in which
-    ## cells they can define.
-    usp  <- us & is.finite(Hps)
-    nspp <- colSums(usp); nspp[nspp == 0] <- NA
-    hop <- colSums(ifelse(usp, Hos, 0)); hpp <- colSums(ifelse(usp, Hps, 0))
-    ## priv_total: the dataset-wide sum of privAr over whichever loci in `sel`
-    ## have a defined value for that population (repeats in `sel`, from a
-    ## resampled multiset, contribute their value that many times -- this is a
-    ## literal sum, not the mean*count rescaling the point estimate used to use,
-    ## though the two agree exactly whenever every locus in `sel` is counted
-    ## once). A population with NO defined locus gets NA here, not the 0/0 NaN
-    ## the old rescaling silently produced -- distinct from a population that
-    ## HAS defined loci and simply carries zero private alleles at all of them.
-    prm <- Pr[sel, , drop = FALSE]
-    pr_def <- colSums(!is.na(prm))
-    PrTot_ <- colSums(ifelse(is.na(prm), 0, prm))
-    PrTot_[pr_def == 0] <- NA_real_
-    ## Ar_/Pr_ (below): colMeans(..., na.rm = TRUE) on an all-NA column is 0/0,
-    ## which R evaluates to NaN, not NA -- a population with Ar/privAr undefined
-    ## at EVERY locus in `sel` would otherwise print the literal text "NaN"
-    ## instead of "NA", and propagate NaN into any downstream jackknife/
-    ## bootstrap arithmetic built on this point estimate. Force it explicitly,
-    ## the same guard already applied to PrTot_ above.
-    arm <- Ar[sel, , drop = FALSE]
-    ar_def <- colSums(!is.na(arm))
-    Ar_ <- colMeans(arm, na.rm = TRUE); Ar_[ar_def == 0] <- NA_real_
-    Pr_ <- colMeans(prm, na.rm = TRUE); Pr_[pr_def == 0] <- NA_real_
-    c(stats::setNames(ho / nsp, paste0("Ho_", names(pops))),
-      stats::setNames(hs / nsp, paste0("He_", names(pops))),
-      stats::setNames(ifelse(hs > 0, 1 - ho / hs, NA_real_), paste0("Fis_", names(pops))),
-      stats::setNames(hpp / nspp, paste0("He2n_", names(pops))),
-      stats::setNames(ifelse(hpp > 0, 1 - hop / hpp, NA_real_), paste0("Fis2n_", names(pops))),
-      stats::setNames(Ar_, paste0("Ar_", names(pops))),
-      stats::setNames(Pr_, paste0("Pr_", names(pops))),
-      stats::setNames(100 * colSums(ifelse(us, poly[sel, , drop = FALSE], 0)) / nsp,
-               paste0("poly_", names(pops))),
-      stats::setNames(PrTot_, paste0("PrTot_", names(pops))))
+  ## ---------------------------------------------------------------------------
+  ## Every statistic reported below is a ratio (or a plain sum) of COLUMN SUMS
+  ## over records -- so the calculation needs only these per-record pieces:
+  ##   n    1 if Ho and Hs are both defined        ho, hs  those Ho, Hs (else 0)
+  ##   n2   1 if Hp (Stacks-Pi form) is too        ho2, hp Ho, Hp on that mask
+  ##   nP   1 if privAr is defined                 P       privAr (else 0)
+  ##   nA   1 if Ar is defined                     A       Ar (else 0)
+  ##   pol  1 if polymorphic here (among the n)
+  ## An undefined value contributes 0 to its sum AND 0 to its count, so a
+  ## numerator and its denominator always count the same records -- summing
+  ## with na.rm while dividing by the number of records would silently turn an
+  ## undefined locus into a measured zero. The Stacks-Pi comparison (ho2, hp)
+  ## gets its own mask for the same reason.
+  ##
+  ## `S` sums those pieces once per RAD LOCUS (one row per locus). The point
+  ## estimate, the jackknife and the loci bootstrap are all computed from S --
+  ## see R/resampling.R. stat_mat() turns summed pieces into statistics.
+  ## ---------------------------------------------------------------------------
+  usp <- usable & is.finite(Hp)
+  z <- function(x, ok) ifelse(ok, x, 0)
+  rec <- cbind(usable, z(Ho, usable), z(Hs, usable),        # n, ho, hs
+               usp, z(Ho, usp), z(Hp, usp),                 # n2, ho2, hp
+               !is.na(Pr), z(Pr, !is.na(Pr)),               # nP, P
+               !is.na(Ar), z(Ar, !is.na(Ar)),               # nA, A
+               z(poly, usable))                             # pol
+  storage.mode(rec) <- "double"
+  S <- rowsum(rec, li, reorder = TRUE)          # nL x (11 * r); row b = RAD locus b
+  stat_names <- paste0(rep(c("Ho_", "He_", "Fis_", "He2n_", "Fis2n_", "Ar_", "Pr_",
+                             "poly_", "PrTot_"), each = r), names(pops))
+  ## Summed pieces (one row per estimate or replicate) -> statistics. A mean or
+  ## ratio whose count is 0 is NA ("no information"), never the NaN that 0/0
+  ## would print. priv_total is the plain sum of privAr over the loci where it
+  ## is defined; a population with NO defined locus gets NA, which is a
+  ## different claim from a population with defined loci and zero private
+  ## alleles. The FIS guards use > 1e-12 rather than > 0 only to absorb the
+  ## last-bit rounding a jackknife leaves when it subtracts one locus from the
+  ## total (an exact 0 can come back as 1e-17).
+  stat_mat <- function(tot) {
+    tot <- matrix(tot, ncol = 11L * r)
+    blk <- function(k) tot[, (k - 1L) * r + seq_len(r), drop = FALSE]
+    n  <- blk(1); ho  <- blk(2); hs <- blk(3)
+    n2 <- blk(4); ho2 <- blk(5); hp <- blk(6)
+    nP <- blk(7); P   <- blk(8); nA <- blk(9); A <- blk(10); pol <- blk(11)
+    per <- function(x, cnt) { out <- x / cnt; out[cnt < 0.5] <- NA_real_; out }
+    PrTot <- P; PrTot[nP < 0.5] <- NA_real_
+    out <- cbind(per(ho, n), per(hs, n),
+                 ifelse(hs > 1e-12, 1 - ho / hs, NA_real_),
+                 per(hp, n2),
+                 ifelse(hp > 1e-12, 1 - ho2 / hp, NA_real_),
+                 per(A, nA), per(P, nP), 100 * per(pol, n), PrTot)
+    colnames(out) <- stat_names
+    out
   }
 
   ## min_n is documented as ignored under complete_case (every used cell
@@ -452,7 +459,7 @@ diversity_stats <- function(vcf_file, popmap_f, g, nboot = 10000L,
   ## The boot="individuals"/boot="both" engine: recomputes every statistic
   ## from a fresh per-population individual reweighting, for a given locus
   ## multiset `sel` (either every locus once, or a resampled multiset with
-  ## repeats, exactly like `stat_from()`'s `sel`). Reuses hs_from_counts(),
+  ## repeats, as one loci-bootstrap draw would give). Reuses hs_from_counts(),
   ## gene_div_2n_counts(), rare_richness(), rare_private_all() unmodified --
   ## only how the input counts are built differs.
   ##
@@ -558,15 +565,15 @@ diversity_stats <- function(vcf_file, popmap_f, g, nboot = 10000L,
     stop("No locus is polymorphic in any population, so He, FIS and allelic\n",
          "  richness are all degenerate. Check that genotypes were parsed: the\n",
          "  missing-genotype rate reported above should not be near 100%.")
-  point <- stat_from(seq_len(L))
+  point <- stat_mat(colSums(S))[1, ]
 
   ## ---------------------------------------------------------------------------
   ## Delete-one-BLOCK jackknife over RAD loci -- a standard error alongside the
   ## bootstrap CI, computed the way population-genetics software has long done
   ## it (Weir 1996, "Genetic Data Analysis II"; the same method behind
   ## GENEPOP/FSTAT's Fst/Fis standard errors), on the SAME loci axis this
-  ## project's own coverage simulation validated. Always uses stat_from() (the
-  ## unweighted, boot="loci" mechanism) regardless of which boot mode is
+  ## project's own coverage simulation validated. Always uses the per-locus
+  ## block sums (the boot="loci" mechanism) regardless of which boot mode is
   ## active: jackknife-over-loci is a cross-check for that one validated axis,
   ## not a per-mode option.
   ##
@@ -580,15 +587,9 @@ diversity_stats <- function(vcf_file, popmap_f, g, nboot = 10000L,
   ##
   ##   theta_bar         = mean over the nL delete-one estimates
   ##   SE_jackknife       = sqrt( (nL-1)/nL * sum_b (theta_(-b) - theta_bar)^2 )
-  jack_se <- function() {
-    jk <- vapply(seq_len(nL), function(b) stat_from(which(li != b)),
-                 numeric(length(point)))
-    theta_bar <- rowMeans(jk)
-    se <- sqrt(((nL - 1) / nL) * rowSums((jk - theta_bar)^2))
-    names(se) <- names(point)
-    se
-  }
-  se_jk <- jack_se()
+  ## All nL delete-one estimates come from the block sums at once (see
+  ## .jack_block_sums() in R/resampling.R).
+  se_jk <- .jack_block_sums(S, stat_mat)
 
   ## Ar/Pr coverage: how many loci actually contributed a defined value per
   ## population. rare_richness() is single-population (a locus counts for
@@ -615,7 +616,7 @@ diversity_stats <- function(vcf_file, popmap_f, g, nboot = 10000L,
     rows_of <- split(seq_len(L), li)
     resample_loci <- function() unlist(rows_of[sample.int(nL, nL, replace = TRUE)], use.names = FALSE)
     bt <- switch(boot_mode,
-      loci        = replicate(nboot, stat_from(resample_loci())),
+      loci        = t(.boot_block_sums(S, nboot, stat_mat)),
       individuals = replicate(nboot, stat_from_resampled(seq_len(L))),
       both        = replicate(nboot, stat_from_resampled(resample_loci())))
     ci <- t(apply(bt, 1, stats::quantile, c(0.025, 0.975), na.rm = TRUE))
@@ -673,7 +674,7 @@ diversity_stats <- function(vcf_file, popmap_f, g, nboot = 10000L,
                      ## priv_total: the dataset-wide sum of privAr over whichever
                      ## loci had a defined value for that population (PrTot_ is a
                      ## direct sum, computed in lockstep with the CI in every
-                     ## boot mode -- see the comment above PrTot_ in stat_from()).
+                     ## boot mode -- see stat_mat() above).
                      ## NA means no locus was defined for that population at all,
                      ## not "zero private alleles" -- those are different claims.
                      priv_total = round(gv("PrTot_"), 1), priv_total_se = round(sej("PrTot_"), 1),

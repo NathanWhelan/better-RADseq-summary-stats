@@ -24,7 +24,7 @@
 #
 #  ENGINE AND VALIDATION. FST/FIS here are computed with this package's OWN
 #  implementation of the Weir & Cockerham (1984) variance-component formula
-#  (functions .wc_components()/.fst_from_components()/.fis_from_components()
+#  (functions .wc_components()/.fst_from_sums()/.fis_from_sums()
 #  below), NOT by calling hierfstat, even when hierfstat is installed --
 #  unlike diversity_stats(), which prefers hierfstat's own functions when
 #  available. That is a deliberate choice, not an oversight: the bootstrap
@@ -102,7 +102,7 @@
 ##   sigb  variance among INDIVIDUALS WITHIN those populations ("b")
 ##   sigw  variance WITHIN INDIVIDUALS, i.e. heterozygosity     ("c")
 ## FST is then just how big a share of the total (a+b+c) is the "among
-## populations" share (a) -- see .fst_from_components() below, which is
+## populations" share (a) -- see .fst_from_sums() below, which is
 ## where these three numbers actually turn into one FST value. Kept
 ## separate, per-record, so the SAME three numbers can be resummed however
 ## many times a bootstrap or jackknife replicate needs, without redoing this
@@ -185,29 +185,28 @@
   list(siga = siga, sigb = sigb, sigw = sigw)
 }
 
-## Not exported. Turns a's/b's/c's (summed over whichever records a
-## statistic needs -- every record for the point estimate, a resampled
-## multiset for one bootstrap replicate, all-but-one-block for a jackknife
-## replicate) into one FST value: a RATIO OF SUMS, never a mean of per-locus
-## ratios -- the same principle this package already applies to FIS in
-## R/estimators.R's fis_ratio_of_sums(), for the same reason (a locus with a
-## tiny denominator would otherwise be able to dominate the average).
-.fst_from_components <- function(siga, sigb, sigw) {
-  ok <- is.finite(siga) & is.finite(sigb) & is.finite(sigw)
-  if (!any(ok)) return(NA_real_)
-  denom <- sum(siga[ok]) + sum(sigb[ok]) + sum(sigw[ok])
-  if (!isTRUE(denom != 0)) return(NA_real_)
-  sum(siga[ok]) / denom
+## Not exported. FST, and the "metapopulation" FIS wc() reports, from a, b
+## and c SUMMED over whichever loci an estimate uses (every locus for the
+## point estimate, a resampled multiset for a bootstrap replicate, all but
+## one locus for a jackknife replicate -- see R/resampling.R). A RATIO OF
+## SUMS, never a mean of per-locus ratios -- the same principle this package
+## applies to FIS in R/estimators.R's fis_ratio_of_sums(), for the same
+## reason (a locus with a tiny denominator would otherwise be able to
+## dominate the average):
+##   FST = sum(a) / sum(a + b + c)  -- the share of variance AMONG populations
+##   FIS = sum(b) / sum(b + c)      -- how much of the within-population part
+##                                     is among individuals rather than within
+## `n` is how many loci had all components defined. Vectorised: one element
+## per estimate. No defined locus, or a total of ~0 (every locus monomorphic),
+## gives NA; the 1e-12 guard (rather than == 0) absorbs the last-bit rounding
+## a jackknife leaves when it subtracts one locus from the total.
+.fst_from_sums <- function(n, a, b, c) {
+  d <- a + b + c
+  ifelse(n < 0.5 | abs(d) <= 1e-12, NA_real_, a / d)
 }
-## Not exported. Same idea, for the "metapopulation" FIS wc() reports: how
-## much of the (within-population + within-individual) variance is within
-## POPULATIONS rather than within individuals.
-.fis_from_components <- function(sigb, sigw) {
-  ok <- is.finite(sigb) & is.finite(sigw)
-  if (!any(ok)) return(NA_real_)
-  denom <- sum(sigb[ok]) + sum(sigw[ok])
-  if (!isTRUE(denom != 0)) return(NA_real_)
-  sum(sigb[ok]) / denom
+.fis_from_sums <- function(n, b, c) {
+  d <- b + c
+  ifelse(n < 0.5 | abs(d) <= 1e-12, NA_real_, b / d)
 }
 
 ## ---------------------------------------------------------------------------
@@ -217,7 +216,7 @@
 ## Not exported. For one specific set of populations `pops`, computes Jost's
 ## bias-corrected within-population gene diversity (Hs_est) and total gene
 ## diversity (Ht_est) PER RECORD -- the two ingredients D is built from (see
-## .jost_d_from_components() below). Deliberately a DIFFERENT weighting
+## .jost_d_from_sums() below). Deliberately a DIFFERENT weighting
 ## scheme than .wc_components() above: Jost's own formula averages
 ## populations EQUALLY (a plain mean across populations), not weighted by
 ## how many individuals each one has -- that is not a simplification on
@@ -266,20 +265,20 @@
   list(Hs = Hs, Ht = Ht)
 }
 
-## Not exported. Combines per-record Hs_est/Ht_est (over whichever records a
-## statistic needs) into one D value, following Jost's (2008) own
-## "average-Hs-and-Ht-first" convention (matching the `mmod` package's
-## default -- see the file header comment above): `n_pop` is the FIXED
-## number of populations in this particular comparison (2 for one pairwise
-## D, or the full population count for the global D) -- NOT how many of them
-## happened to have data at any one record, which is why it is passed in
-## rather than read off the per-record data.
-.jost_d_from_components <- function(Hs, Ht, n_pop) {
-  ok <- is.finite(Hs) & is.finite(Ht)
-  if (!any(ok)) return(NA_real_)
-  hs_bar <- mean(Hs[ok]); ht_bar <- mean(Ht[ok])
-  if (!isTRUE(hs_bar < 1)) return(NA_real_)
-  (ht_bar - hs_bar) / (1 - hs_bar) * (n_pop / (n_pop - 1))
+## Not exported. Combines Hs_est/Ht_est SUMMED over whichever records an
+## estimate uses (`n` of them with both defined) into one D value, following
+## Jost's (2008) own "average-Hs-and-Ht-first" convention (matching the
+## `mmod` package's default -- see the file header comment above): `n_pop` is
+## the FIXED number of populations in this particular comparison (2 for one
+## pairwise D, or the full population count for the global D) -- NOT how many
+## of them happened to have data at any one record, which is why it is passed
+## in rather than read off the per-record data. Vectorised over estimates,
+## like .fst_from_sums().
+.jost_d_from_sums <- function(n, hs, ht, n_pop) {
+  hs_bar <- ifelse(n < 0.5, NA_real_, hs / n)
+  ht_bar <- ht / n
+  ifelse(is.na(hs_bar) | hs_bar >= 1, NA_real_,
+         (ht_bar - hs_bar) / (1 - hs_bar) * (n_pop / (n_pop - 1)))
 }
 
 ## ---------------------------------------------------------------------------
@@ -429,35 +428,58 @@ differentiation_stats <- function(vcf_file, popmap_f, nboot = 10000L,
   wc_pair <- lapply(pair_names, function(pn) .wc_components(H, pops[pn]))
   d_pair  <- lapply(pair_names, function(pn) .jost_hsht(H, pops[pn]))
 
-  ## One statistic name per quantity this run tracks, so a single stat_from()
-  ## can compute the whole named vector at once, exactly like
-  ## diversity_stats()'s own stat_from() -- reused by the point estimate, the
-  ## bootstrap, and the jackknife alike.
+  ## Per-record pieces, summed once per RAD locus into `S` (see
+  ## R/resampling.R): for each comparison -- the global one, then each pair --
+  ## FST needs (n, a, b, c) over the records where a, b and c are all defined,
+  ## and D needs (n, Hs, Ht) over the records where both are defined; the
+  ## global FIS keeps its own (n, b, c) mask. An undefined record adds 0 to
+  ## every sum and to the count. Columns: 1-4 global FST, 5-7 global FIS,
+  ## 8-10 global D, then 4 per pair (FST), then 3 per pair (D).
   pair_lab <- vapply(pair_names, paste, character(1), collapse = "__")
-  stat_from <- function(sel) {
-    g_fst <- .fst_from_components(wc_global$siga[sel], wc_global$sigb[sel], wc_global$sigw[sel])
-    g_fis <- .fis_from_components(wc_global$sigb[sel], wc_global$sigw[sel])
-    g_d   <- .jost_d_from_components(d_global$Hs[sel], d_global$Ht[sel], r)
-    p_fst <- vapply(wc_pair, function(w) .fst_from_components(w$siga[sel], w$sigb[sel], w$sigw[sel]), numeric(1))
-    p_d   <- vapply(d_pair, function(d) .jost_d_from_components(d$Hs[sel], d$Ht[sel], 2), numeric(1))
-    stats::setNames(c(g_fst, g_fis, g_d, p_fst, p_d),
-             c("FST", "FIS", "D", paste0("pFST_", pair_lab), paste0("pD_", pair_lab)))
+  n_pair <- length(pair_names)
+  wc_pieces <- function(w) {
+    ok <- is.finite(w$siga) & is.finite(w$sigb) & is.finite(w$sigw)
+    cbind(ok, ifelse(ok, w$siga, 0), ifelse(ok, w$sigb, 0), ifelse(ok, w$sigw, 0))
   }
-  point <- stat_from(seq_len(n_rec))
+  d_pieces <- function(d) {
+    ok <- is.finite(d$Hs) & is.finite(d$Ht)
+    cbind(ok, ifelse(ok, d$Hs, 0), ifelse(ok, d$Ht, 0))
+  }
+  fis_ok <- is.finite(wc_global$sigb) & is.finite(wc_global$sigw)
+  rec <- cbind(wc_pieces(wc_global),
+               fis_ok, ifelse(fis_ok, wc_global$sigb, 0), ifelse(fis_ok, wc_global$sigw, 0),
+               d_pieces(d_global),
+               do.call(cbind, lapply(wc_pair, wc_pieces)),
+               do.call(cbind, lapply(d_pair, d_pieces)))
+  storage.mode(rec) <- "double"
+  S <- rowsum(rec, li, reorder = TRUE)          # nL x pieces; row b = RAD locus b
+  stat_names <- c("FST", "FIS", "D", paste0("pFST_", pair_lab), paste0("pD_", pair_lab))
+  stat_mat <- function(tot) {
+    tot <- matrix(tot, ncol = ncol(S))
+    col <- function(j) tot[, j]
+    per_pair <- function(first, f)                 # one column per pair
+      matrix(vapply(first, f, numeric(nrow(tot))), nrow = nrow(tot))
+    out <- cbind(
+      .fst_from_sums(col(1), col(2), col(3), col(4)),
+      .fis_from_sums(col(5), col(6), col(7)),
+      .jost_d_from_sums(col(8), col(9), col(10), r),
+      per_pair(10L + 4L * (seq_len(n_pair) - 1L), function(j)
+        .fst_from_sums(col(j + 1L), col(j + 2L), col(j + 3L), col(j + 4L))),
+      per_pair(10L + 4L * n_pair + 3L * (seq_len(n_pair) - 1L), function(j)
+        .jost_d_from_sums(col(j + 1L), col(j + 2L), col(j + 3L), 2)))
+    colnames(out) <- stat_names
+    out
+  }
+  point <- stat_mat(colSums(S))[1, ]
 
   ## Delete-one-BLOCK jackknife over RAD loci -- deterministic, needs no
-  ## nboot, exactly mirroring diversity_stats()'s own jack_se().
-  jk <- vapply(seq_len(nL), function(b) stat_from(which(li != b)), numeric(length(point)))
-  theta_bar <- rowMeans(jk)
-  se_jk <- sqrt(((nL - 1) / nL) * rowSums((jk - theta_bar)^2))
-  names(se_jk) <- names(point)
+  ## nboot, the same as diversity_stats() (R/resampling.R).
+  se_jk <- .jack_block_sums(S, stat_mat)
 
   if (nboot > 0) {
     message(sprintf("Bootstrapping %s replicates over %s RAD loci ...",
                     format(nboot, big.mark = ","), format(nL, big.mark = ",")))
-    rows_of <- split(seq_len(n_rec), li)
-    resample_loci <- function() unlist(rows_of[sample.int(nL, nL, replace = TRUE)], use.names = FALSE)
-    bt <- replicate(nboot, stat_from(resample_loci()))
+    bt <- t(.boot_block_sums(S, nboot, stat_mat))
     ci <- t(apply(bt, 1, stats::quantile, c(0.025, 0.975), na.rm = TRUE))
   } else {
     ci <- matrix(NA_real_, length(point), 2, dimnames = list(names(point), NULL))

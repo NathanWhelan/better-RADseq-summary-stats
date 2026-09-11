@@ -1,0 +1,17 @@
+##fileformat=VCFv4.2
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	popA_1	popA_2	popA_3	popA_4	popB_1	popB_2	popB_3
+un	1001	locus_1	A	C	.	PASS	.	GT	1/1	1/1	1/0	0/1	0/0	1/0	1/0
+un	1002	locus_2	A	T	.	PASS	.	GT	1/1	0/1	./.	0/0	1/0	0/1	1/1
+un	1003	locus_3	C	A	.	PASS	.	GT	0/0	0/1	0/0	1/1	0/1	0/1	0/0
+un	1004	locus_4	C	G	.	PASS	.	GT	1/0	0/0	0/0	1/0	0/0	1/0	1/1
+un	1005	locus_5	A	G	.	PASS	.	GT	0/0	1/1	1/1	./.	1/1	1/1	./.
+un	1006	locus_6	A	G	.	PASS	.	GT	0/0	1/0	1/0	1/1	1/1	1/0	1/0
+un	1007	locus_7	C	A	.	PASS	.	GT	1/0	0/0	0/1	1/1	0/0	1/0	0/0
+un	1008	locus_8	G	T	.	PASS	.	GT	0/1	0/0	0/1	1/1	1/0	1/1	1/0
+un	1009	locus_9	G	C	.	PASS	.	GT	0/0	0/1	1/0	0/0	1/0	0/0	0/0
+un	1010	locus_10	A	G	.	PASS	.	GT	1/0	0/1	1/0	0/0	0/0	./.	1/0
+un	1011	locus_11	C	A	.	PASS	.	GT	0/1	0/0	1/0	0/1	./.	0/1	1/1
+un	1012	locus_12	A	G	.	PASS	.	GT	1/0	1/0	0/0	0/0	0/0	0/0	0/0
+un	1013	locus_13	A	C	.	PASS	.	GT	./.	1/0	0/0	1/0	./.	0/0	1/1
+un	1014	locus_14	G	A	.	PASS	.	GT	0/1	1/1	0/0	1/0	0/1	1/1	0/1
+un	1015	locus_15	T	C	.	PASS	.	GT	0/0	0/0	0/1	0/0	1/0	0/0	0/1

@@ -15,12 +15,18 @@ diversity_stats(
   complete_case = FALSE,
   outdir = ".",
   seed = 2024,
-  verbose = TRUE
+  verbose = TRUE,
+  stem = NULL
 )
 }
 \arguments{
 \item{vcf_file}{Path to \code{populations.snps.vcf} or \code{populations.haps.vcf}
-(optionally gzip-compressed).}
+(optionally gzip-compressed) -- OR, an already-parsed (and optionally
+filtered) \code{H} list, i.e. the object returned by \code{\link[=read_haps_vcf]{read_haps_vcf()}}, on
+its own or passed through one or more \verb{filter_*()} functions first (see
+\code{R/filter_loci.R}). When passing a list, \code{stem} must also be given (see
+below), since the usual output-filename logic needs a real filename to
+work from.}
 
 \item{popmap_f}{Path to a two-column, no-header popmap TSV (\verb{sample_id <TAB> population}).}
 
@@ -37,10 +43,20 @@ crossed-factor scheme) -- matched exactly, not partially. \code{"individuals"}/
 found they badly undercover the true value for every statistic with a
 finite-sample correction; see \code{README.md}, "Bootstrap mode".}
 
-\item{sites}{Total sequenced sites -- the \code{Sites} column of the "All
-positions (variant and fixed)" block of
-\code{populations.sumstats_summary.tsv}. Adds per-sequenced-site Ho and He.
-Default \code{0} (per-record values only).}
+\item{sites}{Total sequenced sites, for the autosomal Ho/He (nucleotide
+diversity) conversion -- adds \code{Ho_autosomal}/\code{He_autosomal} alongside
+Ho/He (SNP VCF only; ignored, with a message, on a haplotype VCF).
+Accepts four shapes: a single non-negative number, broadcast to every
+population (the default \code{0} means "off"); a named numeric vector, one
+value per population (names must match the popmap's population names);
+a data frame or matrix with a population column (\code{population}/\code{pop})
+and a sites column (\code{sites}); or a path to a Stacks
+\code{populations.sumstats_summary.tsv} file, from which each population's
+own \code{Sites} (the "All positions (variant and fixed)" block) is read
+automatically via \code{\link[=read_sumstats_summary]{read_sumstats_summary()}}. The vector/data-frame/path
+forms let a population with more missing loci -- which is exactly what
+makes its own \code{Sites} count smaller in Stacks' own accounting -- use
+its own denominator instead of another population's.}
 
 \item{min_n}{Available-data mode only: minimum typed individuals a
 population needs at a locus to use that locus for that population.
@@ -64,11 +80,27 @@ session.}
 main report (point estimates, CIs, "TAKE FROM THIS RUN" guidance) is
 always printed regardless of this setting, matching the command-line
 script.}
+
+\item{stem}{Text used to build the two output filenames (e.g.
+\verb{diversity_per_population.<stem>.tsv}) -- ordinarily derived
+automatically from \code{vcf_file}'s own filename (e.g.
+\code{populations.haps.vcf} gives \code{stem = "haps"}), which is why this
+package's documented workflow runs this function once on the haplotype
+VCF and once on the SNP VCF without the second run silently overwriting
+the first run's files. That automatic derivation has no filename to
+work from when \code{vcf_file} is an already-parsed list rather than a path,
+so \code{stem} must be supplied explicitly in that case (e.g.
+\code{stem = "snps"}) -- this function stops with an explanatory error
+rather than guessing. Default \code{NULL} (derive automatically from
+\code{vcf_file} when it is a path; required otherwise). Supplying \code{stem}
+alongside a path overrides the automatic derivation.}
 }
 \value{
-Invisibly, a list with elements \code{per_population} and \code{richness}
-(the same two data frames written to \code{diversity_per_population.*.tsv}
-and \code{diversity_richness.*.tsv}).
+Invisibly, a list with elements \code{per_population}, \code{richness}, and
+\code{autosomal} (\code{NULL} unless \code{sites} gave at least one population a
+plausible value -- see \code{sites} above; when present it is also written
+to \code{diversity_autosomal.*.tsv}), alongside
+\code{diversity_per_population.*.tsv} and \code{diversity_richness.*.tsv}.
 }
 \description{
 Computes Ho, He, FIS (Nei & Chesser 1983, ratio of sums), rarefied allelic

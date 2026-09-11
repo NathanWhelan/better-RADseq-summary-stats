@@ -15,3 +15,41 @@ test_that("read_popmap() splits samples by population", {
   expect_equal(names(pops), c("popA", "popB"))
   expect_equal(lengths(pops), c(popA = 4L, popB = 3L))
 })
+
+test_that(".resolve_H() passes a path through to read_haps_vcf() and an H list straight through", {
+  H_from_path <- suppressMessages(RADdiversity:::.resolve_H(fx("small.haps.vcf"), verbose = FALSE))
+  expect_equal(H_from_path$samples, suppressMessages(read_haps_vcf(fx("small.haps.vcf"), verbose = FALSE))$samples)
+
+  H <- suppressMessages(read_haps_vcf(fx("small.haps.vcf"), verbose = FALSE))
+  expect_identical(RADdiversity:::.resolve_H(H, verbose = FALSE), H)
+})
+
+test_that(".resolve_H() rejects something that isn't a path or a proper H list", {
+  expect_error(RADdiversity:::.resolve_H(42), "path to a VCF file")
+  expect_error(RADdiversity:::.resolve_H(list(A1 = matrix(1))), "missing element")
+  bad <- list(A1 = matrix(1), A2 = matrix(1:2), locus = "x", locus_raw = "x",
+              alleles = list("A"), n_alleles = 1L, samples = "s1")
+  expect_error(RADdiversity:::.resolve_H(bad), "same size")
+})
+
+test_that("diversity_stats()/het_between_pops() accept a pre-parsed H list in place of a path", {
+  outdir <- tempfile("raddiversity-test-")
+  dir.create(outdir)
+  on.exit(unlink(outdir, recursive = TRUE), add = TRUE)
+  H <- suppressMessages(read_haps_vcf(fx("small.haps.vcf")))
+
+  expect_error(
+    suppressMessages(diversity_stats(H, fx("small_popmap.tsv"), g = 4, nboot = 10, outdir = outdir)),
+    "stem"
+  )
+  res <- suppressMessages(capture.output(
+    result <- diversity_stats(H, fx("small_popmap.tsv"), g = 4, nboot = 10, outdir = outdir, stem = "test")
+  ))
+  expect_named(result, c("per_population", "richness", "autosomal"))
+  expect_true(file.exists(file.path(outdir, "diversity_per_population.test.tsv")))
+
+  het_res <- suppressMessages(capture.output(
+    het_result <- het_between_pops(H, fx("small_popmap.tsv"), min_call = 0.5, outdir = outdir)
+  ))
+  expect_named(het_result, c("individual_heterozygosity", "pairwise_tests"))
+})

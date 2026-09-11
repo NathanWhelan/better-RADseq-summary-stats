@@ -231,15 +231,24 @@ fis_ratio_of_sums <- function(ho, he) {
 #' of the "All positions (variant and fixed)" block of
 #' `populations.sumstats_summary.tsv`.
 #'
+#' Vectorised over `n_sites_sequenced` (as well as `het_per_snp`), so a
+#' per-population sequenced-site count can be passed alongside a
+#' per-population `het_per_snp` -- e.g. [diversity_stats()]'s `sites`
+#' argument, which lets each population use its own denominator. `NA` is
+#' returned element-wise wherever `n_sites_sequenced` is non-finite or
+#' smaller than `n_snps_used`, rather than aborting the whole vector.
+#'
 #' @param het_per_snp Heterozygosity per ascertained SNP.
 #' @param n_snps_used Number of SNPs used to compute `het_per_snp`.
-#' @param n_sites_sequenced Total sequenced sites (variant and fixed).
-#' @return A single numeric value.
+#' @param n_sites_sequenced Total sequenced sites (variant and fixed). A
+#'   single value or one per element of `het_per_snp`.
+#' @return A numeric vector, the same length as `het_per_snp`.
 #' @export
 autosomal_het <- function(het_per_snp, n_snps_used, n_sites_sequenced) {
-  if (!is.finite(n_sites_sequenced) || n_sites_sequenced < n_snps_used)
-    return(NA_real_)
-  het_per_snp * n_snps_used / n_sites_sequenced
+  bad <- !is.finite(n_sites_sequenced) | n_sites_sequenced < n_snps_used
+  out <- het_per_snp * n_snps_used / n_sites_sequenced
+  out[bad] <- NA_real_
+  out
 }
 
 

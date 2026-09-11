@@ -11,13 +11,22 @@ autosomal_het(het_per_snp, n_snps_used, n_sites_sequenced)
 
 \item{n_snps_used}{Number of SNPs used to compute \code{het_per_snp}.}
 
-\item{n_sites_sequenced}{Total sequenced sites (variant and fixed).}
+\item{n_sites_sequenced}{Total sequenced sites (variant and fixed). A
+single value or one per element of \code{het_per_snp}.}
 }
 \value{
-A single numeric value.
+A numeric vector, the same length as \code{het_per_snp}.
 }
 \description{
 Schmidt et al. (2021) conversion. \code{n_sites_sequenced} is the \code{Sites} column
 of the "All positions (variant and fixed)" block of
 \code{populations.sumstats_summary.tsv}.
+}
+\details{
+Vectorised over \code{n_sites_sequenced} (as well as \code{het_per_snp}), so a
+per-population sequenced-site count can be passed alongside a
+per-population \code{het_per_snp} -- e.g. \code{\link[=diversity_stats]{diversity_stats()}}'s \code{sites}
+argument, which lets each population use its own denominator. \code{NA} is
+returned element-wise wherever \code{n_sites_sequenced} is non-finite or
+smaller than \code{n_snps_used}, rather than aborting the whole vector.
 }

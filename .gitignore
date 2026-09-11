@@ -10,6 +10,11 @@ test/*.tsv
 .claude/settings.local.json
 .claude/scheduled_tasks.lock
 
+# Real Stacks `populations` output dropped at the repo root -- real (possibly
+# unpublished) data, never package content. Test fixtures live under
+# tests/testthat/fixtures/ and inst/extdata/ instead.
+/populations.*
+
 # R package build/check artifacts -- not source.
 /*.Rcheck/
 /RADdiversity_*.tar.gz

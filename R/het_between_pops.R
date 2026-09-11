@@ -41,7 +41,11 @@
 #' and additionally returns the result tables as data frames.
 #'
 #' @param vcf_file Path to a Stacks VCF (`populations.snps.vcf` or
-#'   `populations.haps.vcf`, optionally gzip-compressed).
+#'   `populations.haps.vcf`, optionally gzip-compressed) -- OR, an already-
+#'   parsed (and optionally filtered) `H` list, i.e. the object returned by
+#'   [read_haps_vcf()], on its own or passed through one or more `filter_*()`
+#'   functions first (see `R/filter_loci.R`). Passing a list skips re-reading
+#'   and re-parsing the VCF file.
 #' @param popmap_f Path to a two-column, no-header popmap TSV (`sample_id
 #'   <TAB> population`).
 #' @param min_call Minimum per-individual genotyping rate for a locus to be
@@ -63,7 +67,10 @@
 het_between_pops <- function(vcf_file, popmap_f, min_call = 0.9, outdir = ".",
                               seed = 2024, verbose = TRUE) {
 
-  if (!file.exists(vcf_file))
+  ## vcf_file may be a path (checked with file.exists() below) or an
+  ## already-parsed H list (see .resolve_H() in R/vcf_io.R) -- only a path
+  ## needs this existence check before we try to read it.
+  if (is.character(vcf_file) && !file.exists(vcf_file))
     stop("VCF file not found: ", vcf_file, "\n  Check the path and try again.")
   if (!file.exists(popmap_f))
     stop("Popmap file not found: ", popmap_f, "\n  Check the path and try again.")
@@ -76,8 +83,8 @@ het_between_pops <- function(vcf_file, popmap_f, min_call = 0.9, outdir = ".",
   on.exit(restore_rng(), add = TRUE)
   set.seed(seed)
 
-  message("Reading ", vcf_file, " ...")
-  H    <- read_haps_vcf(vcf_file, verbose = verbose)
+  if (is.character(vcf_file)) message("Reading ", vcf_file, " ...")
+  H    <- .resolve_H(vcf_file, verbose = verbose)
   pops <- read_popmap(popmap_f, H$samples, verbose = verbose)
   r <- length(pops)
   if (r < 2) stop("Need at least 2 populations.")

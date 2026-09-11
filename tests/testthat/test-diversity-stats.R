@@ -8,7 +8,7 @@ test_that("diversity_stats() returns the expected structure on a small fixture",
     result <- diversity_stats(fx("small.haps.vcf"), fx("small_popmap.tsv"),
                                g = 4, nboot = 50, outdir = outdir)
   ))
-  expect_named(result, c("per_population", "richness"))
+  expect_named(result, c("per_population", "richness", "autosomal"))
   expect_setequal(result$per_population$population, c("popA", "popB"))
   expect_true(all(c("Ho", "He", "Fis", "pct_poly") %in% names(result$per_population)))
   expect_true(all(c("Ar", "privAr", "priv_total") %in% names(result$richness)))
@@ -55,6 +55,104 @@ test_that("diversity_stats() and het_between_pops() restore the caller's RNG sta
                       min_call = 0.5, outdir = outdir)
   )))
   expect_equal(runif(1), expected)
+})
+
+test_that("diversity_stats() sites= accepts a scalar, a named vector, a data frame, or a sumstats_summary path -- all equivalent when the value is the same for every population", {
+  outdir <- tempfile("raddiversity-test-")
+  dir.create(outdir)
+  on.exit(unlink(outdir, recursive = TRUE), add = TRUE)
+  go <- function(sites) {
+    out <- NULL
+    invisible(capture.output(suppressMessages(
+      out <- diversity_stats(fx("small.snps.vcf"), fx("small_popmap.tsv"),
+                              g = 4, nboot = 0, outdir = outdir, sites = sites)
+    )))
+    out
+  }
+
+  r_scalar <- go(100000)
+  r_vector <- go(c(popA = 100000, popB = 100000))
+  r_df     <- go(data.frame(population = c("popA", "popB"), sites = c(100000, 100000)))
+  r_path   <- go(fx("sumstats_summary_small.tsv"))
+
+  expect_false(is.null(r_scalar$autosomal))
+  expect_identical(r_scalar$autosomal, r_vector$autosomal)
+  expect_identical(r_scalar$autosomal, r_df$autosomal)
+  expect_identical(r_scalar$autosomal, r_path$autosomal)
+  expect_true(all(c("sites_used", "Ho_autosomal", "He_autosomal") %in% names(r_scalar$autosomal)))
+  expect_true(file.exists(file.path(outdir, "diversity_autosomal.snps.tsv")))
+})
+
+test_that("diversity_stats() sites= as a per-population vector gives each population its own denominator", {
+  outdir <- tempfile("raddiversity-test-")
+  dir.create(outdir)
+  on.exit(unlink(outdir, recursive = TRUE), add = TRUE)
+  out <- NULL
+  invisible(capture.output(suppressMessages(
+    out <- diversity_stats(fx("small.snps.vcf"), fx("small_popmap.tsv"), g = 4, nboot = 0,
+                            outdir = outdir, sites = c(popA = 100000, popB = 50000))
+  )))
+  aut <- out$autosomal
+  n_rec <- 15L  # tests/testthat/fixtures/small.snps.vcf has 15 records
+  ## Each population's own He (per marker, from per_population) scaled by ITS
+  ## OWN sites value -- not a shared scalar, which would give both
+  ## populations the same denominator regardless of their true sites.
+  for (p in c("popA", "popB")) {
+    he_marker <- out$per_population$He[out$per_population$population == p]
+    sites_p   <- c(popA = 100000, popB = 50000)[[p]]
+    ## he_marker (from per_population) is itself already rounded to 4 decimal
+    ## places, so a loose relative tolerance absorbs that rounding rather than
+    ## re-deriving diversity_stats()'s full-precision internal value here.
+    expect_equal(aut$He_autosomal[aut$population == p],
+                 signif(he_marker * n_rec / sites_p, 4), tolerance = 1e-3)
+  }
+  ## And the two populations' own values are NOT equal to each other (unlike
+  ## the equal-sites case above) -- confirms the per-population denominator
+  ## actually took effect rather than silently falling back to one shared value.
+  expect_false(isTRUE(all.equal(aut$He_autosomal[aut$population == "popA"],
+                                 aut$He_autosomal[aut$population == "popB"])))
+})
+
+test_that("diversity_stats() sites= flags an implausible per-population value as NA rather than erroring the whole run", {
+  outdir <- tempfile("raddiversity-test-")
+  dir.create(outdir)
+  on.exit(unlink(outdir, recursive = TRUE), add = TRUE)
+  out <- NULL
+  invisible(capture.output(suppressMessages(
+    out <- diversity_stats(fx("small.snps.vcf"), fx("small_popmap.tsv"), g = 4, nboot = 0,
+                            outdir = outdir, sites = c(popA = 100000, popB = 5))
+  )))
+  aut <- out$autosomal
+  expect_false(is.na(aut$He_autosomal[aut$population == "popA"]))
+  expect_true(is.na(aut$He_autosomal[aut$population == "popB"]))
+})
+
+test_that("diversity_stats() sites= errors when a population has no value, naming it", {
+  expect_error(
+    suppressMessages(diversity_stats(fx("small.snps.vcf"), fx("small_popmap.tsv"),
+                                      g = 4, nboot = 0, sites = c(popA = 100000))),
+    "popB"
+  )
+})
+
+test_that("diversity_stats() sites= rejects a bad shape before the VCF is even read", {
+  expect_error(diversity_stats("nonexistent.vcf", fx("small_popmap.tsv"), g = 4, sites = -5),
+               "non-negative")
+  expect_error(diversity_stats("nonexistent.vcf", fx("small_popmap.tsv"), g = 4,
+                                sites = "no/such/file.tsv"),
+               "not found")
+})
+
+test_that("diversity_stats() ignores sites= entirely (autosomal NULL) on a haplotype VCF", {
+  outdir <- tempfile("raddiversity-test-")
+  dir.create(outdir)
+  on.exit(unlink(outdir, recursive = TRUE), add = TRUE)
+  out <- NULL
+  invisible(capture.output(suppressMessages(
+    out <- diversity_stats(fx("small.haps.vcf"), fx("small_popmap.tsv"), g = 4, nboot = 0,
+                            outdir = outdir, sites = 100000)
+  )))
+  expect_null(out$autosomal)
 })
 
 test_that("het_between_pops() returns the expected structure on a small fixture", {

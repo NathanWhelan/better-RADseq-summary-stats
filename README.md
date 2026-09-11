@@ -22,12 +22,13 @@ document is diagnosis, and none of it changes these numbers.
 
 ## Contents
 
-Quick start · The four changes · Step 0 (what you need) · Step 1
-(`populations`, and the two flags that matter) · Step 2 (the statistics:
-terminology, which file for which statistic, the estimators, denominators) ·
-Step 3 (the between-population test) · Step 4 (what to write) · Formulas and
-the Stacks mapping · Reviewer objections · What is deliberately not here ·
-Files, requirements, testing · References.
+Quick start · The four changes · filtering loci and exporting to other
+formats (optional) · Step 0 (what you need) · Step 1 (`populations`, and the
+two flags that matter) · Step 2 (the statistics: terminology, which file for
+which statistic, the estimators, denominators) · Step 3 (the
+between-population test) · Step 4 (what to write) · Formulas and the Stacks
+mapping · Reviewer objections · What is deliberately not here · Files,
+requirements, testing · References.
 
 ---
 
@@ -87,6 +88,59 @@ Every argument and every printed line of output is identical to the
 command-line form; `diversity_stats()`/`het_between_pops()` just also hand
 back the tables as data frames. See `?diversity_stats` and
 `?het_between_pops` for the full argument list.
+
+### Filtering loci, and exporting to other formats (optional)
+
+`read_haps_vcf()` returns a plain list (`A1`/`A2` genotype matrices plus
+locus/allele metadata) that a set of `filter_*()` functions can chain on,
+before handing the result to `diversity_stats()`/`het_between_pops()` in
+place of a file path — no intermediate VCF file needed:
+
+```r
+H <- read_haps_vcf("out/populations.snps.vcf")
+H <- filter_call_rate(H, min_call = 0.8)       # drop poorly-genotyped loci
+H <- filter_maf(H, min_maf = 0.05)             # drop rare-variant noise
+res <- filter_low_conf_alt(H, min_alt_reads = 2)  # flag/mask weakly-supported ALT calls
+H <- res$H
+
+pops <- read_popmap("popmap.tsv", H$samples)
+res_snps <- diversity_stats(H, "popmap.tsv", g = 20, nboot = 10000, stem = "snps")
+```
+
+`stem` names the output files (`diversity_per_population.<stem>.tsv`, etc.)
+when `vcf_file` is a filtered `H` rather than a path — there's no filename
+left to derive it from automatically, so it's required in that case.
+
+Available filters (`?functionname` for the full details on each):
+
+| function | keeps loci where... |
+|---|---|
+| `filter_maf(H, min_maf)` | minor allele frequency is at least `min_maf` |
+| `filter_mac(H, min_mac)` | minor allele count is at least `min_mac` |
+| `filter_call_rate(H, min_call, pops)` | enough individuals are genotyped (pooled, or per-population with `rule = "all"`/`"any"`) |
+| `filter_max_het(H, max_ho)` | observed heterozygosity is not implausibly high (a paralog/collapsed-repeat signature) |
+| `filter_thin_one_snp(H)` | after keeping exactly one SNP per RAD tag, for analyses that assume independent loci |
+| `filter_low_conf_alt(H, min_alt_reads)` | ALT calls backed by very few reads are masked out (or whole loci dropped) |
+
+`locus_allele_stats(H)` and `low_conf_alt_sensitivity(H)` compute the
+underlying numbers (allele frequencies; flagged-call counts across a range
+of thresholds) without filtering anything, if you want to look before
+choosing a cutoff.
+
+The (filtered) `H` can also be written out for other tools:
+
+```r
+write_vcf(H, "filtered.vcf")                              # re-import with read_haps_vcf()
+write_plink(H, "filtered", pops = pops)                    # filtered.map / filtered.ped
+write_structure(H, "filtered.str", pops = pops)
+write_genepop(H, "filtered.gen", pops = pops)               # pops required
+write_fstat(H, "filtered.dat", pops = pops)                  # pops required; uses hierfstat if installed
+write_radpainter(H, "filtered.radpainter")                   # fineRADstructure/RADpainter, haplotype VCFs only
+```
+
+`write_plink()` is strictly biallelic (PLINK's own `.ped`/`.map` limitation)
+— pass `drop_multiallelic = TRUE` to exclude multi-allelic loci instead of
+erroring, or filter/thin to a biallelic set first.
 
 ---
 
@@ -627,6 +681,39 @@ F<sub>IS</sub> > 0. Quote the autosomal figure next to published values (Schmidt
 et al. 2021). In practice, the two estimates typically agree to within about
 1% in default (available-data) mode; they can diverge much further under
 `--complete-case` if retention there is low (see "Formulas" below).
+
+#### `sites` can be per-population
+
+`sites` doesn't have to be one number shared by every population. A locus
+missing from a population is exactly what makes that population's own
+`Sites` count (in Stacks' `sumstats_summary.tsv`) come out a little smaller
+than another population's — using one shared number for everyone papers over
+that difference on the one axis this conversion is about. `sites` accepts:
+
+- a single number, broadcast to every population (as above);
+- a named numeric vector or data frame, one value per population
+  (`c(PopA = 466815, PopB = 466926)`, or `data.frame(population = ...,
+  sites = ...)`);
+- a path to `populations.sumstats_summary.tsv` itself — each population's own
+  `Sites` (the All-positions block) is read automatically, by name, via
+  `read_sumstats_summary()`.
+
+```r
+diversity_stats("populations.snps.vcf", "popmap.tsv", g = 20,
+                 sites = "populations.sumstats_summary.tsv")
+```
+
+`read_sumstats_summary()` is a plain parser — it reads Stacks' own `Sites`,
+`Obs_Het`, `Exp_Het`, `Pi`, `Fis`, etc. exactly as Stacks computed them.
+Nothing in this package uses those values as an estimate of Ho, He, π or
+F<sub>IS</sub> — `diversity_stats()` computes all of those itself, for the
+reasons in "Formulas" below. The only column this package's own functions
+ever read from that file is `Sites`, a plain tally rather than an estimator.
+
+A population whose `sites` value turns out to be less than the number of
+variant records called (implausible — `sites` should be orders of magnitude
+larger) gets `NA` for `Ho_autosomal`/`He_autosomal`, named in the output,
+rather than silently dropping that population's row or aborting the run.
 
 #### Reporting per polymorphic site instead
 
@@ -1460,7 +1547,7 @@ with.
 | `diversity_stats.R` | command-line wrapper for `RADdiversity::diversity_stats()` |
 | `het_between_pops.R` | command-line wrapper for `RADdiversity::het_between_pops()` |
 | `diversity_core.R` | command-line wrapper for `RADdiversity::diversity_core_selftest()` (`--selftest`) |
-| `R/` | the package itself: estimators, VCF/popmap readers, `diversity_stats()`, `het_between_pops()`, both self-tests |
+| `R/` | the package itself: estimators, VCF/popmap readers, `diversity_stats()`, `het_between_pops()`, both self-tests, locus/genotype filters (`R/filter_loci.R`), and export to PLINK/STRUCTURE/Genepop/FSTAT/RADpainter/VCF (`R/write_formats.R`) |
 | `test/` | test infrastructure: `run_tests.sh` (full suite), fixtures, golden values |
 | `tests/` | `testthat` suite exercised by `R CMD check` |
 | `archive/` | superseded/abandoned material, kept for history (see `archive/README.md`) |
@@ -1504,11 +1591,29 @@ RADseq data. *Molecular Ecology Resources* 22: 2599–2613.
 Petit, R.J. & Pons, O. (1998) Bootstrap variance of diversity and
 differentiation estimators. *Heredity* 80: 56–61.
 
+Guo, S.-W. & Thompson, E.A. (1992) Performing the exact test of
+Hardy-Weinberg proportion for multiple alleles. *Biometrics* 48: 361–372.
+(The exact HWE test `hwe_test()` implements -- both of its two Monte
+Carlo methods, but this package's multi-allelic branch uses the DIRECT
+one, not the Markov-chain one GENEPOP uses; see the reference to Raymond
+& Rousset below.)
+
+Haldane, J.B.S. (1954) An exact test for randomness of mating. *Journal of
+Genetics* 52: 631–635.
+
 Hohenlohe, P.A., Bassham, S., Etter, P.D., Stiffler, N., Johnson, E.A. &
 Cresko, W.A. (2010) Population genomics of parallel adaptation in threespine
 stickleback using sequenced RAD tags. *PLoS Genetics* 6: e1000862.
 
 Hall, P. (1992) *The Bootstrap and Edgeworth Expansion*. Springer.
+
+Huber, M., Chen, Y., Dinwoodie, I., Dobra, A. & Nicholas, M. (2006) Monte
+Carlo algorithms for Hardy-Weinberg proportions. *Biometrics* 62: 49–53.
+(The source actually read for how Guo & Thompson's direct Monte Carlo
+method works, and for Levene's exact-probability formula -- see below.)
+
+Jost, L. (2008) G<sub>ST</sub> and its relatives do not measure
+differentiation. *Molecular Ecology* 17: 4015–4026.
 
 Kalinowski, S.T. (2004) Counting alleles with rarefaction: private alleles and
 hierarchical sampling designs. *Conservation Genetics* 5: 539–543.
@@ -1518,11 +1623,25 @@ diveRsity: An R package for the estimation and exploration of population
 genetics parameters and their associated errors. *Methods in Ecology and
 Evolution* 4: 782–788.
 
+Levene, H. (1949) On a matching problem arising in genetics. *Annals of
+Mathematical Statistics* 20: 91–94. (The exact-probability formula behind
+`hwe_test()`'s biallelic branch, and the same formula that generalizes to
+the multi-allelic branch -- see Guo & Thompson and Huber et al. above.)
+
 Mammen, E. (1992) *When Does Bootstrap Work? Asymptotic Results and
 Simulations*. Springer.
 
+Manichaikul, A., Mychaleckyj, J.C., Rich, S.S., Daly, K., Sale, M. & Chen,
+W.-M. (2010) Robust relationship inference in genome-wide association
+studies. *Bioinformatics* 26: 2867–2873. (KING-robust kinship, cited by
+`kinship_check()`.)
+
 McCullagh, P. (2000) Resampling and exchangeable arrays. *Bernoulli* 6:
 285–301.
+
+McMaster, E.S. et al. (2025) Evaluating kinship estimation methods for
+reduced-representation SNP data in non-model species. *Molecular Ecology
+Resources*. https://doi.org/10.1111/1755-0998.70038
 
 Owen, A.B. & Eckles, D. (2012) Bootstrapping data arrays of arbitrary order.
 *Annals of Applied Statistics* 6: 895–927. (The crossed-factor "product
@@ -1534,6 +1653,13 @@ Szpiech, Z.A., Jakobsson, M. & Rosenberg, N.A. (2008) ADZE: a rarefaction
 approach for counting alleles private to combinations of populations.
 *Bioinformatics* 24: 2498–2504.
 
+Raymond, M. & Rousset, F. (1995) GENEPOP (version 1.2): population genetics
+software for exact tests and ecumenicism. *Journal of Heredity* 86:
+248–249. (What GENEPOP does differently for the exact HWE test -- a
+modified Markov-chain/switching version of Guo & Thompson's (1992)
+method -- and why `hwe_test()` implements Guo & Thompson's direct Monte
+Carlo method instead; see above.)
+
 Rochette, N.C., Rivera-Colón, A.G. & Catchen, J.M. (2019) Stacks 2. *Molecular
 Ecology* 28: 4737–4754.
 
@@ -1543,6 +1669,13 @@ Ecology and Evolution* 12: 1888–1898.
 
 Van Dongen, S. (1995) How should we bootstrap allozyme data? *Heredity* 74:
 445–447.
+
+Waples, R.K., Albrechtsen, A. & Moltke, I. (2019) Allele frequency-free
+inference of close familial relationships from genotypes or low-depth
+sequencing data. *Molecular Ecology* 28: 35–48. (Independent re-derivation
+of the KING-robust kinship statistic used by `kinship_check()`, via a
+9-cell genotype contingency table -- distinct from the R.S. Waples entry
+below.)
 
 Waples, R.S. (2015) Testing for Hardy–Weinberg proportions: have we lost the
 plot? *Journal of Heredity* 106: 1–19.
@@ -1554,3 +1687,13 @@ loci for F<sub>ST</sub>/F<sub>IS</sub> standard errors, cited for the
 
 Weir, B.S. & Cockerham, C.C. (1984) Estimating F-statistics for the analysis of
 population structure. *Evolution* 38: 1358–1370.
+
+Weir, B.S. & Goudet, J. (2017) A unified characterization of population
+structure and relatedness. *Genetics* 206: 2085–2103. (Weir & Goudet's
+beta, reported by `differentiation_stats()` when `hierfstat` is
+installed.)
+
+Winter, D.J. (2012) mmod: an R library for the calculation of population
+differentiation statistics. *Molecular Ecology Resources* 12: 1158–1160.
+(MIT-licensed; `differentiation_stats()`'s Jost's D implementation adapts
+this package's `HsHt()` function -- see `inst/NOTICE`.)

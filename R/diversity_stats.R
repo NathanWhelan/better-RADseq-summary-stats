@@ -43,7 +43,12 @@
 #' ("Which file for which statistic") for the full reasoning.
 #'
 #' @param vcf_file Path to `populations.snps.vcf` or `populations.haps.vcf`
-#'   (optionally gzip-compressed).
+#'   (optionally gzip-compressed) -- OR, an already-parsed (and optionally
+#'   filtered) `H` list, i.e. the object returned by [read_haps_vcf()], on
+#'   its own or passed through one or more `filter_*()` functions first (see
+#'   `R/filter_loci.R`). When passing a list, `stem` must also be given (see
+#'   below), since the usual output-filename logic needs a real filename to
+#'   work from.
 #' @param popmap_f Path to a two-column, no-header popmap TSV (`sample_id
 #'   <TAB> population`).
 #' @param g Rarefaction size in GENE COPIES (10 diploids = 20). Required, no
@@ -56,10 +61,20 @@
 #'   `"both"` are comparison modes only -- an empirical coverage simulation
 #'   found they badly undercover the true value for every statistic with a
 #'   finite-sample correction; see `README.md`, "Bootstrap mode".
-#' @param sites Total sequenced sites -- the `Sites` column of the "All
-#'   positions (variant and fixed)" block of
-#'   `populations.sumstats_summary.tsv`. Adds per-sequenced-site Ho and He.
-#'   Default `0` (per-record values only).
+#' @param sites Total sequenced sites, for the autosomal Ho/He (nucleotide
+#'   diversity) conversion -- adds `Ho_autosomal`/`He_autosomal` alongside
+#'   Ho/He (SNP VCF only; ignored, with a message, on a haplotype VCF).
+#'   Accepts four shapes: a single non-negative number, broadcast to every
+#'   population (the default `0` means "off"); a named numeric vector, one
+#'   value per population (names must match the popmap's population names);
+#'   a data frame or matrix with a population column (`population`/`pop`)
+#'   and a sites column (`sites`); or a path to a Stacks
+#'   `populations.sumstats_summary.tsv` file, from which each population's
+#'   own `Sites` (the "All positions (variant and fixed)" block) is read
+#'   automatically via [read_sumstats_summary()]. The vector/data-frame/path
+#'   forms let a population with more missing loci -- which is exactly what
+#'   makes its own `Sites` count smaller in Stacks' own accounting -- use
+#'   its own denominator instead of another population's.
 #' @param min_n Available-data mode only: minimum typed individuals a
 #'   population needs at a locus to use that locus for that population.
 #'   Default `2L`, the mathematical floor below which Hs/FIS are undefined.
@@ -78,22 +93,41 @@
 #'   main report (point estimates, CIs, "TAKE FROM THIS RUN" guidance) is
 #'   always printed regardless of this setting, matching the command-line
 #'   script.
-#' @return Invisibly, a list with elements `per_population` and `richness`
-#'   (the same two data frames written to `diversity_per_population.*.tsv`
-#'   and `diversity_richness.*.tsv`).
+#' @param stem Text used to build the two output filenames (e.g.
+#'   `diversity_per_population.<stem>.tsv`) -- ordinarily derived
+#'   automatically from `vcf_file`'s own filename (e.g.
+#'   `populations.haps.vcf` gives `stem = "haps"`), which is why this
+#'   package's documented workflow runs this function once on the haplotype
+#'   VCF and once on the SNP VCF without the second run silently overwriting
+#'   the first run's files. That automatic derivation has no filename to
+#'   work from when `vcf_file` is an already-parsed list rather than a path,
+#'   so `stem` must be supplied explicitly in that case (e.g.
+#'   `stem = "snps"`) -- this function stops with an explanatory error
+#'   rather than guessing. Default `NULL` (derive automatically from
+#'   `vcf_file` when it is a path; required otherwise). Supplying `stem`
+#'   alongside a path overrides the automatic derivation.
+#' @return Invisibly, a list with elements `per_population`, `richness`, and
+#'   `autosomal` (`NULL` unless `sites` gave at least one population a
+#'   plausible value -- see `sites` above; when present it is also written
+#'   to `diversity_autosomal.*.tsv`), alongside
+#'   `diversity_per_population.*.tsv` and `diversity_richness.*.tsv`.
 #' @export
 diversity_stats <- function(vcf_file, popmap_f, g, nboot = 10000L,
                              boot = "loci",
                              sites = 0, min_n = 2L, complete_case = FALSE,
-                             outdir = ".", seed = 2024, verbose = TRUE) {
+                             outdir = ".", seed = 2024, verbose = TRUE,
+                             stem = NULL) {
 
   g <- as.integer(g)
   if (is.na(g)) stop("g must be an integer (gene copies).")
   nboot <- as.integer(nboot)
   if (is.na(nboot) || nboot < 0) stop("nboot must be a non-negative integer.")
-  n_sites_seq <- suppressWarnings(as.numeric(sites))
-  if (is.na(n_sites_seq) || n_sites_seq < 0)
-    stop("sites must be a non-negative count of sequenced nucleotides.")
+  ## Shape/type check only -- population names aren't known yet (the popmap
+  ## hasn't been read), so a bad `sites` (wrong type, a negative number, a
+  ## nonexistent file path) still fails here, before the potentially slow
+  ## VCF read below. Per-population name-matching happens later, once `pops`
+  ## exists (see .resolve_sites(), just below this function).
+  .resolve_sites(sites)
   min_n <- as.integer(min_n)
   if (is.na(min_n) || min_n < 2)
     stop("min_n must be an integer >= 2 (Hs/FIS are undefined below n = 2).")
@@ -106,8 +140,19 @@ diversity_stats <- function(vcf_file, popmap_f, g, nboot = 10000L,
   if (!(boot %in% c("loci", "individuals", "both")))
     stop("boot must be one of: loci, individuals, both (got: ", boot, ")")
   boot_mode <- boot
-  if (!file.exists(vcf_file))
+  ## vcf_file may be a path (checked with file.exists() below) or an
+  ## already-parsed H list (see .resolve_H() in R/vcf_io.R) -- only a path
+  ## needs this existence check before we try to read it. A list also needs
+  ## `stem` supplied up front (checked here, before any of the potentially
+  ## slow work below runs), since the output filenames later in this
+  ## function have no other way to know what to call themselves.
+  if (is.character(vcf_file) && !file.exists(vcf_file))
     stop("VCF file not found: ", vcf_file, "\n  Check the path and try again.")
+  if (!is.character(vcf_file) && is.null(stem))
+    stop("vcf_file is an already-parsed list rather than a file path, so its ",
+         "filename can't be used to name the output files (see \"diversity_per_",
+         "population.<stem>.tsv\" below). Pass stem explicitly, e.g. ",
+         "stem = \"haps\" or stem = \"snps\", matching which VCF this data came from.")
   if (!file.exists(popmap_f))
     stop("Popmap file not found: ", popmap_f, "\n  Check the path and try again.")
   dir.create(outdir, showWarnings = FALSE, recursive = TRUE)
@@ -127,11 +172,15 @@ diversity_stats <- function(vcf_file, popmap_f, g, nboot = 10000L,
 
   have_hf <- requireNamespace("hierfstat", quietly = TRUE)
 
-  message("Reading ", vcf_file, " ...")
-  H <- read_haps_vcf(vcf_file, verbose = verbose)
+  if (is.character(vcf_file)) message("Reading ", vcf_file, " ...")
+  H <- .resolve_H(vcf_file, verbose = verbose)
   pops <- read_popmap(popmap_f, H$samples, verbose = verbose)
   r <- length(pops)
   if (r < 2) stop("Need at least 2 populations.")
+  ## Full resolution, now that population names are known: a named vector,
+  ## one sequenced-site count per population, in `names(pops)` order. See
+  ## .resolve_sites() for the four accepted `sites` shapes.
+  sites_vec <- .resolve_sites(sites, names(pops))
   nmax <- lengths(pops)
   ## A population of one individual has no defined Hs, and every statistic
   ## downstream then silently reads as 0 rather than as missing, because
@@ -687,28 +736,62 @@ diversity_stats <- function(vcf_file, popmap_f, g, nboot = 10000L,
   see("Formulas, and what maps onto what in Stacks")
 
   cat("\nWhat the Ho and He numbers are\n")
-  if (n_sites_seq >= n_rec && is_hapvcf) {
+  ## `ok_sites`: per-population, is this population's own sites_vec value a
+  ## plausible sequenced-site count (finite and >= n_rec, the total variant
+  ## records ascertained across the whole dataset)? sites_vec is a named
+  ## vector (see .resolve_sites(), one value per population) rather than the
+  ## single shared scalar this block used to compare against, so a
+  ## population can have its own denominator -- and its own answer to
+  ## "is a value even available" -- independent of every other population's.
+  aut <- NULL
+  ok_sites <- is.finite(sites_vec) & sites_vec >= n_rec
+  if (any(ok_sites) && is_hapvcf) {
     note("`sites` was supplied but this is a HAPLOTYPE VCF, so the autosomal",
          "conversion was SKIPPED: He here is per-tag gene diversity, not per-site,",
          "and dividing by sequenced sites would understate nucleotide diversity.",
          "Re-run on populations.snps.vcf with the same `sites` for He_autosomal.")
     see("Which file for which statistic")
-  } else if (n_sites_seq >= n_rec) {
+  } else if (any(ok_sites)) {
     retain <- L / n_rec
+    ## autosomal_het() is itself vectorised over n_sites_sequenced and
+    ## already returns NA at exactly the !ok_sites positions (same
+    ## finite-and->=-n_rec test); ok_sites is only needed here for deciding
+    ## which branch to take and for the messages below.
+    ho_aut <- signif(autosomal_het(gv("Ho_"), n_rec, sites_vec), 4)
+    he_aut <- signif(autosomal_het(gv("He_"), n_rec, sites_vec), 4)
     aut <- data.frame(population = names(pops),
-      Ho_autosomal = signif(autosomal_het(gv("Ho_"), n_rec, n_sites_seq), 4),
-      He_autosomal = signif(autosomal_het(gv("He_"), n_rec, n_sites_seq), 4),
-      row.names = NULL)
-    note(sprintf("Scaled to %s sequenced sites via all %s variant records (%.3f%% variant);",
-                 format(n_sites_seq, big.mark = ",", scientific = FALSE),
-                 format(n_rec, big.mark = ","), 100 * n_rec / n_sites_seq),
-         sprintf("He estimated using %s of %s records (%.1f%% of them, %s).",
-                 format(L, big.mark = ","), format(n_rec, big.mark = ","), 100 * retain,
-                 if (complete_case) "complete-case"
-                 else sprintf("available-data, min_n = %d", min_n)))
+      sites_used = ifelse(ok_sites, format(sites_vec, big.mark = ",", scientific = FALSE), NA),
+      Ho_autosomal = ho_aut, He_autosomal = he_aut, row.names = NULL)
+    if (length(unique(sites_vec[ok_sites])) <= 1L) {
+      note(sprintf("Scaled to %s sequenced sites (same for every population) via all %s variant records (%.3f%% variant);",
+                   format(sites_vec[ok_sites][1], big.mark = ",", scientific = FALSE),
+                   format(n_rec, big.mark = ","), 100 * n_rec / sites_vec[ok_sites][1]),
+           sprintf("He estimated using %s of %s records (%.1f%% of them, %s).",
+                   format(L, big.mark = ","), format(n_rec, big.mark = ","), 100 * retain,
+                   if (complete_case) "complete-case"
+                   else sprintf("available-data, min_n = %d", min_n)))
+    } else {
+      note(sprintf("Scaled to EACH POPULATION'S OWN sequenced-site count (%s-%s; see `sites_used`",
+                   format(min(sites_vec[ok_sites]), big.mark = ",", scientific = FALSE),
+                   format(max(sites_vec[ok_sites]), big.mark = ",", scientific = FALSE)),
+           sprintf("above) via all %s variant records (%.3f%% variant, dataset-wide);",
+                   format(n_rec, big.mark = ","), 100 * n_rec / mean(sites_vec[ok_sites])),
+           sprintf("He estimated using %s of %s records (%.1f%% of them, %s).",
+                   format(L, big.mark = ","), format(n_rec, big.mark = ","), 100 * retain,
+                   if (complete_case) "complete-case"
+                   else sprintf("available-data, min_n = %d", min_n)))
+    }
+    if (any(!ok_sites)) {
+      reasons <- vapply(names(pops)[!ok_sites], function(p)
+        if (sites_vec[p] > 0)
+          sprintf("%-22s sites = %s, less than the %s variant records called",
+                  p, format(sites_vec[p], big.mark = ","), format(n_rec, big.mark = ","))
+        else sprintf("%-22s no sites value supplied", p),
+        character(1))
+      note("No autosomal value for:", reasons)
+    }
     print(aut, row.names = FALSE)
-    note(sprintf("%s is the SAME per-site quantity as He above, averaged over every",
-                 names(aut)[3]),
+    note("He_autosomal is the SAME per-site quantity as He above, averaged over every",
          "sequenced site instead of over variant records. That denominator is what",
          "makes it nucleotide diversity (pi). There is no column named `pi`.",
          "Compare against Stacks' `Pi` from the All-positions block -- not the",
@@ -721,9 +804,8 @@ diversity_stats <- function(vcf_file, popmap_f, g, nboot = 10000L,
            "libraries it is not -- drop complete_case (the default already uses",
            "available data per population) or drop those individuals and re-run.")
   } else {
-    if (n_sites_seq > 0)
-      note(sprintf("`sites` = %s was supplied but is LESS than the %s variant records",
-                   format(n_sites_seq, big.mark = ",", scientific = FALSE),
+    if (any(sites_vec > 0))
+      note(sprintf("`sites` was supplied but every value is LESS than the %s variant records",
                    format(n_rec, big.mark = ",")),
            "this run called, which is not a plausible sequenced-site count -- it was",
            "IGNORED rather than used. Pass the `Sites` column of the All-positions",
@@ -805,11 +887,17 @@ diversity_stats <- function(vcf_file, popmap_f, g, nboot = 10000L,
   ## The workflow runs this function TWICE, on the haplotype VCF and the SNP
   ## VCF. Fixed output names would mean the second run silently overwrote the
   ## first, so the input stem is carried into the filename:
-  ## populations.haps.vcf -> diversity_per_population.haps.tsv.
-  stem <- sub("\\.gz$", "", basename(vcf_file))
-  stem <- sub("\\.vcf$", "", stem)
-  stem <- sub("^.*\\.", "", stem)                     # populations.haps -> haps
-  if (!nzchar(stem) || grepl("[^A-Za-z0-9_-]", stem)) stem <- "out"
+  ## populations.haps.vcf -> diversity_per_population.haps.tsv. When
+  ## `vcf_file` is a path and the caller didn't already supply their own
+  ## `stem`, derive it automatically as before; a caller-supplied `stem`
+  ## (required when `vcf_file` is a list, since there's no filename to
+  ## derive one from -- checked earlier in this function) always wins.
+  if (is.null(stem)) {
+    stem <- sub("\\.gz$", "", basename(vcf_file))
+    stem <- sub("\\.vcf$", "", stem)
+    stem <- sub("^.*\\.", "", stem)                   # populations.haps -> haps
+    if (!nzchar(stem) || grepl("[^A-Za-z0-9_-]", stem)) stem <- "out"
+  }
   ## Encode boot in the filename ONLY when non-default, so a comparison run
   ## (e.g. boot="individuals" against diveRsity convention) cannot silently
   ## overwrite the default output -- boot="loci" reproduces the default
@@ -819,7 +907,94 @@ diversity_stats <- function(vcf_file, popmap_f, g, nboot = 10000L,
   f2 <- sprintf("diversity_richness.%s%s.tsv", stem, boot_suffix)
   utils::write.table(tab,  file.path(outdir, f1), sep = "\t", quote = FALSE, row.names = FALSE)
   utils::write.table(rich, file.path(outdir, f2), sep = "\t", quote = FALSE, row.names = FALSE)
-  cat(sprintf("\nWrote %s and %s\n\n", file.path(outdir, f1), file.path(outdir, f2)))
+  written <- c(file.path(outdir, f1), file.path(outdir, f2))
+  ## The per-population autosomal table (aut, built above from `sites`) is
+  ## only ever non-NULL when at least one population had a plausible sites
+  ## value -- see ok_sites above -- so this file only appears when there is
+  ## something in it to write.
+  if (!is.null(aut)) {
+    f3 <- sprintf("diversity_autosomal.%s%s.tsv", stem, boot_suffix)
+    utils::write.table(aut, file.path(outdir, f3), sep = "\t", quote = FALSE, row.names = FALSE)
+    written <- c(written, file.path(outdir, f3))
+  }
+  cat(sprintf("\nWrote %s\n\n", paste(written, collapse = ", ")))
 
-  invisible(list(per_population = tab, richness = rich))
+  invisible(list(per_population = tab, richness = rich, autosomal = aut))
+}
+
+## Not exported. Resolves diversity_stats()'s `sites` argument into a named
+## numeric vector aligned to `pop_names`, in that order -- mirrors
+## .resolve_H()'s "accept several input shapes, fail loudly on mismatch"
+## style (R/vcf_io.R). Four accepted shapes:
+##   - a single non-negative number: broadcast to every population (the
+##     original, still-default behavior; 0 means "off")
+##   - a named numeric vector, names = population names
+##   - a data frame or matrix with a population-name column
+##     ("population"/"pop", case-insensitive) and a sites column
+##     ("sites"/"site", case-insensitive)
+##   - a path to populations.sumstats_summary.tsv: reads it via
+##     read_sumstats_summary() and uses `all_positions$sites`, named by
+##     `all_positions$population`
+##
+## Called twice from diversity_stats(): once with `pop_names = NULL`, right
+## after argument parsing and before the (potentially slow) VCF read, purely
+## to catch a malformed `sites` early (bad type, a negative number, a
+## missing file) -- population names aren't known yet at that point, so
+## name-matching is skipped and the return value is unused. Called again
+## with the real `pop_names`, right after the popmap is read, to do the
+## actual per-population matching and return the vector diversity_stats()
+## uses.
+.resolve_sites <- function(sites, pop_names = NULL) {
+  if (is.character(sites)) {
+    if (length(sites) != 1L) stop("sites: a file path must be a single string.")
+    if (!file.exists(sites)) stop("sites: file not found: ", sites)
+    ap <- read_sumstats_summary(sites)$all_positions
+    v <- stats::setNames(ap$sites, ap$population)
+  } else if (is.data.frame(sites) || is.matrix(sites)) {
+    df <- as.data.frame(sites, stringsAsFactors = FALSE)
+    nmL <- tolower(names(df))
+    pop_col  <- which(nmL %in% c("population", "pop"))
+    site_col <- which(nmL %in% c("sites", "site"))
+    if (length(pop_col) != 1L || length(site_col) != 1L)
+      stop("sites: a data frame/matrix must have exactly one population ",
+           "column (\"population\" or \"pop\") and exactly one sites column ",
+           "(\"sites\"). Found columns: ", paste(names(df), collapse = ", "))
+    v <- stats::setNames(suppressWarnings(as.numeric(df[[site_col]])),
+                         as.character(df[[pop_col]]))
+  } else if (is.numeric(sites)) {
+    v <- sites
+  } else {
+    stop("sites must be a non-negative number, a named numeric vector or ",
+         "data frame keyed by population, or a path to ",
+         "populations.sumstats_summary.tsv (got class: ",
+         paste(class(sites), collapse = "/"), ").")
+  }
+
+  if (anyNA(v) || any(v < 0))
+    stop("sites: every value must be a non-negative, non-missing number.")
+  is_scalar <- length(v) == 1L && is.null(names(v))
+  if (!is_scalar && (is.null(names(v)) || any(!nzchar(names(v)))))
+    stop("sites: a vector/data frame/file of more than one value must be ",
+         "named/keyed by population throughout.")
+
+  if (is.null(pop_names)) return(invisible(NULL))
+  if (is_scalar) v <- stats::setNames(rep(as.numeric(v), length(pop_names)), pop_names)
+  .match_sites_to_pops(v, pop_names)
+}
+
+## Not exported. Matches a named `sites` vector against `pop_names` in BOTH
+## directions: every population must have a value (error, naming which are
+## missing) and a name in `sites` that matches no current population is
+## reported (message, not silently dropped -- most likely a typo).
+.match_sites_to_pops <- function(v, pop_names) {
+  missing_pop <- setdiff(pop_names, names(v))
+  if (length(missing_pop))
+    stop("sites: no value given for population(s): ",
+         paste(missing_pop, collapse = ", "),
+         ". Every population in the popmap needs a sites value.")
+  extra <- setdiff(names(v), pop_names)
+  if (length(extra))
+    message("sites: ", length(extra), " name(s) not among this run's ",
+            "populations, ignored: ", paste(extra, collapse = ", "))
+  v[pop_names]
 }

@@ -140,9 +140,10 @@
 #' populations inflates g2 (Wahlund effect), hence one estimate per
 #' population.
 #'
-#' @param H A list as returned by [read_stacks_vcf()] (optionally filtered).
+#' @param H A list as returned by [read_stacks_vcf()] (optionally filtered),
+#'   or the path to a VCF.
 #' @param pops A named list of sample-ID vectors, one per population, as
-#'   returned by [read_popmap()].
+#'   returned by [read_popmap()], or the path to a popmap file.
 #' @param nboot Bootstrap replicates over individuals for the CI. Default
 #'   `1000`; `0` for none.
 #' @param nperm Permutations for the p-value. Default `1000`; `0` for none.
@@ -178,6 +179,7 @@
 identity_disequilibrium <- function(H, pops, nboot = 1000L, nperm = 1000L,
                                     min_call = 0.9, seed = 2024) {
   H <- .resolve_H(H, verbose = FALSE)
+  if (is.character(pops) && length(pops) == 1L) pops <- read_popmap(pops, H$samples, verbose = FALSE)
   if (!is.list(pops) || is.null(names(pops)))
     stop("pops must be a named list of sample IDs per population (see read_popmap()).")
   nboot <- as.integer(nboot); nperm <- as.integer(nperm)

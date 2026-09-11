@@ -7,10 +7,11 @@
 individual_inbreeding(H, pops, min_call = 0.9)
 }
 \arguments{
-\item{H}{A list as returned by \code{\link[=read_stacks_vcf]{read_stacks_vcf()}} (optionally filtered).}
+\item{H}{A list as returned by \code{\link[=read_stacks_vcf]{read_stacks_vcf()}} (optionally filtered),
+or the path to a VCF.}
 
 \item{pops}{A named list of sample-ID vectors, one per population, as
-returned by \code{\link[=read_popmap]{read_popmap()}}.}
+returned by \code{\link[=read_popmap]{read_popmap()}}, or the path to a popmap file.}
 
 \item{min_call}{Use a locus for a population only if at least this fraction
 of that population's individuals is genotyped there. Default \code{0.9}.}

@@ -207,8 +207,10 @@ read_stacks_vcf <- function(path, verbose = TRUE, locus_from = "auto", window_bp
 
 #' @rdname read_stacks_vcf
 #' @export
-read_haps_vcf <- function(path, verbose = TRUE, locus_from = "auto", window_bp = 1000)
+read_haps_vcf <- function(path, verbose = TRUE, locus_from = "auto", window_bp = 1000) {
+  .Deprecated("read_stacks_vcf", package = "RADdiversity")
   read_stacks_vcf(path, verbose = verbose, locus_from = locus_from, window_bp = window_bp)
+}
 
 ## Not exported. Groups records into loci by position: sorted within each
 ## CHROM, a record starts a new locus when it is on a different CHROM from the
@@ -264,10 +266,12 @@ read_haps_vcf <- function(path, verbose = TRUE, locus_from = "auto", window_bp =
 
 ## Not exported. Input checks shared by diversity_stats(), het_between_pops()
 ## and differentiation_stats(), run before any (potentially slow) reading.
-.check_run_inputs <- function(vcf_file, popmap_f, stem) {
+.check_run_inputs <- function(vcf_file, popmap_f, stem, outdir = NULL) {
   if (is.character(vcf_file) && !file.exists(vcf_file))
     stop("VCF file not found: ", vcf_file, "\n  Check the path and try again.")
-  if (!is.character(vcf_file) && is.null(stem))
+  ## `stem` only names output files, so it is needed only when writing them
+  ## from an already-parsed list (a path supplies its own).
+  if (!is.character(vcf_file) && is.null(stem) && !is.null(outdir))
     stop("vcf_file is an already-parsed list rather than a file path, so its ",
          "filename can't be used to name the output files. Pass stem ",
          "explicitly, e.g. stem = \"haps\" or stem = \"snps\", matching which ",

@@ -229,7 +229,8 @@ Goudet, J. (2005) HIERFSTAT, a package for R to compute and test hierarchical
 F-statistics. *Molecular Ecology Notes* 5:184–186.
 
 Hemstrom, W. & Jones, M. (2023) snpR: user friendly population genomics for
-SNP data sets with categorical metadata. *Molecular Ecology Resources*.
+SNP data sets with categorical metadata. *Molecular Ecology Resources*
+23:962–973.
 
 Kalinowski, S.T. (2004) Counting alleles with rarefaction: private alleles
 and hierarchical sampling designs. *Conservation Genetics* 5:539–543.

@@ -145,5 +145,9 @@ test_that("differentiation_stats() returns the documented shape and honors nboot
 
 test_that("differentiation_stats() requires stem when given an H list, and >= 2 populations", {
   H <- suppressMessages(read_stacks_vcf(fx("small.haps.vcf"), verbose = FALSE))
-  expect_error(differentiation_stats(H, fx("small_popmap.tsv"), nboot = 0, verbose = FALSE), "stem")
+  expect_error(differentiation_stats(H, fx("small_popmap.tsv"), nboot = 0, verbose = FALSE,
+                                     outdir = tempfile("dd-")), "stem")
+  ## No files, no stem needed.
+  expect_no_error(suppressMessages(differentiation_stats(H, fx("small_popmap.tsv"), nboot = 0,
+                                                         verbose = FALSE)))
 })

@@ -63,9 +63,10 @@
 #' diversity. Negative values mean more heterozygosity than random mating
 #' predicts.
 #'
-#' @param H A list as returned by [read_stacks_vcf()] (optionally filtered).
+#' @param H A list as returned by [read_stacks_vcf()] (optionally filtered),
+#'   or the path to a VCF.
 #' @param pops A named list of sample-ID vectors, one per population, as
-#'   returned by [read_popmap()].
+#'   returned by [read_popmap()], or the path to a popmap file.
 #' @param min_call Use a locus for a population only if at least this fraction
 #'   of that population's individuals is genotyped there. Default `0.9`.
 #' @return A data frame, one row per individual: `sample`, `population`,
@@ -87,6 +88,7 @@
 #' @export
 individual_inbreeding <- function(H, pops, min_call = 0.9) {
   H <- .resolve_H(H, verbose = FALSE)
+  if (is.character(pops) && length(pops) == 1L) pops <- read_popmap(pops, H$samples, verbose = FALSE)
   if (!is.list(pops) || is.null(names(pops)))
     stop("pops must be a named list of sample IDs per population (see read_popmap()).")
   if (!(is.numeric(min_call) && length(min_call) == 1L && min_call >= 0 && min_call <= 1))

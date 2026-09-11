@@ -374,8 +374,7 @@
 #' popmap <- tempfile()
 #' writeLines(c("a1\tpopA","a2\tpopA","a3\tpopA","a4\tpopA",
 #'              "b1\tpopB","b2\tpopB","b3\tpopB","b4\tpopB"), popmap)
-#' res <- differentiation_stats(H, popmap, nboot = 100, stem = "example",
-#'                               outdir = tempdir(), verbose = FALSE)
+#' res <- differentiation_stats(H, popmap, nboot = 100, verbose = FALSE)
 #' res$global
 #' @export
 differentiation_stats <- function(vcf_file, popmap_f, nboot = 10000L,
@@ -384,7 +383,7 @@ differentiation_stats <- function(vcf_file, popmap_f, nboot = 10000L,
 
   nboot <- as.integer(nboot)
   if (is.na(nboot) || nboot < 0) stop("nboot must be a non-negative integer.")
-  .check_run_inputs(vcf_file, popmap_f, stem)
+  .check_run_inputs(vcf_file, popmap_f, stem, outdir)
 
   ## Same RNG-preservation convention as diversity_stats()/het_between_pops():
   ## restore the caller's own random-number state on exit, so calling this

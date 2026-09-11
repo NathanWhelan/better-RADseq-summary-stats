@@ -66,11 +66,10 @@ package's documented workflow runs this function once on the haplotype
 VCF and once on the SNP VCF without the second run silently overwriting
 the first run's files. That automatic derivation has no filename to
 work from when \code{vcf_file} is an already-parsed list rather than a path,
-so \code{stem} must be supplied explicitly in that case (e.g.
-\code{stem = "snps"}) -- this function stops with an explanatory error
-rather than guessing. Default \code{NULL} (derive automatically from
-\code{vcf_file} when it is a path; required otherwise). Supplying \code{stem}
-alongside a path overrides the automatic derivation.}
+so when writing files (\code{outdir}) from a list, \code{stem} must be given
+(e.g. \code{stem = "snps"}) -- this function stops with an explanatory error
+rather than guessing. Default \code{NULL}. Supplying \code{stem} alongside a path
+overrides the automatic derivation.}
 
 \item{seed}{Random seed set before bootstrapping, for reproducibility.
 Default \code{2024}. The caller's own RNG state (e.g. from their own prior

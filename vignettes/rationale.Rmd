@@ -248,7 +248,8 @@ column called `pi`.
 Formulas for all of these, with each Stacks column matched to its counterpart
 here, are in **"Formulas, and what maps onto what in Stacks"** near the end.
 Every one is verified against real Stacks output by
-`diversity_core.R --selftest` (section 10).
+`diversity_core_selftest()` (`diversity_core.R --selftest` from the command
+line).
 
 ### Which file for which statistic
 
@@ -1036,7 +1037,7 @@ so the second run does not overwrite the first.
 ## Formulas, and what maps onto what in Stacks
 
 Everything in this section is confirmed against real Stacks output, not
-inferred. `diversity_core.R --selftest` reproduces the checks; the source rows are
+inferred. `diversity_core_selftest()` reproduces the checks; the source rows are
 from the Galaxy stacks2 test data, and the F<sub>IS</sub> definition is
 Catchen's own, posted to the stacks-users list ("the calculation for Fis uses pi
 for expected heterozygosity: Fis = (pi − obs_het) / pi", pointing to equation 2

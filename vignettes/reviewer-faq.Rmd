@@ -20,7 +20,8 @@ The reasoning behind each answer is in `vignette("rationale", package = "RADdive
 >
 > **Where the numbers come from.** The simulation results quoted here were
 > produced while the package was developed. Three sets ship with runnable
-> code: the type I error table in Step 3 (`het_between_pops_selftest()`), the
+> code: the type I error table in Step 3 of `vignette("rationale")`
+> (`het_between_pops_selftest()`), the
 > estimator checks (`diversity_core_selftest()`), and the standard-error
 > coverage table (`inst/sims/coverage_se.R`). The other simulated figures are
 > illustrative: they show the direction and rough size of each effect, but

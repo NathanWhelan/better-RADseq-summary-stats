@@ -49,9 +49,9 @@
 #'   (optionally gzip-compressed) -- OR, an already-parsed (and optionally
 #'   filtered) `H` list, i.e. the object returned by [read_stacks_vcf()], on
 #'   its own or passed through one or more `filter_*()` functions first (see
-#'   `R/filter_loci.R`). When passing a list, `stem` must also be given (see
-#'   below), since the usual output-filename logic needs a real filename to
-#'   work from.
+#'   `R/filter_loci.R`). When passing a list and writing files (`outdir`),
+#'   `stem` must also be given (see below), since the output filenames need
+#'   a name to work from.
 #' @param popmap_f Path to a two-column, no-header popmap TSV (`sample_id
 #'   <TAB> population`).
 #' @param g Rarefaction size in GENE COPIES (10 diploids = 20). Required, no
@@ -106,11 +106,10 @@
 #'   VCF and once on the SNP VCF without the second run silently overwriting
 #'   the first run's files. That automatic derivation has no filename to
 #'   work from when `vcf_file` is an already-parsed list rather than a path,
-#'   so `stem` must be supplied explicitly in that case (e.g.
-#'   `stem = "snps"`) -- this function stops with an explanatory error
-#'   rather than guessing. Default `NULL` (derive automatically from
-#'   `vcf_file` when it is a path; required otherwise). Supplying `stem`
-#'   alongside a path overrides the automatic derivation.
+#'   so when writing files (`outdir`) from a list, `stem` must be given
+#'   (e.g. `stem = "snps"`) -- this function stops with an explanatory error
+#'   rather than guessing. Default `NULL`. Supplying `stem` alongside a path
+#'   overrides the automatic derivation.
 #' @param hierfstat_check If `TRUE` and the `hierfstat` package is installed,
 #'   also compute per-locus Ho/Hs with `hierfstat::basic.stats()` and
 #'   rarefied allelic richness with `hierfstat::allelic.richness()`, and
@@ -194,7 +193,7 @@ diversity_stats <- function(vcf_file, popmap_f, g, nboot = 10000L,
   ## `stem` supplied up front (checked here, before any of the potentially
   ## slow work below runs), since the output filenames later in this
   ## function have no other way to know what to call themselves.
-  .check_run_inputs(vcf_file, popmap_f, stem)
+  .check_run_inputs(vcf_file, popmap_f, stem, outdir)
   ## Restore the caller's RNG state on exit -- this function is meant to be
   ## called interactively (not just as a fresh Rscript process), so
   ## set.seed() below must not silently overwrite the caller's own

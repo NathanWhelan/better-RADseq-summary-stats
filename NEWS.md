@@ -16,8 +16,12 @@ stand-alone scripts:
 * `het_between_pops()` output files now include the input's stem
   (`individual_heterozygosity.snps.tsv`, `het_between_pops_tests.snps.tsv`), so
   the SNP-VCF and haplotype-VCF runs no longer overwrite each other.
-* `read_haps_vcf()` is now `read_stacks_vcf()`; the old name remains as an
-  alias for this release.
+* `read_haps_vcf()` is now `read_stacks_vcf()`; the old name still works for
+  this release but warns that it is deprecated.
+* When an already-parsed VCF list is passed instead of a path, `stem` is needed
+  only if files are written (`outdir`).
+* `individual_inbreeding()` and `identity_disequilibrium()` accept a VCF path
+  and a popmap path, like the other functions.
 * hierfstat is optional. Every statistic is computed by the package itself;
   `hierfstat_check = TRUE` compares the results against hierfstat.
 * `differentiation_stats()` also returns the per-pair table (`$pairwise`).

@@ -51,8 +51,8 @@ itself appears only when the result is printed.}
 \verb{het_between_pops_tests.<stem>.tsv}). Derived from \code{vcf_file}'s name when
 it is a path (\code{populations.snps.vcf} gives \code{"snps"}), so a run on the SNP
 VCF and a run on the haplotype VCF into the same \code{outdir} do not
-overwrite each other. Required when \code{vcf_file} is an already-parsed
-list, which has no filename to derive it from.}
+overwrite each other. Required when writing files (\code{outdir}) from an
+already-parsed list, which has no filename to derive it from.}
 
 \item{x}{A \code{raddiv_het} object, as returned by \code{het_between_pops()}.}
 

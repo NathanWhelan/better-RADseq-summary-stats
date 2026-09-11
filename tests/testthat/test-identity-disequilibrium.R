@@ -58,6 +58,13 @@ test_that("g2 is ~0 when individuals share one F, and > 0 when F varies among th
   expect_lt(res2$p_value, 0.01)
 })
 
+test_that("identity_disequilibrium() and individual_inbreeding() accept a VCF and a popmap path", {
+  vcf <- system.file("extdata", "small.haps.vcf", package = "RADdiversity")
+  pm  <- system.file("extdata", "small_popmap.tsv", package = "RADdiversity")
+  expect_equal(nrow(identity_disequilibrium(vcf, pm, nboot = 10, nperm = 10, min_call = 0.5)), 2L)
+  expect_equal(nrow(individual_inbreeding(vcf, pm, min_call = 0.5)), 7L)
+})
+
 test_that("identity_disequilibrium() restores the caller's RNG state", {
   H <- sim_F(rep(0.1, 8), 100, seed = 5)
   set.seed(9); before <- .Random.seed

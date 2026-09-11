@@ -128,7 +128,7 @@ pi_allsites <- function(vcf_file, popmap_f, locus_from = "auto", window_bp = 100
                         outdir = NULL, stem = NULL, seed = 2024, verbose = TRUE) {
   if (!(is.character(vcf_file) && length(vcf_file) == 1L))
     stop("vcf_file must be the path to an all-sites VCF (e.g. Stacks' populations --vcf-all output).")
-  .check_run_inputs(vcf_file, popmap_f, stem)
+  .check_run_inputs(vcf_file, popmap_f, stem, outdir)
   if (!(length(locus_from) == 1L && locus_from %in% c("auto", "ID", "CHROM", "window")))
     stop("locus_from must be one of \"auto\", \"ID\", \"CHROM\", \"window\".")
   nboot <- as.integer(nboot); chunk_lines <- as.integer(chunk_lines)

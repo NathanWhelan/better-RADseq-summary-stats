@@ -68,8 +68,8 @@
 #'   `het_between_pops_tests.<stem>.tsv`). Derived from `vcf_file`'s name when
 #'   it is a path (`populations.snps.vcf` gives `"snps"`), so a run on the SNP
 #'   VCF and a run on the haplotype VCF into the same `outdir` do not
-#'   overwrite each other. Required when `vcf_file` is an already-parsed
-#'   list, which has no filename to derive it from.
+#'   overwrite each other. Required when writing files (`outdir`) from an
+#'   already-parsed list, which has no filename to derive it from.
 #' @details
 #' Two questions, two tests, same machinery. `pairwise_tests` compares mean
 #' individual heterozygosity: do the populations differ in diversity?
@@ -103,7 +103,7 @@ het_between_pops <- function(vcf_file, popmap_f, min_call = 0.9, outdir = NULL,
   ## vcf_file may be a path (checked with file.exists() below) or an
   ## already-parsed H list (see .resolve_H() in R/vcf_io.R) -- only a path
   ## needs this existence check before we try to read it.
-  .check_run_inputs(vcf_file, popmap_f, stem)
+  .check_run_inputs(vcf_file, popmap_f, stem, outdir)
   min_call <- as.numeric(min_call)
   if (is.na(min_call) || min_call < 0 || min_call > 1) stop("min_call must be in 0-1.")
   ## Restore the caller's RNG state on exit -- see the matching comment in

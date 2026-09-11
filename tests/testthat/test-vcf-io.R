@@ -16,6 +16,16 @@ test_that("read_popmap() splits samples by population", {
   expect_equal(lengths(pops), c(popA = 4L, popB = 3L))
 })
 
+test_that("read_haps_vcf() still works but says it is deprecated", {
+  expect_warning(H <- read_haps_vcf(fx("small.haps.vcf"), verbose = FALSE), "read_stacks_vcf")
+  expect_equal(nrow(H$A1), 80L)
+})
+
+test_that("an H list needs a stem only when files are written", {
+  H <- read_stacks_vcf(fx("small.haps.vcf"), verbose = FALSE)
+  expect_no_error(suppressMessages(diversity_stats(H, fx("small_popmap.tsv"), g = 4, nboot = 0)))
+})
+
 test_that("read_popmap() keeps IDs as text (leading zeros and T/F survive)", {
   ## Regression: read.delim()'s type guessing turned "001" into 1 (no longer
   ## matching the VCF) and a population named "T" into TRUE.

@@ -29,9 +29,9 @@ diversity_stats(
 (optionally gzip-compressed) -- OR, an already-parsed (and optionally
 filtered) \code{H} list, i.e. the object returned by \code{\link[=read_stacks_vcf]{read_stacks_vcf()}}, on
 its own or passed through one or more \verb{filter_*()} functions first (see
-\code{R/filter_loci.R}). When passing a list, \code{stem} must also be given (see
-below), since the usual output-filename logic needs a real filename to
-work from.}
+\code{R/filter_loci.R}). When passing a list and writing files (\code{outdir}),
+\code{stem} must also be given (see below), since the output filenames need
+a name to work from.}
 
 \item{popmap_f}{Path to a two-column, no-header popmap TSV (\verb{sample_id <TAB> population}).}
 
@@ -96,11 +96,10 @@ package's documented workflow runs this function once on the haplotype
 VCF and once on the SNP VCF without the second run silently overwriting
 the first run's files. That automatic derivation has no filename to
 work from when \code{vcf_file} is an already-parsed list rather than a path,
-so \code{stem} must be supplied explicitly in that case (e.g.
-\code{stem = "snps"}) -- this function stops with an explanatory error
-rather than guessing. Default \code{NULL} (derive automatically from
-\code{vcf_file} when it is a path; required otherwise). Supplying \code{stem}
-alongside a path overrides the automatic derivation.}
+so when writing files (\code{outdir}) from a list, \code{stem} must be given
+(e.g. \code{stem = "snps"}) -- this function stops with an explanatory error
+rather than guessing. Default \code{NULL}. Supplying \code{stem} alongside a path
+overrides the automatic derivation.}
 
 \item{hierfstat_check}{If \code{TRUE} and the \code{hierfstat} package is installed,
 also compute per-locus Ho/Hs with \code{hierfstat::basic.stats()} and

@@ -168,6 +168,23 @@ test_that("het_between_pops() returns the expected structure on a small fixture"
   expect_named(result, c("individual_heterozygosity", "pairwise_tests"))
   expect_equal(nrow(result$individual_heterozygosity), 7L)
   expect_true(all(c("p_welch", "p_wilcox", "hedges_g") %in% names(result$pairwise_tests)))
-  expect_true(file.exists(file.path(outdir, "individual_heterozygosity.tsv")))
-  expect_true(file.exists(file.path(outdir, "het_between_pops_tests.tsv")))
+  expect_true(file.exists(file.path(outdir, "individual_heterozygosity.haps.tsv")))
+  expect_true(file.exists(file.path(outdir, "het_between_pops_tests.haps.tsv")))
+})
+
+test_that("het_between_pops() runs on the SNP and haplotype VCFs into one outdir without overwriting", {
+  ## Regression: the output names used to be fixed, so the second run
+  ## silently replaced the first run's files.
+  outdir <- tempfile("raddiversity-test-")
+  dir.create(outdir)
+  on.exit(unlink(outdir, recursive = TRUE), add = TRUE)
+  ## The same fixture under the two Stacks file names -- only the name matters.
+  vcfs <- file.path(outdir, c("populations.snps.vcf", "populations.haps.vcf"))
+  file.copy(fx("small.haps.vcf"), vcfs)
+  for (v in vcfs)
+    invisible(capture.output(suppressMessages(
+      het_between_pops(v, fx("small_popmap.tsv"), min_call = 0.5, outdir = outdir))))
+  expect_true(all(file.exists(file.path(outdir, c(
+    "individual_heterozygosity.snps.tsv", "individual_heterozygosity.haps.tsv",
+    "het_between_pops_tests.snps.tsv", "het_between_pops_tests.haps.tsv")))))
 })

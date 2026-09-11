@@ -1031,8 +1031,8 @@ Rscript het_between_pops.R out/populations.snps.vcf popmap.tsv 0.9 het_out
 ```
 
 Arguments: `<vcf> <popmap> [min_call] [outdir]`. `min_call` is the minimum
-per-individual genotyping rate for a locus to be included (0.9 is a sensible
-default).
+fraction of individuals that must be genotyped at a locus for that locus to
+be used (0.9 is a sensible default). It is applied within each population.
 
 ### Why the obvious test is wrong
 
@@ -1116,8 +1116,10 @@ same reason `-r` (not `-R`) matters in Step 1. Every pairwise row reports its
 own locus count alongside the test statistics, so the comparisons stay
 auditable individually.
 
-Outputs: `individual_heterozygosity.tsv` and `het_between_pops_tests.tsv`, in
-the directory you named.
+Outputs: `individual_heterozygosity.<stem>.tsv` and
+`het_between_pops_tests.<stem>.tsv` in the directory you named, where
+`<stem>` comes from the input file name (`snps` or `haps`), so the two runs
+do not overwrite each other.
 
 `diversity_stats.R` tags its output files with the input stem — each run
 writes `diversity_per_population.<stem>.tsv` and `diversity_richness.<stem>.tsv`

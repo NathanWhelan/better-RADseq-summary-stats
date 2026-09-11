@@ -93,9 +93,10 @@ always come from this package's own block bootstrap over RAD loci (the
 same mechanism \code{\link[=diversity_stats]{diversity_stats()}} validates and uses), never from
 \code{hierfstat::boot.ppfst()}, which resamples individual SNP rows
 independently and so ignores the linkage between SNPs on the same RAD
-tag. See the comment at the top of \code{R/differentiation_stats.R} for how
-the internal FST/FIS formula was validated against hierfstat's own source
-code this session.
+tag. The internal FST/FIS formula is Weir & Cockerham's (1984) published
+estimator; the package tests check it numerically against
+\code{hierfstat::wc()} (see the comment at the top of
+\code{R/differentiation_stats.R}).
 
 \strong{References.} Weir, B.S. & Cockerham, C.C. (1984) Estimating
 F-statistics for the analysis of population structure. \emph{Evolution}

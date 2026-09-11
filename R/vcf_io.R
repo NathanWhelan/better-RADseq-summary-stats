@@ -186,6 +186,20 @@ read_haps_vcf <- function(path, verbose = TRUE) {
   vcf_file
 }
 
+## Not exported. The text used in output filenames, e.g.
+## diversity_per_population.<stem>.tsv. A caller-supplied `stem` always wins;
+## otherwise it comes from the VCF's own name (populations.haps.vcf.gz ->
+## "haps"), which is what lets the SNP and haplotype runs share an output
+## directory without overwriting each other. Callers must require `stem`
+## themselves when `vcf_file` is a list (there is no filename to use).
+.derive_stem <- function(vcf_file, stem = NULL) {
+  if (!is.null(stem)) return(stem)
+  s <- sub("\\.gz$", "", basename(vcf_file))
+  s <- sub("\\.vcf$", "", s)
+  s <- sub("^.*\\.", "", s)                            # populations.haps -> haps
+  if (!nzchar(s) || grepl("[^A-Za-z0-9_-]", s)) "out" else s
+}
+
 #' Read a Stacks-style popmap
 #'
 #' Parses a two-column, no-header popmap TSV (`sample_id <TAB> population`)
@@ -200,8 +214,13 @@ read_haps_vcf <- function(path, verbose = TRUE) {
 #'   holding that population's sample IDs.
 #' @export
 read_popmap <- function(path, samples, verbose = TRUE) {
-  pm <- utils::read.delim(path, header = FALSE, stringsAsFactors = FALSE,
-                   col.names = c("sample", "pop"))
+  ## colClasses = "character": without it read.delim() guesses each column's
+  ## type, so all-numeric sample IDs such as "001" become the integer 1 (and
+  ## no longer match the VCF's "001"), and names like "T"/"F" become
+  ## TRUE/FALSE. IDs are labels, never numbers.
+  pm <- utils::read.delim(path, header = FALSE, colClasses = "character",
+                          col.names = c("sample", "pop"), strip.white = TRUE,
+                          comment.char = "#", quote = "")
   pm <- pm[pm$sample %in% samples, , drop = FALSE]
   if (!nrow(pm)) stop("No popmap sample names match the VCF.")
   ## A sample listed twice ends up in BOTH populations and is counted twice,

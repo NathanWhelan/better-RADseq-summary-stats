@@ -114,8 +114,9 @@ test_that("hwe_test() routes multiallelic loci to exact-mc with a binomial SE", 
   a1 <- sample(1:3, n, replace = TRUE); a2 <- sample(1:3, n, replace = TRUE)
   H <- make_H(A1 = rbind(a1), A2 = rbind(a2), n_alleles = 3L,
               alleles = list(c("A","C","T")))
-  res <- suppressMessages(hwe_test(H, n_draws = 2000, verbose = FALSE))
+  res <- suppressMessages(hwe_test(H, n_draws = 2000, stop_after = Inf, verbose = FALSE))
   expect_equal(res$submethod, "exact-mc")
+  expect_equal(res$n_draws_used, 2000L)
   expect_true(res$p_value_se > 0 && res$p_value_se < 0.02)
   expect_equal(res$p_value_se, sqrt(res$p_value * (1 - res$p_value) / 2000), tolerance = 1e-10)
 })
@@ -137,7 +138,8 @@ test_that("the exact-mc branch agrees with pegas::hw.test() (Guo & Thompson's ow
   lo <- pegas::alleles2loci(m)
   peg <- pegas::hw.test(lo, B = 20000)
 
-  mine <- suppressMessages(hwe_test(H, n_draws = 20000, seed = 1, verbose = FALSE))
+  mine <- suppressMessages(hwe_test(H, n_draws = 20000, stop_after = Inf, seed = 1,
+                                    verbose = FALSE))
 
   ## Both implementations estimate the SAME exact quantity via independent
   ## direct Monte Carlo draws (pegas's own hw.test.loci() source, read
@@ -193,7 +195,7 @@ test_that("small-table agreement: exact-mc lands within its own SE of brute-forc
   true_p <- sum(emp[names(w_uniq)[w_uniq <= obs_w]])
 
   set.seed(7)
-  mc <- RADdiversity:::.hwe_exact_multiallelic(a1, a2, 3, n_draws = 20000)
+  mc <- RADdiversity:::.hwe_exact_multiallelic(a1, a2, 3, n_draws = 20000, stop_after = Inf)
   expect_lt(abs(mc$p_value - true_p), 5 * mc$p_value_se + 1e-6)
 })
 
@@ -296,6 +298,55 @@ test_that("fewer than 2 typed individuals in a group is reported as NA", {
 test_that("method must be exactly \"exact\" or \"chisq\"", {
   H <- make_H(A1 = rbind(c(1,1,1,1)), A2 = rbind(c(1,2,1,2)))
   expect_error(hwe_test(H, method = "exac", verbose = FALSE), "method must be")
+})
+
+## ---------------------------------------------------------------------------
+## Monte Carlo p-value conventions (Besag & Clifford 1991; Phipson & Smyth 2010)
+## ---------------------------------------------------------------------------
+
+test_that("a Monte Carlo p-value is never exactly 0", {
+  ## 30 individuals, 3 alleles, every one homozygous: more extreme than any
+  ## re-pairing a few hundred draws will find, so no draw is a hit.
+  a <- rep(1:3, each = 10)
+  set.seed(3)
+  mc <- RADdiversity:::.hwe_exact_multiallelic(a, a, 3, n_draws = 200, stop_after = Inf)
+  expect_gt(mc$p_value, 0)
+  expect_equal(mc$p_value, 1 / 201)
+})
+
+test_that("draws that tie the observed table count as at least as extreme", {
+  ## Individuals 1/2, 1/3, 2/3: the single most probable table for these
+  ## allele counts, so EVERY re-pairing is at least as extreme and p must be
+  ## exactly 1. (The log-weight tolerance guards this comparison against
+  ## rounding differences between the two ways the weights are summed.)
+  set.seed(4)
+  mc <- RADdiversity:::.hwe_exact_multiallelic(c(1, 1, 2), c(2, 3, 3), 3, n_draws = 1000)
+  expect_equal(mc$p_value, 1)
+})
+
+test_that("sequential stopping spends draws only where the p-value is small", {
+  set.seed(5)
+  n <- 40
+  a1 <- sample(1:3, n, replace = TRUE); a2 <- sample(1:3, n, replace = TRUE)
+  early <- RADdiversity:::.hwe_exact_multiallelic(a1, a2, 3, n_draws = 10000)
+  expect_lt(early$n_draws_used, 1000L)                   # stopped early
+  expect_equal(early$p_value, 20 / early$n_draws_used)   # Besag-Clifford form
+
+  fixed <- RADdiversity:::.hwe_exact_multiallelic(a1, a2, 3, n_draws = 3000, stop_after = Inf)
+  expect_equal(fixed$n_draws_used, 3000L)
+  ## The two estimate the same p-value.
+  expect_lt(abs(early$p_value - fixed$p_value), 4 * early$p_value_se + 0.05)
+})
+
+test_that("hwe_test() reports n_draws_used only for exact-mc rows", {
+  set.seed(6)
+  a1 <- sample(1:3, 20, TRUE); a2 <- sample(1:3, 20, TRUE)
+  H <- make_H(A1 = rbind(c(1,1,1,1,2,2,2,1, rep(1, 12)), a1),
+              A2 = rbind(c(1,1,2,1,2,2,1,2, rep(2, 12)), a2),
+              n_alleles = c(2L, 3L), alleles = list(c("A","C"), c("A","C","T")))
+  res <- suppressMessages(hwe_test(H, verbose = FALSE))
+  expect_true(is.na(res$n_draws_used[res$submethod == "exact-enum"]))
+  expect_gte(res$n_draws_used[res$submethod == "exact-mc"], 20L)
 })
 
 test_that("hwe_test() restores the caller's RNG state (uses Monte Carlo internally)", {

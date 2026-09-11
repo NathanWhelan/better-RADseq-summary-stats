@@ -112,6 +112,18 @@ test_that("outdir writes kinship_pairwise.tsv", {
   expect_true(file.exists(file.path(outdir, "kinship_pairwise.tsv")))
 })
 
+test_that("a pair with no heterozygous locus between them gets NA, not NaN/-Inf", {
+  ## Regression: KING's denominator is the pair's heterozygous-locus count;
+  ## when it is 0 the ratio is 0/0 or -x/0, which is no information at all.
+  H <- make_kinship_H(n_loc = 40)
+  H$A1[, "s1"] <- 1L; H$A2[, "s1"] <- 1L    # s1 homozygous REF everywhere
+  H$A1[, "s2"] <- 2L; H$A2[, "s2"] <- 2L    # s2 homozygous ALT everywhere
+  res <- suppressMessages(kinship_check(H, verbose = FALSE))$pairwise
+  k12 <- res$kinship[res$sample1 == "s1" & res$sample2 == "s2"]
+  expect_true(is.na(k12))
+  expect_false(is.nan(k12))
+})
+
 test_that("method must be exactly \"king\" or \"beta\"", {
   H <- make_kinship_H()
   expect_error(kinship_check(H, method = "kinship", verbose = FALSE), "method must be")

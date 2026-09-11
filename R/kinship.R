@@ -129,6 +129,10 @@
   denom <- HetOtherCalled + t(HetOtherCalled)
 
   kinship <- (N11 - 2 * N20) / denom
+  ## A pair where NEITHER individual is heterozygous at any shared locus has
+  ## denom = 0, giving 0/0 = NaN or -x/0 = -Inf: no information, not a
+  ## kinship value. Report NA, the package's usual "no data" code.
+  kinship[!is.finite(kinship)] <- NA_real_
   dimnames(kinship) <- dimnames(n_loci_used) <- list(H$samples, H$samples)
   diag(kinship) <- NA_real_
   list(kinship = kinship, n_loci_used = n_loci_used)
@@ -254,8 +258,8 @@ kinship_check <- function(vcf_file, method = "king", threshold = 0.0442,
     ## own requireNamespace() directly isn't possible.
     if (!.hierfstat_available())
       stop("method = \"beta\" needs the hierfstat package: install.packages(\"hierfstat\")")
-    ## Dosage matrix: samples x loci (hierfstat::matching()'s own required
-    ## orientation, confirmed against its source this session), values 0/1/2
+    ## Dosage matrix: samples x loci (the orientation hierfstat::beta.dosage()
+    ## documents: individuals in rows, loci in columns), values 0/1/2
     ## = copies of allele 2 (ALT), NA for a missing genotype -- hierfstat's
     ## matching() already tolerates NA internally, so no extra bookkeeping
     ## is needed here the way KING's shared-locus-count logic needs.

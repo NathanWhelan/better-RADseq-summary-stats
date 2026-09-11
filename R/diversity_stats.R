@@ -892,12 +892,7 @@ diversity_stats <- function(vcf_file, popmap_f, g, nboot = 10000L,
   ## `stem`, derive it automatically as before; a caller-supplied `stem`
   ## (required when `vcf_file` is a list, since there's no filename to
   ## derive one from -- checked earlier in this function) always wins.
-  if (is.null(stem)) {
-    stem <- sub("\\.gz$", "", basename(vcf_file))
-    stem <- sub("\\.vcf$", "", stem)
-    stem <- sub("^.*\\.", "", stem)                   # populations.haps -> haps
-    if (!nzchar(stem) || grepl("[^A-Za-z0-9_-]", stem)) stem <- "out"
-  }
+  stem <- .derive_stem(vcf_file, stem)                # populations.haps.vcf -> "haps"
   ## Encode boot in the filename ONLY when non-default, so a comparison run
   ## (e.g. boot="individuals" against diveRsity convention) cannot silently
   ## overwrite the default output -- boot="loci" reproduces the default

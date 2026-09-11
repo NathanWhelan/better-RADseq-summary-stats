@@ -9,7 +9,9 @@ autosomal_het(het_per_snp, n_snps_used, n_sites_sequenced)
 \arguments{
 \item{het_per_snp}{Heterozygosity per ascertained SNP.}
 
-\item{n_snps_used}{Number of SNPs used to compute \code{het_per_snp}.}
+\item{n_snps_used}{Number of variant (SNP) records called in the dataset
+-- all of them, not only those retained for estimating \code{het_per_snp}
+(the mean over the retained records estimates the mean over all).}
 
 \item{n_sites_sequenced}{Total sequenced sites (variant and fixed). A
 single value or one per element of \code{het_per_snp}.}

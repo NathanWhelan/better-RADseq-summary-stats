@@ -10,7 +10,8 @@ het_between_pops(
   min_call = 0.9,
   outdir = ".",
   seed = 2024,
-  verbose = TRUE
+  verbose = TRUE,
+  stem = NULL
 )
 }
 \arguments{
@@ -23,8 +24,9 @@ and re-parsing the VCF file.}
 
 \item{popmap_f}{Path to a two-column, no-header popmap TSV (\verb{sample_id <TAB> population}).}
 
-\item{min_call}{Minimum per-individual genotyping rate for a locus to be
-used. Default \code{0.9}.}
+\item{min_call}{Minimum fraction of individuals that must be genotyped at
+a locus for that locus to be used, applied within each population.
+Default \code{0.9}.}
 
 \item{outdir}{Directory to write the two output TSVs into. Default \code{"."}
 (the current directory), created if it does not exist.}
@@ -38,11 +40,20 @@ session.}
 \item{verbose}{Print the VCF/popmap parsing summary. Default \code{TRUE}. The
 main report is always printed regardless of this setting, matching the
 command-line script.}
+
+\item{stem}{Text used in the two output filenames
+(\verb{individual_heterozygosity.<stem>.tsv} and
+\verb{het_between_pops_tests.<stem>.tsv}). Derived from \code{vcf_file}'s name when
+it is a path (\code{populations.snps.vcf} gives \code{"snps"}), so a run on the SNP
+VCF and a run on the haplotype VCF into the same \code{outdir} do not
+overwrite each other. Required when \code{vcf_file} is an already-parsed
+list, which has no filename to derive it from.}
 }
 \value{
 Invisibly, a list with elements \code{individual_heterozygosity} and
 \code{pairwise_tests} (the same two data frames written to
-\code{individual_heterozygosity.tsv} and \code{het_between_pops_tests.tsv}).
+\verb{individual_heterozygosity.<stem>.tsv} and
+\verb{het_between_pops_tests.<stem>.tsv}).
 }
 \description{
 Uses the INDIVIDUAL, not the locus, as the unit of replication (Welch's t

@@ -18,7 +18,7 @@ A single numeric value.
 The same correction as \code{\link[=hs_stacks_pi]{hs_stacks_pi()}}, computed from allele counts so it
 also works on a haplotype VCF. Named for the correction it applies, not for
 the software column it happens to match. \code{N} is the number of gene copies
-actually observed, which equals \verb{2n} on the complete-data locus set
-\code{\link[=diversity_stats]{diversity_stats()}} uses, so this agrees exactly with \code{hs_stacks_pi()}
-there (checked in \code{\link[=diversity_core_selftest]{diversity_core_selftest()}}).
+actually observed at the locus (2 x the typed individuals), so this agrees
+exactly with \code{hs_stacks_pi()} evaluated at that many individuals (checked
+in \code{\link[=diversity_core_selftest]{diversity_core_selftest()}}).
 }

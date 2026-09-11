@@ -30,17 +30,19 @@
 #  available. That is a deliberate choice, not an oversight: the bootstrap
 #  and jackknife below need to re-sum these per-locus building blocks tens
 #  of thousands of times, and hierfstat has no function that accepts a
-#  resampled/weighted locus set. The internal formula was checked this
-#  session against hierfstat::wc()'s ACTUAL SOURCE CODE (not just the
-#  textbook description of Weir & Cockerham 1984, which turns out to have an
-#  easy-to-mistranscribe term in the "b" variance component -- see the
-#  comment on `b_comp` in .wc_components() below for the exact place this
-#  matters) and matches it to machine precision (~1e-16) on a stress-tested
-#  synthetic dataset: 4 populations, 25 loci with 2-4 alleles each, and
-#  random missingness INCLUDING cases where one whole population has zero
-#  individuals genotyped at a locus -- both the global value and every
-#  pairwise value. hierfstat is still used, when installed, for two things
-#  this package does not reimplement: Weir & Goudet's beta, and a printed
+#  resampled/weighted locus set. The code implements Weir & Cockerham's
+#  (1984) published estimators of the a, b and c variance components (also
+#  given in Weir 1996, Genetic Data Analysis II) -- see the comment on
+#  `b_comp` in .wc_components() below for the one term that is easy to
+#  mistranscribe. No hierfstat code is used or copied. hierfstat serves only
+#  as an external numerical check: tests/testthat/test-differentiation-stats.R
+#  compares this implementation with hierfstat::wc() and
+#  hierfstat::pairwise.WCfst() on a stress-test dataset (4 populations, 25
+#  loci with 2-4 alleles each, random missingness INCLUDING a population with
+#  zero individuals genotyped at a locus), and they agree to machine
+#  precision (~1e-16) for the global value and every pairwise value.
+#  hierfstat is also used at run time, when installed, for two things this
+#  package does not reimplement: Weir & Goudet's beta, and a printed
 #  cross-check of this run's own global FST against hierfstat::wc()'s.
 #
 #  Jost's D has no hierfstat equivalent. `.jost_hsht()` below is an
@@ -169,14 +171,10 @@
     } else 0
     ## NOTE ON THIS FORMULA: this term uses (n̄ - 1) [the plain average
     ## sample size], NOT (ñ - 1) [the same corrected sample size used for
-    ## `a_comp` above] -- an easy pair to swap by mistake. This was derived
-    ## algebraically from hierfstat::wc()'s own MSG/MSI/MSP formulation
-    ## (its actual source code, read this session, not the textbook
-    ## description of Weir & Cockerham 1984 and not assumed from memory)
-    ## and validated to ~1e-16 against wc()'s own output on a stress-tested
-    ## synthetic dataset (4 populations, 25 loci, 2-4 alleles, random
-    ## missingness including a population with zero data at a locus) --
-    ## both the global value and every pairwise value.
+    ## `a_comp` above] -- an easy pair to swap by mistake. This is Weir &
+    ## Cockerham's (1984) b estimator as published; the numerical check
+    ## against hierfstat::wc() in tests/testthat/test-differentiation-stats.R
+    ## (agreement to ~1e-16) would catch the swap.
     b_comp <- if (nbar > 1) {
       (nbar / (nbar - 1)) * (p_bar * (1 - p_bar) - ((r_eff - 1) / r_eff) * s2 -
         ((2 * nbar - 1) / (4 * nbar)) * h_bar)
@@ -317,9 +315,10 @@
 #' same mechanism [diversity_stats()] validates and uses), never from
 #' `hierfstat::boot.ppfst()`, which resamples individual SNP rows
 #' independently and so ignores the linkage between SNPs on the same RAD
-#' tag. See the comment at the top of `R/differentiation_stats.R` for how
-#' the internal FST/FIS formula was validated against hierfstat's own source
-#' code this session.
+#' tag. The internal FST/FIS formula is Weir & Cockerham's (1984) published
+#' estimator; the package tests check it numerically against
+#' `hierfstat::wc()` (see the comment at the top of
+#' `R/differentiation_stats.R`).
 #'
 #' **References.** Weir, B.S. & Cockerham, C.C. (1984) Estimating
 #' F-statistics for the analysis of population structure. *Evolution*
@@ -554,12 +553,7 @@ differentiation_stats <- function(vcf_file, popmap_f, nboot = 10000L,
   }
   cat("---------------------------------------------------------------------\n")
 
-  if (is.null(stem)) {
-    stem <- sub("\\.gz$", "", basename(vcf_file))
-    stem <- sub("\\.vcf$", "", stem)
-    stem <- sub("^.*\\.", "", stem)
-    if (!nzchar(stem) || grepl("[^A-Za-z0-9_-]", stem)) stem <- "out"
-  }
+  stem <- .derive_stem(vcf_file, stem)
   f1 <- sprintf("differentiation_global.%s.tsv", stem)
   f2 <- sprintf("differentiation_pairwise.%s.tsv", stem)
   utils::write.table(gl, file.path(outdir, f1), sep = "\t", quote = FALSE, row.names = FALSE)

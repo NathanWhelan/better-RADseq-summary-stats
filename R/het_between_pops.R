@@ -48,8 +48,9 @@
 #'   and re-parsing the VCF file.
 #' @param popmap_f Path to a two-column, no-header popmap TSV (`sample_id
 #'   <TAB> population`).
-#' @param min_call Minimum per-individual genotyping rate for a locus to be
-#'   used. Default `0.9`.
+#' @param min_call Minimum fraction of individuals that must be genotyped at
+#'   a locus for that locus to be used, applied within each population.
+#'   Default `0.9`.
 #' @param outdir Directory to write the two output TSVs into. Default `"."`
 #'   (the current directory), created if it does not exist.
 #' @param seed Random seed set before any randomness, for reproducibility.
@@ -60,18 +61,30 @@
 #' @param verbose Print the VCF/popmap parsing summary. Default `TRUE`. The
 #'   main report is always printed regardless of this setting, matching the
 #'   command-line script.
+#' @param stem Text used in the two output filenames
+#'   (`individual_heterozygosity.<stem>.tsv` and
+#'   `het_between_pops_tests.<stem>.tsv`). Derived from `vcf_file`'s name when
+#'   it is a path (`populations.snps.vcf` gives `"snps"`), so a run on the SNP
+#'   VCF and a run on the haplotype VCF into the same `outdir` do not
+#'   overwrite each other. Required when `vcf_file` is an already-parsed
+#'   list, which has no filename to derive it from.
 #' @return Invisibly, a list with elements `individual_heterozygosity` and
 #'   `pairwise_tests` (the same two data frames written to
-#'   `individual_heterozygosity.tsv` and `het_between_pops_tests.tsv`).
+#'   `individual_heterozygosity.<stem>.tsv` and
+#'   `het_between_pops_tests.<stem>.tsv`).
 #' @export
 het_between_pops <- function(vcf_file, popmap_f, min_call = 0.9, outdir = ".",
-                              seed = 2024, verbose = TRUE) {
+                              seed = 2024, verbose = TRUE, stem = NULL) {
 
   ## vcf_file may be a path (checked with file.exists() below) or an
   ## already-parsed H list (see .resolve_H() in R/vcf_io.R) -- only a path
   ## needs this existence check before we try to read it.
   if (is.character(vcf_file) && !file.exists(vcf_file))
     stop("VCF file not found: ", vcf_file, "\n  Check the path and try again.")
+  if (!is.character(vcf_file) && is.null(stem))
+    stop("vcf_file is an already-parsed list rather than a file path, so its ",
+         "filename can't be used to name the output files. Pass stem ",
+         "explicitly, e.g. stem = \"haps\" or stem = \"snps\".")
   if (!file.exists(popmap_f))
     stop("Popmap file not found: ", popmap_f, "\n  Check the path and try again.")
   min_call <- as.numeric(min_call)
@@ -328,24 +341,24 @@ het_between_pops <- function(vcf_file, popmap_f, min_call = 0.9, outdir = ".",
   ## ---------------------------------------------------------------------------
   rows <- list()
   for (i in seq_len(r - 1)) for (j in (i + 1):r) {
-    pi <- names(pops)[i]; pj <- names(pops)[j]
-    lij <- keep_pop[, pi] & keep_pop[, pj]
+    p1 <- names(pops)[i]; p2 <- names(pops)[j]
+    lij <- keep_pop[, p1] & keep_pop[, p2]
     nloc <- sum(lij)
     if (nloc < 50) {
       message(sprintf(
         "  %s vs %s: only %d loci clear %.0f%% call rate in BOTH populations ",
-        pi, pj, nloc, 100 * min_call),
+        p1, p2, nloc, 100 * min_call),
         "(need >= 50). Reported as NA for this pair; other pairs are unaffected.")
       rows[[length(rows) + 1]] <- data.frame(
-        pop1 = pi, pop2 = pj, n_loci = nloc,
-        n1 = length(pops[[pi]]), mean1 = NA_real_,
-        n2 = length(pops[[pj]]), mean2 = NA_real_,
+        pop1 = p1, pop2 = p2, n_loci = nloc,
+        n1 = length(pops[[p1]]), mean1 = NA_real_,
+        n2 = length(pops[[p2]]), mean2 = NA_real_,
         diff = NA_real_, ci_lo = NA_real_, ci_hi = NA_real_,
         p_welch = NA_real_, p_wilcox = NA_real_, hedges_g = NA_real_)
       next
     }
-    a1i <- H$A1[lij, pops[[pi]], drop = FALSE]; a2i <- H$A2[lij, pops[[pi]], drop = FALSE]
-    a1j <- H$A1[lij, pops[[pj]], drop = FALSE]; a2j <- H$A2[lij, pops[[pj]], drop = FALSE]
+    a1i <- H$A1[lij, pops[[p1]], drop = FALSE]; a2i <- H$A2[lij, pops[[p1]], drop = FALSE]
+    a1j <- H$A1[lij, pops[[p2]], drop = FALSE]; a2j <- H$A2[lij, pops[[p2]], drop = FALSE]
     a <- colMeans(a1i != a2i, na.rm = TRUE)
     b <- colMeans(a1j != a2j, na.rm = TRUE)
     ## An individual can pass the earlier GLOBAL thinning check (>= 50 calls on
@@ -357,15 +370,15 @@ het_between_pops <- function(vcf_file, popmap_f, min_call = 0.9, outdir = ".",
       n_bad <- sum(!is.finite(a)) + sum(!is.finite(b))
       message(sprintf(
         "  %s vs %s: %d individual(s) called at none of the %d shared loci for ",
-        pi, pj, n_bad, nloc), "this pair; excluded from this comparison only.")
+        p1, p2, n_bad, nloc), "this pair; excluded from this comparison only.")
       a <- a[is.finite(a)]; b <- b[is.finite(b)]
     }
     if (length(a) < 2 || length(b) < 2) {
       message(sprintf(
         "  %s vs %s: fewer than 2 individuals with a valid value in one group ",
-        pi, pj), "after excluding those above. Reported as NA for this pair.")
+        p1, p2), "after excluding those above. Reported as NA for this pair.")
       rows[[length(rows) + 1]] <- data.frame(
-        pop1 = pi, pop2 = pj, n_loci = nloc,
+        pop1 = p1, pop2 = p2, n_loci = nloc,
         n1 = length(a), mean1 = if (length(a)) round(mean(a), 4) else NA_real_,
         n2 = length(b), mean2 = if (length(b)) round(mean(b), 4) else NA_real_,
         diff = NA_real_, ci_lo = NA_real_, ci_hi = NA_real_,
@@ -390,14 +403,14 @@ het_between_pops <- function(vcf_file, popmap_f, min_call = 0.9, outdir = ".",
     if (inherits(tt, "try-error")) {
       message(sprintf(
         "  %s vs %s: t.test() failed (%s). This usually means no variation ",
-        pi, pj, trimws(conditionMessage(attr(tt, "condition")))),
+        p1, p2, trimws(conditionMessage(attr(tt, "condition")))),
         "among individuals in one or both populations, so no test is ",
         "possible. Reported as NA.")
       tt <- list(p.value = NA_real_, conf.int = c(NA_real_, NA_real_))
     } else if (is.nan(tt$p.value)) {
       message(sprintf(
         "  %s vs %s: t.test() returned NaN (both samples constant at exactly ",
-        pi, pj),
+        p1, p2),
         "zero -- e.g. monomorphic at every retained locus in both populations). ",
         "No variation to test. Reported as NA.")
       tt <- list(p.value = NA_real_, conf.int = c(NA_real_, NA_real_))
@@ -409,7 +422,7 @@ het_between_pops <- function(vcf_file, popmap_f, min_call = 0.9, outdir = ".",
     d <- if (is.finite(s) && s > 0) (mean(a) - mean(b)) / s else NA_real_
     J <- 1 - 3 / (4 * (length(a) + length(b)) - 9)
     rows[[length(rows) + 1]] <- data.frame(
-      pop1 = pi, pop2 = pj, n_loci = nloc,
+      pop1 = p1, pop2 = p2, n_loci = nloc,
       n1 = length(a), mean1 = round(mean(a), 4),
       n2 = length(b), mean2 = round(mean(b), 4),
       diff = round(mean(a) - mean(b), 4),
@@ -451,12 +464,12 @@ het_between_pops <- function(vcf_file, popmap_f, min_call = 0.9, outdir = ".",
   cat("    LOW heterozygosity. Inspect the per-individual table before trusting a\n")
   cat("    result, especially at small n where one outlier can drive it.\n")
 
-  utils::write.table(ind, file.path(outdir, "individual_heterozygosity.tsv"),
-              sep = "\t", quote = FALSE, row.names = FALSE)
-  utils::write.table(out, file.path(outdir, "het_between_pops_tests.tsv"),
-              sep = "\t", quote = FALSE, row.names = FALSE)
-  cat("\nWrote individual_heterozygosity.tsv and het_between_pops_tests.tsv to ",
-      outdir, "\n\n", sep = "")
+  stem <- .derive_stem(vcf_file, stem)                # populations.snps.vcf -> "snps"
+  f_ind <- file.path(outdir, sprintf("individual_heterozygosity.%s.tsv", stem))
+  f_tst <- file.path(outdir, sprintf("het_between_pops_tests.%s.tsv", stem))
+  utils::write.table(ind, f_ind, sep = "\t", quote = FALSE, row.names = FALSE)
+  utils::write.table(out, f_tst, sep = "\t", quote = FALSE, row.names = FALSE)
+  cat("\nWrote ", f_ind, " and ", f_tst, "\n\n", sep = "")
 
   invisible(list(individual_heterozygosity = ind, pairwise_tests = out))
 }

@@ -75,8 +75,13 @@
 #    Huber, M., Chen, Y., Dinwoodie, I., Dobra, A. & Nicholas, M. (2006)
 #      Monte Carlo algorithms for Hardy-Weinberg proportions. Biometrics
 #      62: 49-53. https://doi.org/10.1111/j.1541-0420.2005.00418.x (the
-#      source actually read this session for how Guo & Thompson's direct
-#      method works, and for Levene's formula, eq. 1-2 there).
+#      source used here for how Guo & Thompson's direct method works, and
+#      for Levene's formula, eqs. 1-2 there).
+#    Besag, J. & Clifford, P. (1991) Sequential Monte Carlo p-values.
+#      Biometrika 78: 301-304. (Early stopping in the multiallelic branch.)
+#    Phipson, B. & Smyth, G.K. (2010) Permutation p-values should never be
+#      zero. Statistical Applications in Genetics and Molecular Biology 9:
+#      Article 39. (Why a Monte Carlo p-value is (ge + 1) / (n + 1).)
 #    Raymond, M. & Rousset, F. (1995) GENEPOP (version 1.2): population
 #      genetics software for exact tests and ecumenicism. Journal of
 #      Heredity 86: 248-249. (What GENEPOP does differently -- a modified
@@ -131,6 +136,15 @@
   -sum(lfactorial(hom)) - sum(lfactorial(het)) + log(2) * sum(het)
 }
 
+## Not exported. Tolerance for the "at least as extreme" comparison of log
+## weights. Two tables with the same true probability can get log weights
+## that differ in the last few bits when the sums are taken in a different
+## order (e.g. the vectorised Monte Carlo branch below vs
+## .levene_log_weight()), and without a tolerance such a tie would be
+## counted as LESS extreme. 1e-7 on the log scale is a relative probability
+## difference of 1e-7 -- far below anything that could change a p-value.
+.hwe_tol <- 1e-7
+
 ## Not exported. Given a1/a2 (this group's two allele-index vectors at one
 ## locus, some entries possibly NA for a missing genotype) and `k` (the
 ## locus's declared allele count), returns a compact, RENUMBERED version
@@ -178,9 +192,10 @@
   ## function reports) exactly unchanged while keeping every exponentiated
   ## term safely inside floating-point range.
   mx <- max(w)
-  p <- sum(exp(w[w <= obs_w] - mx)) / sum(exp(w - mx))
+  p <- sum(exp(w[w <= obs_w + .hwe_tol] - mx)) / sum(exp(w - mx))
   list(statistic = NA_real_, df = NA_real_, p_value = p, p_value_se = NA_real_,
-       pct_low_expected = NA_real_, submethod = "exact-enum")
+       n_draws_used = NA_integer_, pct_low_expected = NA_real_,
+       submethod = "exact-enum")
 }
 
 ## ---------------------------------------------------------------------------
@@ -189,29 +204,69 @@
 
 ## Not exported. `a`/`b` are this group's two (already NA-free, already
 ## compactly renumbered) allele-index vectors at one locus with k_obs >= 3
-## observed alleles. Draws `n_draws` independent uniformly-random
-## re-pairings of this locus's own 2*n allele copies (n = typed
-## individuals) -- each one an EXACT sample from the true null distribution
-## by construction, not an approximation that needs time to "mix" -- and
-## estimates the p-value as the fraction of draws at least as extreme as
-## the table actually observed. Because draws are independent (not
-## autocorrelated the way Markov-chain steps are), the standard error is
-## just the ordinary binomial-proportion one: sqrt(p*(1-p)/n_draws).
-.hwe_exact_multiallelic <- function(a, b, k_obs, n_draws) {
-  obs_tab <- .hwe_geno_table(a, b, k_obs)
-  obs_w <- .levene_log_weight(obs_tab)
-  n <- length(a)
+## observed alleles. Draws independent uniformly-random re-pairings of this
+## locus's own 2*n allele copies (n = typed individuals) -- each one an
+## EXACT sample from the true null distribution by construction, not an
+## approximation that needs time to "mix" -- and counts the draws at least
+## as extreme as (no more probable than) the table actually observed.
+##
+## SEQUENTIAL STOPPING (Besag & Clifford 1991). Drawing stops as soon as
+## `stop_after` extreme draws have been seen, or after `n_draws` draws,
+## whichever comes first:
+##   * stopped early, after `used` draws     -> p = stop_after / used
+##   * reached n_draws with fewer exceedances -> p = (ge + 1) / (n_draws + 1)
+## Both are valid p-values. The second form also means p is never exactly
+## 0: a finite simulation cannot show that (Phipson & Smyth 2010). A locus
+## nowhere near significance stops after a few dozen draws instead of all
+## n_draws, which is where almost all the time used to go.
+## `stop_after = Inf` switches stopping off (always n_draws draws). The
+## standard error is the binomial one over the draws actually used.
+##
+## VECTORISED: draws are made a batch at a time. Ordering a row of uniform
+## random numbers gives a uniformly random permutation of that row, and one
+## order() call handles every row of a batch at once; each draw's genotype
+## table then comes from a single tabulate() call, and its Levene log weight
+## is computed row-wise. Same test and same null distribution as one
+## sample() per draw, without an R-level loop per draw. The batch starts
+## small (most loci stop early) and doubles each round.
+.hwe_exact_multiallelic <- function(a, b, k_obs, n_draws, stop_after = 20) {
+  obs_w <- .levene_log_weight(.hwe_geno_table(a, b, k_obs))
+  n <- length(a); n2 <- 2L * n
   copies <- c(a, b)   # the locus's own 2n allele copies, as a flat multiset
-  ge <- 0L
-  for (r in seq_len(n_draws)) {
-    perm <- sample(copies)          # a uniformly random re-pairing
-    g1 <- perm[seq.int(1L, 2L * n, 2L)]; g2 <- perm[seq.int(2L, 2L * n, 2L)]
-    if (.levene_log_weight(.hwe_geno_table(g1, g2, k_obs)) <= obs_w) ge <- ge + 1L
+  kk <- k_obs * k_obs
+  hom_cells <- which(diag(k_obs) == 1)           # (i, i) cells of a k x k table
+  het_cells <- which(upper.tri(diag(k_obs)))     # (i, j) cells, i < j
+  odd <- seq.int(1L, n2, 2L); even <- odd + 1L
+  ge <- 0L; used <- 0L; batch <- 64L
+  while (used < n_draws && ge < stop_after) {
+    m <- as.integer(min(batch, n_draws - used))
+    ## Row r of `pos` is a random permutation of 1..2n: sorting on
+    ## (row number + uniform) keeps each row's block together and shuffles
+    ## within it.
+    o <- order(rep(seq_len(m), each = n2) + stats::runif(m * n2))
+    pos <- matrix(o, m, n2, byrow = TRUE) - (seq_len(m) - 1L) * n2
+    perm <- matrix(copies[pos], m, n2)
+    g1 <- perm[, odd, drop = FALSE]; g2 <- perm[, even, drop = FALSE]
+    cell <- (pmax(g1, g2) - 1L) * k_obs + pmin(g1, g2)   # as in .hwe_geno_table()
+    tab <- matrix(tabulate(as.vector(cell) + rep.int((seq_len(m) - 1L) * kk, n),
+                           nbins = m * kk), m, kk, byrow = TRUE)
+    het <- tab[, het_cells, drop = FALSE]
+    w <- -rowSums(lfactorial(tab[, hom_cells, drop = FALSE])) -
+         rowSums(lfactorial(het)) + log(2) * rowSums(het)
+    hits <- cumsum(w <= obs_w + .hwe_tol)
+    if (ge + hits[m] >= stop_after) {
+      used <- used + which(ge + hits >= stop_after)[1L]   # stop exactly at the hit
+      ge <- as.integer(stop_after)
+    } else {
+      used <- used + m; ge <- ge + hits[m]
+    }
+    batch <- min(2L * batch, 4096L)
   }
-  p <- ge / n_draws
-  se <- sqrt(p * (1 - p) / n_draws)
+  p <- if (ge >= stop_after) ge / used else (ge + 1) / (used + 1)
+  se <- sqrt(p * (1 - p) / used)
   list(statistic = NA_real_, df = NA_real_, p_value = p, p_value_se = se,
-       pct_low_expected = NA_real_, submethod = "exact-mc")
+       n_draws_used = as.integer(used), pct_low_expected = NA_real_,
+       submethod = "exact-mc")
 }
 
 ## ---------------------------------------------------------------------------
@@ -248,8 +303,8 @@
   stat <- sum((obs_cells - exp_cells)^2 / exp_cells)
   df <- k_obs * (k_obs - 1) / 2
   list(statistic = stat, df = df, p_value = stats::pchisq(stat, df, lower.tail = FALSE),
-       p_value_se = NA_real_, pct_low_expected = 100 * mean(exp_cells < 5),
-       submethod = "chisq")
+       p_value_se = NA_real_, n_draws_used = NA_integer_,
+       pct_low_expected = 100 * mean(exp_cells < 5), submethod = "chisq")
 }
 
 ## ---------------------------------------------------------------------------
@@ -271,8 +326,8 @@
 #' direct Monte Carlo method for loci with 3+ observed alleles (RAD
 #' haplotypes). `method = "chisq"` is the older, approximate chi-square
 #' goodness-of-fit test, kept available as a fast first pass. See
-#' `R/hwe_test.R`'s file header for the full algorithm description and how
-#' both were validated this session.
+#' `R/hwe_test.R`'s file header for the full algorithm description, and
+#' `tests/testthat/test-hwe-test.R` for how both are validated.
 #'
 #' @details
 #' **Why this only ever reports, never filters.** Pearman, Urban & Alexander
@@ -286,11 +341,16 @@
 #' given) avoids conflating the two, which is why that option exists here --
 #' but even then, this function stops at reporting.
 #'
-#' **`n_draws` matters for multiallelic loci.** The Monte Carlo p-value for
-#' a locus with 3+ observed alleles carries its own standard error
-#' (`p_value_se`); the default `n_draws = 10000L` gives a worst-case SE
-#' around 0.005 (at p = 0.5), tighter near 0 or 1. Biallelic loci
-#' (`submethod = "exact-enum"`) have no such error -- they are exact.
+#' **Monte Carlo p-values for multiallelic loci.** The p-value for a locus
+#' with 3+ observed alleles is estimated by simulation and carries its own
+#' standard error (`p_value_se`, over `n_draws_used` draws). Simulation
+#' stops early once `stop_after` draws at least as extreme as the observed
+#' table have been seen (Besag & Clifford 1991): a locus nowhere near
+#' significance needs only a few dozen draws, while a locus with a small
+#' p-value runs to `n_draws`, so precision goes where it matters. A p-value
+#' is never reported as exactly 0; the smallest possible value is
+#' `1 / (n_draws + 1)` (Phipson & Smyth 2010). Biallelic loci
+#' (`submethod = "exact-enum"`) have no Monte Carlo error -- they are exact.
 #'
 #' **References.** Levene, H. (1949) On a matching problem arising in
 #' genetics. *Annals of Mathematical Statistics* 20:91-94. -- Haldane, J.B.S.
@@ -303,6 +363,10 @@
 #' -- Pearman, W.S., Urban, L. & Alexander, A. (2022) Commonly used
 #' Hardy-Weinberg equilibrium filtering schemes impact population structure
 #' inferences using RADseq data. *Molecular Ecology Resources* 22:2599-2613.
+#' -- Besag, J. & Clifford, P. (1991) Sequential Monte Carlo p-values.
+#' *Biometrika* 78:301-304. -- Phipson, B. & Smyth, G.K. (2010) Permutation
+#' p-values should never be zero. *Statistical Applications in Genetics and
+#' Molecular Biology* 9:39.
 #'
 #' @param H A list as returned by [read_haps_vcf()] (or by another filter in
 #'   this package, since they all return the same shape).
@@ -310,9 +374,12 @@
 #'   [read_popmap()]). `NULL` (the default) pools every sample into one
 #'   group named `"pooled"`; given, tests each population separately.
 #' @param method `"exact"` (default) or `"chisq"`.
-#' @param n_draws Monte Carlo draws for multiallelic loci under
+#' @param n_draws Maximum Monte Carlo draws per multiallelic locus under
 #'   `method = "exact"`. Default `10000L`. Ignored for biallelic loci
 #'   (exact by enumeration) and under `method = "chisq"`.
+#' @param stop_after Stop drawing for a locus once this many draws at least
+#'   as extreme as the observed table have been seen (Besag & Clifford
+#'   1991). Default `20`. `Inf` always uses all `n_draws` draws.
 #' @param seed Random seed for the Monte Carlo draws, for reproducibility.
 #'   Default `2024`. The caller's own RNG state is restored when this
 #'   function returns (see [diversity_stats()] for the same convention).
@@ -321,7 +388,8 @@
 #'   `locus`, `population`, `method`, `submethod` (`"exact-enum"`,
 #'   `"exact-mc"`, or `"chisq"`), `n_alleles` (declared), `n_observed_alleles`,
 #'   `n_called` (typed individuals in that group), `statistic`, `df`,
-#'   `p_value`, `p_value_se` (only defined for `"exact-mc"` rows),
+#'   `p_value`, `p_value_se` and `n_draws_used` (only defined for
+#'   `"exact-mc"` rows),
 #'   `pct_low_expected` (only defined for `"chisq"` rows). A locus/group
 #'   combination with fewer than 2 observed alleles (monomorphic there) or
 #'   fewer than 2 typed individuals gets `NA` throughout except `n_called`/
@@ -341,12 +409,14 @@
 #' hwe_test(H, n_draws = 500, verbose = FALSE)
 #' @export
 hwe_test <- function(H, pops = NULL, method = "exact", n_draws = 10000L,
-                      seed = 2024, verbose = TRUE) {
+                      stop_after = 20, seed = 2024, verbose = TRUE) {
   if (!(length(method) == 1L && method %in% c("exact", "chisq")))
     stop("method must be exactly \"exact\" or \"chisq\" (got: ", paste(method, collapse = ", "), ").")
   n_draws <- as.integer(n_draws)
   if (is.na(n_draws) || n_draws < 1L)
     stop("n_draws must be a positive integer.")
+  if (length(stop_after) != 1L || is.na(stop_after) || stop_after < 1)
+    stop("stop_after must be a single number >= 1 (Inf for a fixed n_draws).")
 
   ## Same RNG-preservation convention as every other stochastic function in
   ## this package: restore the caller's own random-number state on exit.
@@ -356,42 +426,50 @@ hwe_test <- function(H, pops = NULL, method = "exact", n_draws = 10000L,
 
   groups <- if (is.null(pops)) stats::setNames(list(H$samples), "pooled") else pops
   n_rec <- nrow(H$A1)
-  rows <- vector("list", n_rec * length(groups))
+  n_out <- n_rec * length(groups)
+
+  ## One slot per (population, locus) row, filled in place and turned into a
+  ## data frame once at the end -- building a one-row data.frame() per locus
+  ## and rbind()-ing tens of thousands of them was a large share of the run
+  ## time on a real dataset.
+  submethod <- rep(NA_character_, n_out)
+  n_obs_all <- n_called <- integer(n_out)
+  statistic <- df <- p_value <- p_value_se <- pct_low <- rep(NA_real_, n_out)
+  n_used <- rep(NA_integer_, n_out)
   ri <- 0L
 
   for (g in names(groups)) {
     ids <- groups[[g]]
     for (j in seq_len(n_rec)) {
-      k <- H$n_alleles[j]
-      cp <- .hwe_compact(H$A1[j, ids], H$A2[j, ids], k)
-      n_called <- sum(!is.na(cp$a) & !is.na(cp$b))
       ri <- ri + 1L
-      if (cp$k_obs < 2L || n_called < 2L) {
-        rows[[ri]] <- data.frame(
-          locus = H$locus[j], population = g, method = method, submethod = NA_character_,
-          n_alleles = k, n_observed_alleles = cp$k_obs, n_called = n_called,
-          statistic = NA_real_, df = NA_real_, p_value = NA_real_,
-          p_value_se = NA_real_, pct_low_expected = NA_real_, stringsAsFactors = FALSE)
-        next
-      }
-      a <- cp$a[!is.na(cp$a)]; b <- cp$b[!is.na(cp$b)]
+      cp <- .hwe_compact(H$A1[j, ids], H$A2[j, ids], H$n_alleles[j])
+      ok <- !is.na(cp$a) & !is.na(cp$b)
+      n_obs_all[ri] <- cp$k_obs
+      n_called[ri]  <- sum(ok)
+      if (cp$k_obs < 2L || n_called[ri] < 2L) next  # monomorphic here, or < 2 typed
+      a <- cp$a[ok]; b <- cp$b[ok]
       res <- if (method == "chisq") {
         .hwe_chisq(.hwe_geno_table(a, b, cp$k_obs), cp$k_obs)
       } else if (cp$k_obs == 2L) {
         .hwe_exact_biallelic(.hwe_geno_table(a, b, cp$k_obs))
       } else {
-        .hwe_exact_multiallelic(a, b, cp$k_obs, n_draws)
+        .hwe_exact_multiallelic(a, b, cp$k_obs, n_draws, stop_after = stop_after)
       }
-      rows[[ri]] <- data.frame(
-        locus = H$locus[j], population = g, method = method, submethod = res$submethod,
-        n_alleles = k, n_observed_alleles = cp$k_obs, n_called = n_called,
-        statistic = res$statistic, df = res$df, p_value = res$p_value,
-        p_value_se = res$p_value_se, pct_low_expected = res$pct_low_expected,
-        stringsAsFactors = FALSE)
+      submethod[ri] <- res$submethod
+      statistic[ri] <- res$statistic; df[ri] <- res$df
+      p_value[ri] <- res$p_value; p_value_se[ri] <- res$p_value_se
+      n_used[ri] <- res$n_draws_used; pct_low[ri] <- res$pct_low_expected
     }
   }
-  out <- do.call(rbind, rows)
-  row.names(out) <- NULL
+  out <- data.frame(
+    locus = rep(H$locus, length(groups)),
+    population = rep(names(groups), each = n_rec),
+    method = rep(method, n_out), submethod = submethod,
+    n_alleles = rep(as.integer(H$n_alleles), length(groups)),
+    n_observed_alleles = n_obs_all, n_called = n_called,
+    statistic = statistic, df = df, p_value = p_value, p_value_se = p_value_se,
+    n_draws_used = n_used, pct_low_expected = pct_low,
+    stringsAsFactors = FALSE)
 
   if (verbose) {
     n_bad <- sum(is.na(out$p_value))
@@ -401,8 +479,12 @@ hwe_test <- function(H, pops = NULL, method = "exact", n_draws = 10000L,
     if (method == "exact") {
       n_enum <- sum(out$submethod == "exact-enum", na.rm = TRUE)
       n_mc   <- sum(out$submethod == "exact-mc", na.rm = TRUE)
-      message(sprintf("  %s biallelic (exact-enum, no Monte Carlo error), %s multiallelic (exact-mc, n_draws = %s)",
-                      format(n_enum, big.mark = ","), format(n_mc, big.mark = ","), format(n_draws, big.mark = ",")))
+      message(sprintf("  %s biallelic (exact-enum, no Monte Carlo error), %s multiallelic (exact-mc, up to %s draws, stopping after %s extreme draws%s)",
+                      format(n_enum, big.mark = ","), format(n_mc, big.mark = ","),
+                      format(n_draws, big.mark = ","), format(stop_after),
+                      if (n_mc) sprintf("; median %s draws used",
+                                        format(stats::median(out$n_draws_used, na.rm = TRUE), big.mark = ","))
+                      else ""))
     }
   }
   out

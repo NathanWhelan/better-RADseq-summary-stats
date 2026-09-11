@@ -81,7 +81,12 @@
 #  The conversion is one multiplication, so there is no excuse for not
 #  reporting it:
 #
-#       He_autosomal = He_per_SNP * (n_SNPs_used / n_sites_sequenced)
+#       He_autosomal = He_per_SNP * (n_variant_records / n_sites_sequenced)
+#
+#  n_variant_records is EVERY variant record called, not just the ones that
+#  passed diversity_stats()'s missing-data rule: the mean over the used
+#  records estimates the mean over all of them, and scaling by the smaller
+#  used count would understate pi by exactly the retention fraction.
 #
 #  `n_sites_sequenced` is the `Sites` column of the "All positions (variant and
 #  fixed)" block of populations.sumstats_summary.tsv. Stacks reports both
@@ -173,9 +178,9 @@ hs_stacks_pi <- function(p, n) {
 #' The same correction as [hs_stacks_pi()], computed from allele counts so it
 #' also works on a haplotype VCF. Named for the correction it applies, not for
 #' the software column it happens to match. `N` is the number of gene copies
-#' actually observed, which equals `2n` on the complete-data locus set
-#' [diversity_stats()] uses, so this agrees exactly with `hs_stacks_pi()`
-#' there (checked in [diversity_core_selftest()]).
+#' actually observed at the locus (2 x the typed individuals), so this agrees
+#' exactly with `hs_stacks_pi()` evaluated at that many individuals (checked
+#' in [diversity_core_selftest()]).
 #'
 #' @param counts Vector of gene-copy counts, one per allele.
 #' @param n Unused; present for interface symmetry. Deprecated.
@@ -239,7 +244,9 @@ fis_ratio_of_sums <- function(ho, he) {
 #' smaller than `n_snps_used`, rather than aborting the whole vector.
 #'
 #' @param het_per_snp Heterozygosity per ascertained SNP.
-#' @param n_snps_used Number of SNPs used to compute `het_per_snp`.
+#' @param n_snps_used Number of variant (SNP) records called in the dataset
+#'   -- all of them, not only those retained for estimating `het_per_snp`
+#'   (the mean over the retained records estimates the mean over all).
 #' @param n_sites_sequenced Total sequenced sites (variant and fixed). A
 #'   single value or one per element of `het_per_snp`.
 #' @return A numeric vector, the same length as `het_per_snp`.

@@ -9,6 +9,7 @@ hwe_test(
   pops = NULL,
   method = "exact",
   n_draws = 10000L,
+  stop_after = 20,
   seed = 2024,
   verbose = TRUE
 )
@@ -23,9 +24,13 @@ group named \code{"pooled"}; given, tests each population separately.}
 
 \item{method}{\code{"exact"} (default) or \code{"chisq"}.}
 
-\item{n_draws}{Monte Carlo draws for multiallelic loci under
+\item{n_draws}{Maximum Monte Carlo draws per multiallelic locus under
 \code{method = "exact"}. Default \code{10000L}. Ignored for biallelic loci
 (exact by enumeration) and under \code{method = "chisq"}.}
+
+\item{stop_after}{Stop drawing for a locus once this many draws at least
+as extreme as the observed table have been seen (Besag & Clifford
+1991). Default \code{20}. \code{Inf} always uses all \code{n_draws} draws.}
 
 \item{seed}{Random seed for the Monte Carlo draws, for reproducibility.
 Default \code{2024}. The caller's own RNG state is restored when this
@@ -38,7 +43,8 @@ A data frame, one row per (locus, population) combination:
 \code{locus}, \code{population}, \code{method}, \code{submethod} (\code{"exact-enum"},
 \code{"exact-mc"}, or \code{"chisq"}), \code{n_alleles} (declared), \code{n_observed_alleles},
 \code{n_called} (typed individuals in that group), \code{statistic}, \code{df},
-\code{p_value}, \code{p_value_se} (only defined for \code{"exact-mc"} rows),
+\code{p_value}, \code{p_value_se} and \code{n_draws_used} (only defined for
+\code{"exact-mc"} rows),
 \code{pct_low_expected} (only defined for \code{"chisq"} rows). A locus/group
 combination with fewer than 2 observed alleles (monomorphic there) or
 fewer than 2 typed individuals gets \code{NA} throughout except \code{n_called}/
@@ -59,8 +65,8 @@ biallelic loci via full enumeration, and via Guo & Thompson's (1992)
 direct Monte Carlo method for loci with 3+ observed alleles (RAD
 haplotypes). \code{method = "chisq"} is the older, approximate chi-square
 goodness-of-fit test, kept available as a fast first pass. See
-\code{R/hwe_test.R}'s file header for the full algorithm description and how
-both were validated this session.
+\code{R/hwe_test.R}'s file header for the full algorithm description, and
+\code{tests/testthat/test-hwe-test.R} for how both are validated.
 
 \strong{Why this only ever reports, never filters.} Pearman, Urban & Alexander
 (2022) show that the most common HWE-filtering scheme -- pool every
@@ -73,11 +79,16 @@ not a genotyping artifact). Testing separately per population (\code{pops}
 given) avoids conflating the two, which is why that option exists here --
 but even then, this function stops at reporting.
 
-\strong{\code{n_draws} matters for multiallelic loci.} The Monte Carlo p-value for
-a locus with 3+ observed alleles carries its own standard error
-(\code{p_value_se}); the default \code{n_draws = 10000L} gives a worst-case SE
-around 0.005 (at p = 0.5), tighter near 0 or 1. Biallelic loci
-(\code{submethod = "exact-enum"}) have no such error -- they are exact.
+\strong{Monte Carlo p-values for multiallelic loci.} The p-value for a locus
+with 3+ observed alleles is estimated by simulation and carries its own
+standard error (\code{p_value_se}, over \code{n_draws_used} draws). Simulation
+stops early once \code{stop_after} draws at least as extreme as the observed
+table have been seen (Besag & Clifford 1991): a locus nowhere near
+significance needs only a few dozen draws, while a locus with a small
+p-value runs to \code{n_draws}, so precision goes where it matters. A p-value
+is never reported as exactly 0; the smallest possible value is
+\code{1 / (n_draws + 1)} (Phipson & Smyth 2010). Biallelic loci
+(\code{submethod = "exact-enum"}) have no Monte Carlo error -- they are exact.
 
 \strong{References.} Levene, H. (1949) On a matching problem arising in
 genetics. \emph{Annals of Mathematical Statistics} 20:91-94. -- Haldane, J.B.S.
@@ -90,6 +101,10 @@ M. (2006) Monte Carlo algorithms for Hardy-Weinberg proportions.
 -- Pearman, W.S., Urban, L. & Alexander, A. (2022) Commonly used
 Hardy-Weinberg equilibrium filtering schemes impact population structure
 inferences using RADseq data. \emph{Molecular Ecology Resources} 22:2599-2613.
+-- Besag, J. & Clifford, P. (1991) Sequential Monte Carlo p-values.
+\emph{Biometrika} 78:301-304. -- Phipson, B. & Smyth, G.K. (2010) Permutation
+p-values should never be zero. \emph{Statistical Applications in Genetics and
+Molecular Biology} 9:39.
 }
 \examples{
 # 2 loci: locus_1 biallelic (12 individuals, exact-enum path), locus_2

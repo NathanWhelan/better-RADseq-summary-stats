@@ -16,6 +16,16 @@ test_that("read_popmap() splits samples by population", {
   expect_equal(lengths(pops), c(popA = 4L, popB = 3L))
 })
 
+test_that("read_popmap() keeps IDs as text (leading zeros and T/F survive)", {
+  ## Regression: read.delim()'s type guessing turned "001" into 1 (no longer
+  ## matching the VCF) and a population named "T" into TRUE.
+  pm <- tempfile(fileext = ".tsv")
+  on.exit(unlink(pm), add = TRUE)
+  writeLines(c("001\tT", "002\tT", "010\tF"), pm)
+  pops <- read_popmap(pm, c("001", "002", "010"), verbose = FALSE)
+  expect_identical(pops, list(T = c("001", "002"), F = "010"))
+})
+
 test_that(".resolve_H() passes a path through to read_haps_vcf() and an H list straight through", {
   H_from_path <- suppressMessages(RADdiversity:::.resolve_H(fx("small.haps.vcf"), verbose = FALSE))
   expect_equal(H_from_path$samples, suppressMessages(read_haps_vcf(fx("small.haps.vcf"), verbose = FALSE))$samples)
@@ -48,8 +58,14 @@ test_that("diversity_stats()/het_between_pops() accept a pre-parsed H list in pl
   expect_named(result, c("per_population", "richness", "autosomal"))
   expect_true(file.exists(file.path(outdir, "diversity_per_population.test.tsv")))
 
+  expect_error(
+    suppressMessages(het_between_pops(H, fx("small_popmap.tsv"), min_call = 0.5, outdir = outdir)),
+    "stem"
+  )
   het_res <- suppressMessages(capture.output(
-    het_result <- het_between_pops(H, fx("small_popmap.tsv"), min_call = 0.5, outdir = outdir)
+    het_result <- het_between_pops(H, fx("small_popmap.tsv"), min_call = 0.5,
+                                   outdir = outdir, stem = "test")
   ))
   expect_named(het_result, c("individual_heterozygosity", "pairwise_tests"))
+  expect_true(file.exists(file.path(outdir, "individual_heterozygosity.test.tsv")))
 })

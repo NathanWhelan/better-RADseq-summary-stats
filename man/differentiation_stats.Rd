@@ -2,18 +2,21 @@
 % Please edit documentation in R/differentiation_stats.R
 \name{differentiation_stats}
 \alias{differentiation_stats}
+\alias{print.raddiv_differentiation}
 \title{Population differentiation: FST, Weir & Goudet's beta, and Jost's D}
 \usage{
 differentiation_stats(
   vcf_file,
   popmap_f,
   nboot = 10000L,
-  outdir = ".",
+  outdir = NULL,
   seed = 2024,
   verbose = TRUE,
   stem = NULL,
   hierfstat_check = FALSE
 )
+
+\method{print}{raddiv_differentiation}(x, ...)
 }
 \arguments{
 \item{vcf_file}{Path to a Stacks VCF, or an already-parsed \code{H} list (see
@@ -24,8 +27,10 @@ differentiation_stats(
 \item{nboot}{Bootstrap replicates over RAD loci. Default \code{10000L}; \code{0} =
 none (only the jackknife standard error is then available).}
 
-\item{outdir}{Directory to write the two output TSVs into. Default \code{"."}
-(the current directory), created if it does not exist.}
+\item{outdir}{Directory to write the result tables into as TSV files
+(created if needed). Default \code{NULL}: write no files -- the tables are in
+the returned object. The command-line script writes to the current
+directory.}
 
 \item{seed}{Random seed set before bootstrapping, for reproducibility.
 Default \code{2024}. The caller's own RNG state (e.g. from their own prior
@@ -33,10 +38,9 @@ Default \code{2024}. The caller's own RNG state (e.g. from their own prior
 interactively does not affect subsequent random draws in the caller's
 session.}
 
-\item{verbose}{Print the VCF/popmap parsing summary. Default \code{TRUE}. The
-main report (point estimates, CIs, "TAKE FROM THIS RUN" guidance) is
-always printed regardless of this setting, matching the command-line
-script.}
+\item{verbose}{Print the VCF/popmap parsing summary. Default \code{TRUE}.
+Progress messages can be silenced with \code{suppressMessages()}; the report
+itself appears only when the result is printed.}
 
 \item{stem}{Text used to build the two output filenames (e.g.
 \verb{diversity_per_population.<stem>.tsv}) -- ordinarily derived
@@ -56,19 +60,26 @@ alongside a path overrides the automatic derivation.}
 \code{hierfstat::wc()} and report how far its global FST is from this
 package's. Default \code{FALSE} (the package tests already make this
 comparison, and \code{wc()} was most of the run time on large datasets).}
+
+\item{x}{A \code{raddiv_differentiation} object, as returned by
+\code{differentiation_stats()}.}
+
+\item{...}{Ignored.}
 }
 \value{
-Invisibly, a list:
+An object of class \code{raddiv_differentiation} (printing it shows the
+report): a list with
 \describe{
 \item{global}{One-row data frame: \code{FST}, \code{FST_se}, \code{FST_lo}, \code{FST_hi},
 \code{FIS}, \code{FIS_se}, \code{FIS_lo}, \code{FIS_hi}, \code{D}, \code{D_se}, \code{D_lo}, \code{D_hi}.}
-\item{pairwise_fst, pairwise_beta, pairwise_D}{Symmetric matrices
-(\code{NA} on the diagonal), one row/column per population, of POINT
-ESTIMATES only. \code{pairwise_beta} is \code{NULL} (with an explanatory
-message) when hierfstat is not installed. The full detail
-(standard errors and bootstrap CIs per pair) is in the
-\code{differentiation_pairwise.*.tsv} file this function writes, in
-long format -- one row per pair.}
+\item{pairwise}{One row per pair of populations: FST, beta and D, with
+their standard errors and bootstrap CIs (also written to
+\verb{differentiation_pairwise.<stem>.tsv} when \code{outdir} is given, as the
+global table is to \verb{differentiation_global.<stem>.tsv}).}
+\item{pairwise_fst, pairwise_beta, pairwise_D}{The pairwise point
+estimates as symmetric matrices (\code{NA} on the diagonal), one
+row/column per population. \code{pairwise_beta} is \code{NULL} (with an
+explanatory message) when hierfstat is not installed.}
 }
 }
 \description{

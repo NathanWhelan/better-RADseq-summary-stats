@@ -137,7 +137,8 @@ test_that("differentiation_stats() returns the documented shape and honors nboot
     res <- differentiation_stats(H, fx("small_popmap.tsv"), nboot = 0,
                                   stem = "shape", outdir = tempfile("dd-"), verbose = FALSE)
   ))
-  expect_named(res, c("global", "pairwise_fst", "pairwise_beta", "pairwise_D"))
+  expect_named(res, c("global", "pairwise", "pairwise_fst", "pairwise_beta", "pairwise_D"))
+  expect_equal(nrow(res$pairwise), 1L)                    # one pair: popA-popB
   expect_true(all(is.na(res$global[, c("FST_lo", "FST_hi", "D_lo", "D_hi")])))
   expect_false(is.na(res$global$FST_se))  # jackknife SE needs no nboot
 })

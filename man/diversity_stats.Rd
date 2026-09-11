@@ -2,6 +2,7 @@
 % Please edit documentation in R/diversity_stats.R
 \name{diversity_stats}
 \alias{diversity_stats}
+\alias{print.raddiv_diversity}
 \title{Diversity statistics from a Stacks VCF}
 \usage{
 diversity_stats(
@@ -13,12 +14,14 @@ diversity_stats(
   sites = 0,
   min_n = 2L,
   complete_case = FALSE,
-  outdir = ".",
+  outdir = NULL,
   seed = 2024,
   verbose = TRUE,
   stem = NULL,
   hierfstat_check = FALSE
 )
+
+\method{print}{raddiv_diversity}(x, ...)
 }
 \arguments{
 \item{vcf_file}{Path to \code{populations.snps.vcf} or \code{populations.haps.vcf}
@@ -68,8 +71,10 @@ Ignored when \code{complete_case = TRUE}.}
 every individual of every population is genotyped there (Schmidt et al.
 2021 recommendation (b)). Default \code{FALSE}.}
 
-\item{outdir}{Directory to write the two output TSVs into. Default \code{"."}
-(the current directory), created if it does not exist.}
+\item{outdir}{Directory to write the result tables into as TSV files
+(created if needed). Default \code{NULL}: write no files -- the tables are in
+the returned object. The command-line script writes to the current
+directory.}
 
 \item{seed}{Random seed set before bootstrapping, for reproducibility.
 Default \code{2024}. The caller's own RNG state (e.g. from their own prior
@@ -77,10 +82,9 @@ Default \code{2024}. The caller's own RNG state (e.g. from their own prior
 interactively does not affect subsequent random draws in the caller's
 session.}
 
-\item{verbose}{Print the VCF/popmap parsing summary. Default \code{TRUE}. The
-main report (point estimates, CIs, "TAKE FROM THIS RUN" guidance) is
-always printed regardless of this setting, matching the command-line
-script.}
+\item{verbose}{Print the VCF/popmap parsing summary. Default \code{TRUE}.
+Progress messages can be silenced with \code{suppressMessages()}; the report
+itself appears only when the result is printed.}
 
 \item{stem}{Text used to build the two output filenames (e.g.
 \verb{diversity_per_population.<stem>.tsv}) -- ordinarily derived
@@ -104,21 +108,30 @@ warning if they disagree). Default \code{FALSE}: every number is computed by
 this package either way, the package tests already make this comparison,
 and on large datasets the hierfstat calls were most of the run time. For
 Weir & Cockerham FST, use \code{\link[=differentiation_stats]{differentiation_stats()}}.}
+
+\item{x}{A \code{raddiv_diversity} object, as returned by \code{diversity_stats()}.}
+
+\item{...}{Ignored.}
 }
 \value{
-Invisibly, a list with elements \code{per_population}, \code{richness}, and
-\code{autosomal} (\code{NULL} unless \code{sites} gave at least one population a
-plausible value -- see \code{sites} above; when present it is also written
-to \code{diversity_autosomal.*.tsv}), alongside
-\code{diversity_per_population.*.tsv} and \code{diversity_richness.*.tsv}.
+An object of class \code{raddiv_diversity}: a list with elements
+\code{per_population} (Ho, He, FIS and \% polymorphic, with jackknife SEs and
+bootstrap CIs), \code{richness} (Ar, privAr and priv_total) and \code{autosomal}
+(per-sequenced-site Ho/He; \code{NULL} unless \code{sites} gave at least one
+population a plausible value, and always \code{NULL} on a haplotype VCF).
+Printing it shows the full report. With \code{outdir}, the tables are also
+written to \verb{diversity_per_population.<stem>.tsv},
+\verb{diversity_richness.<stem>.tsv} and (when present)
+\verb{diversity_autosomal.<stem>.tsv}.
 }
 \description{
 Computes Ho, He, FIS (Nei & Chesser 1983, ratio of sums), rarefied allelic
 richness and rarefied private allelic richness from a Stacks 2
 \code{populations} VCF and popmap, with a block bootstrap over RAD loci and a
-delete-one-block jackknife standard error. Prints the same report as the
-\code{diversity_stats.R} command-line script, writes the same two TSV files,
-and additionally returns the result tables as data frames.
+delete-one-block jackknife standard error. Returns the result tables;
+printing the result (at the console, or with \code{print()}) shows the same
+report as the \code{diversity_stats.R} command-line script, and \code{outdir} writes
+the tables to TSV files.
 }
 \details{
 Run it twice: \code{populations.snps.vcf} gives Ho, He, \code{pct_poly} and the

@@ -15,9 +15,10 @@ lg <- function(name) test_path("fixtures", "legacy", name)
 run_div <- function(vcf, popmap = "popmap.tsv", g = 20, ...) {
   od <- tempfile("legacy-"); dir.create(od)
   res <- NULL
-  out <- capture.output(suppressMessages(
-    res <- diversity_stats(lg(vcf), lg(popmap), g = g, nboot = 0, outdir = od, ...)))
-  list(res = res, out = out, dir = od)
+  suppressMessages(
+    res <- diversity_stats(lg(vcf), lg(popmap), g = g, nboot = 0, outdir = od, ...))
+  ## The report is what print() on the result shows.
+  list(res = res, out = capture.output(print(res)), dir = od)
 }
 
 ## Same rule as the old check_golden.R: identical columns and rows, numbers

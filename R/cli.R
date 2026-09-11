@@ -114,13 +114,13 @@
         usage()
         stop("Missing required --g=N (rarefaction size in gene copies).", call. = FALSE)
       }
-      diversity_stats(p$positional[1], p$positional[2], g = f$g,
-                      nboot  = if (is.null(f$nboot)) 10000L else f$nboot,
-                      boot   = if (is.null(f$boot)) "loci" else f$boot,
-                      sites  = .cli_sites(f$sites),
-                      min_n  = if (is.null(f[["min-n"]])) 2L else f[["min-n"]],
-                      complete_case = "complete-case" %in% p$switches,
-                      outdir = if (is.null(f$outdir)) "." else f$outdir)
+      print(diversity_stats(p$positional[1], p$positional[2], g = f$g,
+                            nboot  = if (is.null(f$nboot)) 10000L else f$nboot,
+                            boot   = if (is.null(f$boot)) "loci" else f$boot,
+                            sites  = .cli_sites(f$sites),
+                            min_n  = if (is.null(f[["min-n"]])) 2L else f[["min-n"]],
+                            complete_case = "complete-case" %in% p$switches,
+                            outdir = if (is.null(f$outdir)) "." else f$outdir))
       0L
     },
     het_between_pops = function() {
@@ -134,7 +134,7 @@
       if (is.null(min_call)) min_call <- if (length(pos) >= 3L) pos[3] else 0.9
       outdir <- p$flags$outdir
       if (is.null(outdir)) outdir <- if (length(pos) >= 4L) pos[4] else "."
-      het_between_pops(pos[1], pos[2], min_call = min_call, outdir = outdir)
+      print(het_between_pops(pos[1], pos[2], min_call = min_call, outdir = outdir))
       0L
     },
     diversity_core = function() {

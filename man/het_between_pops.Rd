@@ -2,17 +2,20 @@
 % Please edit documentation in R/het_between_pops.R
 \name{het_between_pops}
 \alias{het_between_pops}
+\alias{print.raddiv_het}
 \title{Test whether mean heterozygosity differs between populations}
 \usage{
 het_between_pops(
   vcf_file,
   popmap_f,
   min_call = 0.9,
-  outdir = ".",
+  outdir = NULL,
   seed = 2024,
   verbose = TRUE,
   stem = NULL
 )
+
+\method{print}{raddiv_het}(x, ...)
 }
 \arguments{
 \item{vcf_file}{Path to a Stacks VCF (\code{populations.snps.vcf} or
@@ -28,8 +31,10 @@ and re-parsing the VCF file.}
 a locus for that locus to be used, applied within each population.
 Default \code{0.9}.}
 
-\item{outdir}{Directory to write the two output TSVs into. Default \code{"."}
-(the current directory), created if it does not exist.}
+\item{outdir}{Directory to write the two result tables into as TSV files
+(created if needed). Default \code{NULL}: write no files -- the tables are in
+the returned object. The command-line script writes to the current
+directory.}
 
 \item{seed}{Random seed set before any randomness, for reproducibility.
 Default \code{2024}. The caller's own RNG state (e.g. from their own prior
@@ -37,9 +42,9 @@ Default \code{2024}. The caller's own RNG state (e.g. from their own prior
 interactively does not affect subsequent random draws in the caller's
 session.}
 
-\item{verbose}{Print the VCF/popmap parsing summary. Default \code{TRUE}. The
-main report is always printed regardless of this setting, matching the
-command-line script.}
+\item{verbose}{Print the VCF/popmap parsing summary. Default \code{TRUE}.
+Progress messages can be silenced with \code{suppressMessages()}; the report
+itself appears only when the result is printed.}
 
 \item{stem}{Text used in the two output filenames
 (\verb{individual_heterozygosity.<stem>.tsv} and
@@ -48,18 +53,25 @@ it is a path (\code{populations.snps.vcf} gives \code{"snps"}), so a run on the 
 VCF and a run on the haplotype VCF into the same \code{outdir} do not
 overwrite each other. Required when \code{vcf_file} is an already-parsed
 list, which has no filename to derive it from.}
+
+\item{x}{A \code{raddiv_het} object, as returned by \code{het_between_pops()}.}
+
+\item{...}{Ignored.}
 }
 \value{
-Invisibly, a list with elements \code{individual_heterozygosity} and
-\code{pairwise_tests} (the same two data frames written to
+An object of class \code{raddiv_het}: a list with elements
+\code{individual_heterozygosity} (one row per individual) and
+\code{pairwise_tests} (one row per pair of populations). Printing it shows the
+full report, including the missingness-confound and overdispersion
+checks. With \code{outdir}, the two tables are also written to
 \verb{individual_heterozygosity.<stem>.tsv} and
-\verb{het_between_pops_tests.<stem>.tsv}).
+\verb{het_between_pops_tests.<stem>.tsv}.
 }
 \description{
 Uses the INDIVIDUAL, not the locus, as the unit of replication (Welch's t
 with Wilcoxon as a distribution-free check), plus a missingness-confound
 diagnostic and an overdispersion check quantifying how badly a locus
-bootstrap would have misled on this dataset. Prints the same report as the
-\code{het_between_pops.R} command-line script, writes the same two TSV files,
-and additionally returns the result tables as data frames.
+bootstrap would have misled on this dataset. Returns the result tables;
+printing the result shows the same report as the \code{het_between_pops.R}
+command-line script, and \code{outdir} writes the tables to TSV files.
 }

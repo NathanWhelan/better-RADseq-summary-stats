@@ -344,17 +344,19 @@
 #'   `hierfstat::wc()` and report how far its global FST is from this
 #'   package's. Default `FALSE` (the package tests already make this
 #'   comparison, and `wc()` was most of the run time on large datasets).
-#' @return Invisibly, a list:
+#' @return An object of class `raddiv_differentiation` (printing it shows the
+#'   report): a list with
 #'   \describe{
 #'     \item{global}{One-row data frame: `FST`, `FST_se`, `FST_lo`, `FST_hi`,
 #'       `FIS`, `FIS_se`, `FIS_lo`, `FIS_hi`, `D`, `D_se`, `D_lo`, `D_hi`.}
-#'     \item{pairwise_fst, pairwise_beta, pairwise_D}{Symmetric matrices
-#'       (`NA` on the diagonal), one row/column per population, of POINT
-#'       ESTIMATES only. `pairwise_beta` is `NULL` (with an explanatory
-#'       message) when hierfstat is not installed. The full detail
-#'       (standard errors and bootstrap CIs per pair) is in the
-#'       `differentiation_pairwise.*.tsv` file this function writes, in
-#'       long format -- one row per pair.}
+#'     \item{pairwise}{One row per pair of populations: FST, beta and D, with
+#'       their standard errors and bootstrap CIs (also written to
+#'       `differentiation_pairwise.<stem>.tsv` when `outdir` is given, as the
+#'       global table is to `differentiation_global.<stem>.tsv`).}
+#'     \item{pairwise_fst, pairwise_beta, pairwise_D}{The pairwise point
+#'       estimates as symmetric matrices (`NA` on the diagonal), one
+#'       row/column per population. `pairwise_beta` is `NULL` (with an
+#'       explanatory message) when hierfstat is not installed.}
 #'   }
 #' @examples
 #' # A tiny made-up dataset: 2 populations, 4 loci, biallelic.
@@ -377,13 +379,12 @@
 #' res$global
 #' @export
 differentiation_stats <- function(vcf_file, popmap_f, nboot = 10000L,
-                                   outdir = ".", seed = 2024, verbose = TRUE,
+                                   outdir = NULL, seed = 2024, verbose = TRUE,
                                    stem = NULL, hierfstat_check = FALSE) {
 
   nboot <- as.integer(nboot)
   if (is.na(nboot) || nboot < 0) stop("nboot must be a non-negative integer.")
   .check_run_inputs(vcf_file, popmap_f, stem)
-  dir.create(outdir, showWarnings = FALSE, recursive = TRUE)
 
   ## Same RNG-preservation convention as diversity_stats()/het_between_pops():
   ## restore the caller's own random-number state on exit, so calling this
@@ -511,14 +512,9 @@ differentiation_stats <- function(vcf_file, popmap_f, nboot = 10000L,
   }
 
   ## ---------------------------------------------------------------------------
-  ## Report
+  ## Result tables. Nothing is printed here: printing the returned object
+  ## (print.raddiv_differentiation(), below) gives the report.
   ## ---------------------------------------------------------------------------
-  cat("\n=====================================================================\n")
-  cat("  DIFFERENTIATION --", r, "populations,", format(n_rec, big.mark = ","),
-      "records on", format(nL, big.mark = ","), "RAD loci\n")
-  cat("  FST/FIS = Weir & Cockerham (1984); D = Jost (2008)\n")
-  if (nboot > 0) cat("  95% CI from ", format(nboot, big.mark = ","), " bootstrap replicates over RAD loci\n", sep = "")
-  cat("=====================================================================\n\n")
   gl <- data.frame(
     FST = round(point[["FST"]], 4), FST_se = round(se_jk[["FST"]], 4),
     FST_lo = round(ci["FST", 1], 4), FST_hi = round(ci["FST", 2], 4),
@@ -526,12 +522,9 @@ differentiation_stats <- function(vcf_file, popmap_f, nboot = 10000L,
     FIS_lo = round(ci["FIS", 1], 4), FIS_hi = round(ci["FIS", 2], 4),
     D   = round(point[["D"]], 4),   D_se   = round(se_jk[["D"]], 4),
     D_lo = round(ci["D", 1], 4),    D_hi   = round(ci["D", 2], 4))
-  print(gl, row.names = FALSE)
-  cat("  _se columns: delete-one-block jackknife over RAD loci (same convention\n")
-  cat("  as diversity_stats()); _lo/_hi: bootstrap 95% CI over the same RAD loci.\n")
 
   pfst <- matrix(NA_real_, r, r, dimnames = list(names(pops), names(pops)))
-  pD    <- matrix(NA_real_, r, r, dimnames = list(names(pops), names(pops)))
+  pD   <- matrix(NA_real_, r, r, dimnames = list(names(pops), names(pops)))
   pair_rows <- vector("list", length(pair_names))
   for (k in seq_along(pair_names)) {
     p1 <- pair_names[[k]][1]; p2 <- pair_names[[k]][2]
@@ -550,29 +543,60 @@ differentiation_stats <- function(vcf_file, popmap_f, nboot = 10000L,
       D_hi = round(ci[paste0("pD_", pair_lab[k]), 2], 4))
   }
   pair_tab <- do.call(rbind, pair_rows)
+
+  ## Files, only when asked for (`outdir`).
+  written <- character(0)
+  if (!is.null(outdir)) {
+    dir.create(outdir, showWarnings = FALSE, recursive = TRUE)
+    stem <- .derive_stem(vcf_file, stem)
+    written <- file.path(outdir, sprintf(c("differentiation_global.%s.tsv",
+                                           "differentiation_pairwise.%s.tsv"), stem))
+    utils::write.table(gl, written[1], sep = "\t", quote = FALSE, row.names = FALSE)
+    utils::write.table(pair_tab, written[2], sep = "\t", quote = FALSE, row.names = FALSE)
+  }
+
+  structure(
+    list(global = gl, pairwise = pair_tab, pairwise_fst = pfst,
+         pairwise_beta = beta_mat, pairwise_D = pD),
+    class = "raddiv_differentiation",
+    report = list(n_pop = r, n_rec = n_rec, n_loci = nL, nboot = nboot,
+                  is_haplotype = .is_haplotype_H(H), files = written))
+}
+
+#' @rdname differentiation_stats
+#' @param x A `raddiv_differentiation` object, as returned by
+#'   `differentiation_stats()`.
+#' @param ... Ignored.
+#' @export
+print.raddiv_differentiation <- function(x, ...) {
+  rp <- attr(x, "report")
+  old <- options(width = max(200L, getOption("width")))
+  on.exit(options(old), add = TRUE)
+  cat("\n=====================================================================\n")
+  cat("  DIFFERENTIATION --", rp$n_pop, "populations,", format(rp$n_rec, big.mark = ","),
+      "records on", format(rp$n_loci, big.mark = ","), "RAD loci\n")
+  cat("  FST/FIS = Weir & Cockerham (1984); D = Jost (2008)\n")
+  if (rp$nboot > 0) cat("  95% CI from ", format(rp$nboot, big.mark = ","),
+                        " bootstrap replicates over RAD loci\n", sep = "")
+  cat("=====================================================================\n\n")
+  print(x$global, row.names = FALSE)
+  cat("  _se columns: delete-one-block jackknife over RAD loci (same convention\n")
+  cat("  as diversity_stats()); _lo/_hi: bootstrap 95% CI over the same RAD loci.\n")
   cat("\nPairwise FST / (beta) / D\n")
-  print(pair_tab, row.names = FALSE)
-  if (!is.null(beta_mat))
+  print(x$pairwise, row.names = FALSE)
+  if (!is.null(x$pairwise_beta))
     cat("  beta = Weir & Goudet (2017), via hierfstat::pairwise.betas() -- no bootstrap CI (hierfstat-only, point estimate).\n")
   else
-    cat("  beta not available (hierfstat not installed) -- see above.\n")
-
+    cat("  beta not available (hierfstat not installed).\n")
   cat("\n---------------------------------------------------------------------\n")
-  is_hapvcf <- .is_haplotype_H(H)
-  if (is_hapvcf) {
+  if (rp$is_haplotype) {
     cat("  This is a HAPLOTYPE VCF: prefer D (or beta) over FST here -- FST's\n")
     cat("  ceiling shrinks as marker diversity grows, and haplotype loci are\n")
-    cat("  exactly the highly-variable-marker case that distorts (see @details,\n")
-    cat("  ?differentiation_stats, and Jost 2008).\n")
+    cat("  exactly the highly-variable-marker case that distorts (see\n")
+    cat("  ?differentiation_stats and Jost 2008).\n")
   }
   cat("---------------------------------------------------------------------\n")
-
-  stem <- .derive_stem(vcf_file, stem)
-  f1 <- sprintf("differentiation_global.%s.tsv", stem)
-  f2 <- sprintf("differentiation_pairwise.%s.tsv", stem)
-  utils::write.table(gl, file.path(outdir, f1), sep = "\t", quote = FALSE, row.names = FALSE)
-  utils::write.table(pair_tab, file.path(outdir, f2), sep = "\t", quote = FALSE, row.names = FALSE)
-  cat(sprintf("\nWrote %s and %s\n\n", file.path(outdir, f1), file.path(outdir, f2)))
-
-  invisible(list(global = gl, pairwise_fst = pfst, pairwise_beta = beta_mat, pairwise_D = pD))
+  if (length(rp$files)) cat("\nWrote ", paste(rp$files, collapse = " and "), "\n", sep = "")
+  cat("\n")
+  invisible(x)
 }

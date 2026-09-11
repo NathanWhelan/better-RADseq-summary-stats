@@ -16,6 +16,30 @@ test_that("diversity_stats() returns the expected structure on a small fixture",
   expect_true(file.exists(file.path(outdir, "diversity_richness.haps.tsv")))
 })
 
+test_that("results are quiet objects: no files without outdir, the report on print()", {
+  vcf <- normalizePath(fx("small.haps.vcf")); pm <- normalizePath(fx("small_popmap.tsv"))
+  wd <- tempfile("nowrite-"); dir.create(wd)
+  old <- setwd(wd)
+  on.exit({ setwd(old); unlink(wd, recursive = TRUE) }, add = TRUE)
+
+  out <- capture.output(res <- suppressMessages(diversity_stats(vcf, pm, g = 4, nboot = 0)))
+  expect_length(out, 0)                                   # computing prints nothing
+  expect_s3_class(res, "raddiv_diversity")
+  rep <- capture.output(p <- print(res))
+  expect_true(any(grepl("TAKE FROM THIS RUN", rep)))
+  expect_identical(p, res)                                # print() returns its input
+
+  het <- suppressMessages(het_between_pops(vcf, pm, min_call = 0.5))
+  expect_s3_class(het, "raddiv_het")
+  expect_true(any(grepl("Overdispersion check", capture.output(print(het)))))
+
+  dif <- suppressMessages(differentiation_stats(vcf, pm, nboot = 0))
+  expect_s3_class(dif, "raddiv_differentiation")
+  expect_true(any(grepl("DIFFERENTIATION", capture.output(print(dif)))))
+
+  expect_length(list.files(wd), 0)                        # and nothing was written
+})
+
 test_that("diversity_stats(hierfstat_check = TRUE) agrees with hierfstat", {
   skip_if_not_installed("hierfstat")
   outdir <- tempfile("raddiversity-test-")

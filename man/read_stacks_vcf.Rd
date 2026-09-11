@@ -5,14 +5,31 @@
 \alias{read_haps_vcf}
 \title{Read a Stacks haplotype or SNP VCF}
 \usage{
-read_stacks_vcf(path, verbose = TRUE)
+read_stacks_vcf(path, verbose = TRUE, locus_from = "auto", window_bp = 1000)
 
-read_haps_vcf(path, verbose = TRUE)
+read_haps_vcf(path, verbose = TRUE, locus_from = "auto", window_bp = 1000)
 }
 \arguments{
 \item{path}{Path to the VCF file (\code{.vcf} or \code{.vcf.gz}).}
 
 \item{verbose}{Print progress/summary messages. Default \code{TRUE}.}
+
+\item{locus_from}{How to tell which RAD locus each record belongs to --
+the unit the block jackknife and bootstrap resample, so that SNPs on one
+RAD tag move together. \code{"auto"} (the default) uses the ID column when
+every record has one (Stacks writes the locus number, or
+\code{locus:column:strand} in a SNP VCF), and \code{"window"} otherwise.
+\code{"ID"}: the ID column, up to its first \code{:}. \code{"CHROM"}: one locus per
+CHROM value, for de novo formats that put the locus there (some Stacks 2
+versions, ipyrad, dDocent). \code{"window"}: records on the same CHROM within
+\code{window_bp} of the previous record form one locus -- which gives one
+locus per CHROM for the de novo formats (a RAD locus is far shorter than
+1 kb) and one per RAD locus, or run of adjacent loci, for
+reference-aligned data. For a reference-aligned VCF whose IDs are
+unique per SNP (e.g. dbSNP rs numbers), choose \code{"window"} explicitly.}
+
+\item{window_bp}{Largest gap, in base pairs, between consecutive records of
+one locus under \code{locus_from = "window"}. Default \code{1000}.}
 }
 \value{
 A list with elements \code{A1}, \code{A2} (allele-index matrices, one row per
@@ -29,6 +46,10 @@ not) into genotype matrices plus locus/allele metadata. Used by
 \details{
 \code{read_haps_vcf()} is this function's former name (it reads SNP VCFs too),
 kept as an alias for one release.
+
+Other VCFs (ipyrad, dDocent/freebayes, GATK, ...) are read the same way,
+provided GT is the first FORMAT field; \code{locus_from} below says how to
+group their records into RAD loci.
 }
 \examples{
 H <- read_stacks_vcf(system.file("extdata", "small.haps.vcf",

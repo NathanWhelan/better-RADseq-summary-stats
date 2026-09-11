@@ -38,8 +38,27 @@
 #' `read_haps_vcf()` is this function's former name (it reads SNP VCFs too),
 #' kept as an alias for one release.
 #'
+#' Other VCFs (ipyrad, dDocent/freebayes, GATK, ...) are read the same way,
+#' provided GT is the first FORMAT field; `locus_from` below says how to
+#' group their records into RAD loci.
+#'
 #' @param path Path to the VCF file (`.vcf` or `.vcf.gz`).
 #' @param verbose Print progress/summary messages. Default `TRUE`.
+#' @param locus_from How to tell which RAD locus each record belongs to --
+#'   the unit the block jackknife and bootstrap resample, so that SNPs on one
+#'   RAD tag move together. `"auto"` (the default) uses the ID column when
+#'   every record has one (Stacks writes the locus number, or
+#'   `locus:column:strand` in a SNP VCF), and `"window"` otherwise.
+#'   `"ID"`: the ID column, up to its first `:`. `"CHROM"`: one locus per
+#'   CHROM value, for de novo formats that put the locus there (some Stacks 2
+#'   versions, ipyrad, dDocent). `"window"`: records on the same CHROM within
+#'   `window_bp` of the previous record form one locus -- which gives one
+#'   locus per CHROM for the de novo formats (a RAD locus is far shorter than
+#'   1 kb) and one per RAD locus, or run of adjacent loci, for
+#'   reference-aligned data. For a reference-aligned VCF whose IDs are
+#'   unique per SNP (e.g. dbSNP rs numbers), choose `"window"` explicitly.
+#' @param window_bp Largest gap, in base pairs, between consecutive records of
+#'   one locus under `locus_from = "window"`. Default `1000`.
 #' @return A list with elements `A1`, `A2` (allele-index matrices, one row per
 #'   record, one column per sample), `locus` (unique per-record locus names),
 #'   `locus_raw` (locus grouping, shared across SNPs on one RAD tag),
@@ -52,7 +71,12 @@
 #' H$alleles[[1]]     # the haplotype alleles of the first RAD locus
 #' H$A1[1:3, 1:4]     # first allele of each genotype (1 = REF, 2 = first ALT, ...)
 #' @export
-read_stacks_vcf <- function(path, verbose = TRUE) {
+read_stacks_vcf <- function(path, verbose = TRUE, locus_from = "auto", window_bp = 1000) {
+  if (!(length(locus_from) == 1L && locus_from %in% c("auto", "ID", "CHROM", "window")))
+    stop("locus_from must be one of \"auto\", \"ID\", \"CHROM\", \"window\" (got: ",
+         paste(locus_from, collapse = ", "), ").")
+  if (!(is.numeric(window_bp) && length(window_bp) == 1L && window_bp >= 0))
+    stop("window_bp must be a single non-negative number of base pairs.")
 
   if (grepl("\\.gz$", path)) {
     lines <- readLines(gzfile(path))
@@ -105,22 +129,38 @@ read_stacks_vcf <- function(path, verbose = TRUE) {
       "This parser requires GT to be the first FORMAT subfield, per the VCF ",
       "spec and standard Stacks output. Check how the file was produced.")
 
-  ## Locus identity. De novo Stacks writes CHROM = "un" and puts the locus in
-  ## ID; reference-aligned runs put a scaffold in CHROM. Either way one record
-  ## should be one locus, but this is asserted rather than assumed.
-  locus <- f[, "ID"]
-  if (all(locus == ".") || any(!nzchar(locus))) locus <- paste0(f[, "CHROM"], "_", f[, "POS"])
-  locus <- sub(":.*$", "", locus)
-  ## locus_raw preserves the grouping: several SNPs on one RAD tag share an ID.
-  ## `locus` is uniquified for use as marker names. ALWAYS group by locus_raw --
-  ## grouping by `locus` makes one-SNP-per-locus thinning a silent no-op.
-  locus_raw <- locus
-  n_dup <- sum(duplicated(locus_raw))
-  if (n_dup) {
-    if (verbose) message(sprintf("  %s records share a locus ID with another (%s distinct loci) -- expected for a SNP VCF, NOT for a haps VCF",
-                                 format(n_dup, big.mark = ","),
-                                 format(length(unique(locus_raw)), big.mark = ",")))
-    locus <- make.unique(locus)
+  ## Which RAD locus each record belongs to (`locus_raw`) -- the unit the
+  ## block jackknife and bootstrap resample, so SNPs on one RAD tag move
+  ## together. Formats put it in different places:
+  ##   Stacks (most versions)  ID = "locus:column:strand" (SNP VCF) or "locus"
+  ##   Stacks 2, some builds   ID = "."; CHROM = catalog locus, POS = column
+  ##   ipyrad                  ID = "."; CHROM = "RAD_<n>", one per locus
+  ##   reference-aligned       CHROM = chromosome/scaffold, POS = genomic
+  ## See `locus_from` in the documentation. Getting this wrong is silent: with
+  ## every SNP its own "locus", the resampling treats linked SNPs as
+  ## independent. `locus` (unique per record) is used as the marker name;
+  ## ALWAYS group by locus_raw -- grouping by `locus` would make
+  ## one-SNP-per-locus thinning a silent no-op.
+  id <- f[, "ID"]
+  id_ok <- all(nzchar(id) & id != ".")
+  rule <- if (locus_from == "auto") (if (id_ok) "ID" else "window") else locus_from
+  if (rule == "ID" && !id_ok)
+    stop("locus_from = \"ID\", but some records have no ID (\".\"). Use ",
+         "locus_from = \"CHROM\" or \"window\" (see ?read_stacks_vcf).")
+  locus_raw <- switch(rule,
+    ID     = sub(":.*$", "", id),
+    CHROM  = f[, "CHROM"],
+    window = .window_blocks(f[, "CHROM"], f[, "POS"], window_bp))
+  locus <- if (id_ok) sub(":.*$", "", id) else paste0(f[, "CHROM"], "_", f[, "POS"])
+  locus <- make.unique(locus)
+  if (verbose) {
+    n_loc <- length(unique(locus_raw))
+    message(sprintf("  RAD loci from %s: %s records on %s loci (%.2f per locus)",
+                    switch(rule, ID = "the ID column", CHROM = "CHROM",
+                           window = sprintf("CHROM + POS (records within %s bp)",
+                                            format(window_bp, big.mark = ","))),
+                    format(nrow(f), big.mark = ","), format(n_loc, big.mark = ","),
+                    nrow(f) / n_loc))
   }
 
   ## Alleles per record: REF plus the comma-separated ALT list.
@@ -167,7 +207,26 @@ read_stacks_vcf <- function(path, verbose = TRUE) {
 
 #' @rdname read_stacks_vcf
 #' @export
-read_haps_vcf <- function(path, verbose = TRUE) read_stacks_vcf(path, verbose = verbose)
+read_haps_vcf <- function(path, verbose = TRUE, locus_from = "auto", window_bp = 1000)
+  read_stacks_vcf(path, verbose = verbose, locus_from = locus_from, window_bp = window_bp)
+
+## Not exported. Groups records into loci by position: sorted within each
+## CHROM, a record starts a new locus when it is on a different CHROM from the
+## previous record or more than `window_bp` beyond it. Each locus is labelled
+## "CHROM:POS" of its first record; labels come back in the input order.
+.window_blocks <- function(chrom, pos, window_bp) {
+  pos <- suppressWarnings(as.numeric(pos))
+  if (anyNA(pos))
+    stop("Some POS values are not numbers, so records cannot be grouped by ",
+         "position. Use locus_from = \"ID\" or \"CHROM\".")
+  o <- order(chrom, pos)
+  cs <- chrom[o]; ps <- pos[o]
+  new_locus <- c(TRUE, cs[-1] != cs[-length(cs)] | diff(ps) > window_bp)
+  first <- paste0(cs, ":", format(ps, scientific = FALSE, trim = TRUE))[new_locus]
+  out <- character(length(chrom))
+  out[o] <- first[cumsum(new_locus)]
+  out
+}
 
 ## Not exported. Shared by diversity_stats() and het_between_pops() so both
 ## accept EITHER a path to a VCF file (the original behavior -- this reads

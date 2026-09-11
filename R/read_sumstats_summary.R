@@ -31,7 +31,7 @@
 #  Obs_Het, Obs_Hom, Exp_Het, Exp_Hom, Pi, Fis), and `%Polymorphic_Loci`
 #  isn't a syntactic name -- this header cannot be read with
 #  read.delim()/column names. It is matched POSITIONALLY against the known
-#  token sequence below (the same idiom read_haps_vcf() uses for the
+#  token sequence below (the same idiom read_stacks_vcf() uses for the
 #  GT-first-FORMAT check, R/vcf_io.R), and disambiguated into `<stat>`,
 #  `<stat>_var`, `<stat>_se`. A header that doesn't match -- e.g. a Stacks
 #  version that changed this file's columns -- is a loud, found-vs-expected

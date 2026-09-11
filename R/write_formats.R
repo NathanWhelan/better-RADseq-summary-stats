@@ -3,11 +3,11 @@
 #  R/write_formats.R -- write a (filtered) H out to the file formats other
 #  RADseq/population-genetics tools expect.
 #
-#  Every function here takes `H` (the list read_haps_vcf() returns, possibly
+#  Every function here takes `H` (the list read_stacks_vcf() returns, possibly
 #  already run through one or more filters from R/filter_loci.R) and writes
 #  it to disk in one specific format, so a typical session looks like:
 #
-#    H <- read_haps_vcf("populations.snps.vcf")
+#    H <- read_stacks_vcf("populations.snps.vcf")
 #    H <- filter_call_rate(H, min_call = 0.8)
 #    H <- filter_maf(H, min_maf = 0.05)
 #    write_plink(H, "cleaned", pops = read_popmap("popmap.tsv", H$samples))
@@ -85,7 +85,7 @@
 #'
 #' Serializes `H` -- including any changes made by [filter_maf()],
 #' [filter_low_conf_alt()], or any other filter in this package -- back into
-#' a valid VCF file, so it can be re-read with [read_haps_vcf()] or handed to
+#' a valid VCF file, so it can be re-read with [read_stacks_vcf()] or handed to
 #' another VCF-based tool.
 #'
 #' Only the `GT` (genotype) values are ever rewritten from `H$A1`/`H$A2`
@@ -98,11 +98,11 @@
 #' would silently mislead anyone reading them back. For that reason, the
 #' `FORMAT` column in the file this writes is always just `GT`.
 #'
-#' @param H A list as returned by [read_haps_vcf()]. Must still have its
+#' @param H A list as returned by [read_stacks_vcf()]. Must still have its
 #'   `fields` element (present by default; only missing if `H` was built by
 #'   hand rather than from a real VCF file).
 #' @param path Output file path. Ending it in `.gz` writes a gzip-compressed
-#'   file, same as [read_haps_vcf()] can read back in.
+#'   file, same as [read_stacks_vcf()] can read back in.
 #' @param verbose Print a short summary once written. Default `TRUE`.
 #' @return `path`, invisibly.
 #' @examples
@@ -113,16 +113,16 @@
 #' )
 #' in_file <- tempfile(fileext = ".vcf")
 #' writeLines(vcf_lines, in_file)
-#' H <- read_haps_vcf(in_file, verbose = FALSE)
+#' H <- read_stacks_vcf(in_file, verbose = FALSE)
 #' out_file <- tempfile(fileext = ".vcf")
 #' write_vcf(H, out_file, verbose = FALSE)
 #' cat(readLines(out_file), sep = "\n")
 #' @export
 write_vcf <- function(H, path, verbose = TRUE) {
   if (is.null(H$fields))
-    stop("write_vcf() needs H$fields (the raw VCF columns read_haps_vcf() keeps for ",
+    stop("write_vcf() needs H$fields (the raw VCF columns read_stacks_vcf() keeps for ",
          "CHROM/POS/ID/REF/ALT/QUAL/FILTER/INFO) -- this H doesn't have it, e.g. ",
-         "because it was built by hand rather than from read_haps_vcf().")
+         "because it was built by hand rather than from read_stacks_vcf().")
   n_rec  <- nrow(H$A1)
   n_samp <- ncol(H$A1)
 
@@ -177,7 +177,7 @@ write_vcf <- function(H, path, verbose = TRUE) {
 #' function checks for that using [locus_allele_stats()] before writing
 #' anything.
 #'
-#' @param H A list as returned by [read_haps_vcf()].
+#' @param H A list as returned by [read_stacks_vcf()].
 #' @param path_prefix Output files are `<path_prefix>.map` and
 #'   `<path_prefix>.ped`.
 #' @param pops Optionally, a named list of sample-ID vectors (from
@@ -265,7 +265,7 @@ write_plink <- function(H, path_prefix, pops = NULL, drop_multiallelic = FALSE, 
 #' allele copy). Confirmed against the official `structure` software
 #' documentation, including its missing-data code (`-9`).
 #'
-#' @param H A list as returned by [read_haps_vcf()].
+#' @param H A list as returned by [read_stacks_vcf()].
 #' @param path Output file path.
 #' @param pops Optionally, a named list of sample-ID vectors (from
 #'   [read_popmap()]) giving each individual's population. Left `NULL`
@@ -325,7 +325,7 @@ write_structure <- function(H, path, pops = NULL, verbose = TRUE) {
 #' manual, including its missing-data code (all-zero allele codes, e.g.
 #' `0000`) and comma-after-sample-ID convention.
 #'
-#' @param H A list as returned by [read_haps_vcf()].
+#' @param H A list as returned by [read_stacks_vcf()].
 #' @param path Output file path.
 #' @param pops A named list of sample-ID vectors (from [read_popmap()]).
 #'   Required -- Genepop files are always organized into population blocks,
@@ -337,7 +337,7 @@ write_structure <- function(H, path, pops = NULL, verbose = TRUE) {
 #' @return `path`, invisibly.
 #' @examples
 #' # Column (sample) names on A1/A2 matter here -- write_genepop() looks
-#' # up each population's samples by name, exactly as read_haps_vcf()'s
+#' # up each population's samples by name, exactly as read_stacks_vcf()'s
 #' # real output always allows.
 #' H <- list(
 #'   A1 = matrix(c(1L, 2L), nrow = 1, dimnames = list(NULL, c("a1", "a2"))),
@@ -391,7 +391,7 @@ write_genepop <- function(H, path, pops, title = "RADdiversity export", verbose 
 #' fallback writes the format directly. Both confirmed against `hierfstat`'s
 #' documented FSTAT format description.
 #'
-#' @param H A list as returned by [read_haps_vcf()].
+#' @param H A list as returned by [read_stacks_vcf()].
 #' @param path Output file path.
 #' @param pops A named list of sample-ID vectors (from [read_popmap()]).
 #'   Required -- FSTAT's first data column is always the population number.
@@ -481,7 +481,7 @@ write_fstat <- function(H, path, pops, verbose = TRUE) {
 #' haplotype-type `H` (one multi-allelic record per RAD tag, e.g. from
 #' `populations.haps.vcf`) -- not a plain per-site SNP VCF.
 #'
-#' @param H A list as returned by [read_haps_vcf()], ideally from a
+#' @param H A list as returned by [read_stacks_vcf()], ideally from a
 #'   haplotype VCF.
 #' @param path Output file path.
 #' @param verbose Print a short summary once written. Default `TRUE`.

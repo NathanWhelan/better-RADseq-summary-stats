@@ -7,7 +7,7 @@
 write_structure(H, path, pops = NULL, verbose = TRUE)
 }
 \arguments{
-\item{H}{A list as returned by \code{\link[=read_haps_vcf]{read_haps_vcf()}}.}
+\item{H}{A list as returned by \code{\link[=read_stacks_vcf]{read_stacks_vcf()}}.}
 
 \item{path}{Output file path.}
 

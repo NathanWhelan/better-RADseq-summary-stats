@@ -22,14 +22,14 @@ make_H <- function(A1, A2, locus = NULL, locus_raw = NULL, n_alleles = NULL,
 ## ---------------------------------------------------------------------------
 
 test_that("write_vcf() round-trips A1/A2, including masked cells, and FORMAT is GT-only", {
-  H <- suppressMessages(read_haps_vcf(fx("small.haps.vcf")))
+  H <- suppressMessages(read_stacks_vcf(fx("small.haps.vcf")))
   ## Mask one real cell first, so the round-trip check also covers a
   ## genuinely-changed genotype, not just an unmodified one.
   H$A1[1, "popA_1"] <- NA; H$A2[1, "popA_1"] <- NA
 
   out <- tempfile(fileext = ".vcf")
   write_vcf(H, out, verbose = FALSE)
-  back <- suppressMessages(read_haps_vcf(out))
+  back <- suppressMessages(read_stacks_vcf(out))
 
   expect_equal(back$A1, H$A1)
   expect_equal(back$A2, H$A2)
@@ -37,10 +37,10 @@ test_that("write_vcf() round-trips A1/A2, including masked cells, and FORMAT is 
 })
 
 test_that("write_vcf() supports gzip output", {
-  H <- suppressMessages(read_haps_vcf(fx("small.haps.vcf")))
+  H <- suppressMessages(read_stacks_vcf(fx("small.haps.vcf")))
   out <- tempfile(fileext = ".vcf.gz")
   write_vcf(H, out, verbose = FALSE)
-  back <- suppressMessages(read_haps_vcf(out))
+  back <- suppressMessages(read_stacks_vcf(out))
   expect_equal(back$A1, H$A1)
 })
 

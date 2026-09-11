@@ -91,13 +91,13 @@ back the tables as data frames. See `?diversity_stats` and
 
 ### Filtering loci, and exporting to other formats (optional)
 
-`read_haps_vcf()` returns a plain list (`A1`/`A2` genotype matrices plus
+`read_stacks_vcf()` returns a plain list (`A1`/`A2` genotype matrices plus
 locus/allele metadata) that a set of `filter_*()` functions can chain on,
 before handing the result to `diversity_stats()`/`het_between_pops()` in
 place of a file path — no intermediate VCF file needed:
 
 ```r
-H <- read_haps_vcf("out/populations.snps.vcf")
+H <- read_stacks_vcf("out/populations.snps.vcf")
 H <- filter_call_rate(H, min_call = 0.8)       # drop poorly-genotyped loci
 H <- filter_maf(H, min_maf = 0.05)             # drop rare-variant noise
 res <- filter_low_conf_alt(H, min_alt_reads = 2)  # flag/mask weakly-supported ALT calls
@@ -130,7 +130,7 @@ choosing a cutoff.
 The (filtered) `H` can also be written out for other tools:
 
 ```r
-write_vcf(H, "filtered.vcf")                              # re-import with read_haps_vcf()
+write_vcf(H, "filtered.vcf")                              # re-import with read_stacks_vcf()
 write_plink(H, "filtered", pops = pops)                    # filtered.map / filtered.ped
 write_structure(H, "filtered.str", pops = pops)
 write_genepop(H, "filtered.gen", pops = pops)               # pops required

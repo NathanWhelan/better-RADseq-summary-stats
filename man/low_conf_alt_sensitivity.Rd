@@ -7,7 +7,7 @@
 low_conf_alt_sensitivity(H, thresholds = c(1, 2, 3, 4, 5, 10), calls = NULL)
 }
 \arguments{
-\item{H}{A list as returned by \code{\link[=read_haps_vcf]{read_haps_vcf()}}.}
+\item{H}{A list as returned by \code{\link[=read_stacks_vcf]{read_stacks_vcf()}}.}
 
 \item{thresholds}{Which \code{min_alt_reads} values to try. Default
 \code{c(1, 2, 3, 4, 5, 10)}.}
@@ -34,6 +34,6 @@ vcf_lines <- c(
 )
 vcf_file <- tempfile(fileext = ".vcf")
 writeLines(vcf_lines, vcf_file)
-H <- read_haps_vcf(vcf_file, verbose = FALSE)
+H <- read_stacks_vcf(vcf_file, verbose = FALSE)
 low_conf_alt_sensitivity(H)
 }

@@ -132,16 +132,119 @@
 ## He / Hs
 ## ---------------------------------------------------------------------------
 
-#' Nei & Chesser (1983) unbiased gene diversity
+#' Low-level estimators: gene diversity, FIS, per-site scaling, rarefaction
 #'
-#' Unbiased expected heterozygosity (gene diversity, Hs) for one population at
-#' one locus, vectorised over all three arguments. Unlike the estimator behind
-#' Stacks' `Pi` column ([hs_stacks_pi()]), this stays unbiased at any FIS.
+#' The building blocks [diversity_stats()] is made of, exported so any number
+#' it reports can be checked by hand. Rarefaction sizes are in GENE COPIES:
+#' 10 diploid individuals are 20 gene copies.
+#'
+#' * `hs_nei_chesser()`: unbiased gene diversity (expected heterozygosity,
+#'   Hs) for one population at one locus, `(n/(n-1)) * (1 - sum_p2 -
+#'   ho/(2n))` (Nei & Chesser 1983). Unbiased at any FIS. Vectorised.
+#' * `hs_biallelic()`: the same at a biallelic site, from one allele's
+#'   frequency `p`.
+#' * `hs_stacks_pi()`: `(2n/(2n-1)) * 2p(1-p)`, the estimator behind Stacks'
+#'   `Pi` column. Unbiased only when FIS = 0 and biased low otherwise;
+#'   provided so the two can be compared.
+#' * `gene_div_2n_counts()`: the same correction as `hs_stacks_pi()`, from
+#'   allele counts, so it also works at multi-allelic (haplotype) loci.
+#' * `hs_from_counts()`: `hs_nei_chesser()` from allele counts.
+#' * `fis_ratio_of_sums()`: `1 - sum(ho) / sum(he)` over loci -- a ratio of
+#'   sums, never a mean of per-locus ratios (Weir & Cockerham 1984). A locus
+#'   monomorphic in the population adds 0 to both sums, so including it
+#'   changes nothing.
+#' * `autosomal_het()`: heterozygosity per variant record rescaled to per
+#'   sequenced site (Schmidt et al. 2021), `het_per_snp * n_snps_used /
+#'   n_sites_sequenced`; `NA` wherever `n_sites_sequenced` is missing or
+#'   smaller than `n_snps_used`. Vectorised, so each population can have its
+#'   own `n_sites_sequenced`.
+#' * `p_sampled()`: for each allele, the probability it appears at least once
+#'   in `g` gene copies drawn without replacement.
+#' * `rare_richness()`: rarefied allelic richness at one locus, the expected
+#'   number of distinct alleles in `g` gene copies (Hurlbert 1971; El
+#'   Mousadik & Petit 1996).
+#' * `rare_private()`, `rare_private_all()`: rarefied private allelic
+#'   richness, the expected number of alleles present in `g` copies from one
+#'   population and absent from `g` copies of every other population
+#'   (Kalinowski 2004; Szpiech et al. 2008).
+#'
+#' The derivations are in the header of `R/estimators.R`;
+#' [diversity_core_selftest()] checks each estimator against brute-force
+#' Monte Carlo and against published Stacks output.
 #'
 #' @param sum_p2 Sum of squared sample allele frequencies.
-#' @param ho Observed heterozygote frequency.
+#' @param ho Observed heterozygote frequency. For `fis_ratio_of_sums()`, a
+#'   vector of per-locus (or per-site) values.
 #' @param n Number of diploid individuals genotyped.
-#' @return Numeric vector of Hs values; `NA` where `n < 2`.
+#' @param p Frequency of one allele at a biallelic site.
+#' @param counts Gene-copy counts, one per allele, for one population at one
+#'   locus.
+#' @param he Per-locus (or per-site) expected heterozygosity, same loci as
+#'   `ho`.
+#' @param het_per_snp Heterozygosity per variant record.
+#' @param n_snps_used Number of variant (SNP) records called in the dataset
+#'   -- all of them, not only those retained for estimating `het_per_snp`
+#'   (the mean over the retained records estimates the mean over all).
+#' @param n_sites_sequenced Total sequenced sites, variant and fixed: the
+#'   `Sites` column of the "All positions (variant and fixed)" block of
+#'   `populations.sumstats_summary.tsv`. One value, or one per element of
+#'   `het_per_snp`.
+#' @param g Rarefaction size in gene copies.
+#' @param count_mat Matrix of gene-copy counts, populations (rows) x alleles.
+#' @param j Row (population) of `count_mat` to compute private richness for.
+#' @return A numeric vector: one value per input element for the vectorised
+#'   `hs_nei_chesser()`, `hs_biallelic()`, `hs_stacks_pi()` and
+#'   `autosomal_het()`; one per allele for `p_sampled()`; one per population
+#'   for `rare_private_all()`; otherwise a single value. `NA` wherever the
+#'   quantity is undefined (fewer than 2 individuals, or fewer than `g` gene
+#'   copies).
+#' @references
+#' Nei, M. & Chesser, R.K. (1983) Estimation of fixation indices and gene
+#' diversities. *Annals of Human Genetics* 47:253-259.
+#'
+#' Weir, B.S. & Cockerham, C.C. (1984) Estimating F-statistics for the
+#' analysis of population structure. *Evolution* 38:1358-1370.
+#'
+#' Hurlbert, S.H. (1971) The nonconcept of species diversity: a critique and
+#' alternative parameters. *Ecology* 52:577-586.
+#'
+#' El Mousadik, A. & Petit, R.J. (1996) High level of genetic differentiation
+#' for allelic richness among populations of the argan tree. *Theoretical and
+#' Applied Genetics* 92:832-839.
+#'
+#' Kalinowski, S.T. (2004) Counting alleles with rarefaction: private alleles
+#' and hierarchical sampling designs. *Conservation Genetics* 5:539-543.
+#'
+#' Szpiech, Z.A., Jakobsson, M. & Rosenberg, N.A. (2008) ADZE: a rarefaction
+#' approach for counting alleles private to combinations of populations.
+#' *Bioinformatics* 24:2498-2504.
+#'
+#' Schmidt, T.L., Jasper, M.-E., Weeks, A.R. & Hoffmann, A.A. (2021) Unbiased
+#' population heterozygosity estimates from genome-wide sequence data.
+#' *Methods in Ecology and Evolution* 12:1888-1898.
+#' @examples
+#' # One biallelic locus: 10 diploids, allele frequency 0.3, Ho = 0.35.
+#' hs_biallelic(0.3, ho = 0.35, n = 10)    # Nei & Chesser
+#' hs_stacks_pi(0.3, n = 10)               # what Stacks' `Pi` column would give
+#'
+#' # The same locus from allele counts (6 and 14 gene copies):
+#' hs_from_counts(c(6, 14), ho = 0.35, n = 10)
+#' gene_div_2n_counts(c(6, 14))
+#'
+#' # FIS as a ratio of sums over three loci (the third is monomorphic):
+#' fis_ratio_of_sums(ho = c(0.30, 0.10, 0), he = c(0.42, 0.15, 0))
+#'
+#' # Rarefied allelic richness, 4 alleles, rarefied to 10 gene copies:
+#' rare_richness(c(12, 5, 2, 1), g = 10)
+#' # Rarefied private allelic richness, two populations at one locus:
+#' rare_private_all(rbind(popA = c(10, 5, 5, 0), popB = c(12, 8, 0, 0)), g = 10)
+#'
+#' # He per variant record -> per sequenced site:
+#' autosomal_het(0.29, n_snps_used = 10348, n_sites_sequenced = 1e6)
+#' @name estimators
+NULL
+
+#' @rdname estimators
 #' @export
 hs_nei_chesser <- function(sum_p2, ho, n) {
   out <- (n / (n - 1)) * (1 - sum_p2 - ho / (2 * n))
@@ -149,23 +252,11 @@ hs_nei_chesser <- function(sum_p2, ho, n) {
   out
 }
 
-#' Biallelic wrapper around [hs_nei_chesser()]
-#'
-#' @param p Frequency of one allele.
-#' @param ho Observed heterozygote frequency.
-#' @param n Number of diploid individuals genotyped.
-#' @return Numeric vector of Hs values.
+#' @rdname estimators
 #' @export
 hs_biallelic <- function(p, ho, n) hs_nei_chesser(p^2 + (1 - p)^2, ho, n)
 
-#' The estimator behind Stacks' `Pi` column (biallelic form)
-#'
-#' Unbiased when FIS = 0, biased low otherwise. Reported alongside
-#' [hs_nei_chesser()] for comparison.
-#'
-#' @param p Frequency of one allele.
-#' @param n Number of diploid individuals genotyped.
-#' @return Numeric vector.
+#' @rdname estimators
 #' @export
 hs_stacks_pi <- function(p, n) {
   out <- 2 * p * (1 - p) * (2 * n) / (2 * n - 1)
@@ -173,39 +264,19 @@ hs_stacks_pi <- function(p, n) {
   out
 }
 
-#' Gene diversity from gene-copy counts (multi-allelic)
-#'
-#' The same correction as [hs_stacks_pi()], computed from allele counts so it
-#' also works on a haplotype VCF. Named for the correction it applies, not for
-#' the software column it happens to match. `N` is the number of gene copies
-#' actually observed at the locus (2 x the typed individuals), so this agrees
-#' exactly with `hs_stacks_pi()` evaluated at that many individuals (checked
-#' in [diversity_core_selftest()]).
-#'
-#' @param counts Vector of gene-copy counts, one per allele.
-#' @param n Unused; present for interface symmetry. Deprecated.
-#' @return A single numeric value.
+## Named for the correction it applies, not for the software column it happens
+## to match. N = gene copies actually observed at the locus (2 x the typed
+## individuals), so this equals hs_stacks_pi() at that many individuals
+## (checked in diversity_core_selftest()).
+#' @rdname estimators
 #' @export
-gene_div_2n_counts <- function(counts, n = NULL) {
+gene_div_2n_counts <- function(counts) {
   N <- sum(counts)
   if (!is.finite(N) || N < 2) return(NA_real_)
   (N / (N - 1)) * (1 - sum((counts / N)^2))
 }
 
-#' Deprecated alias for [gene_div_2n_counts()]
-#'
-#' @param counts Vector of gene-copy counts, one per allele.
-#' @param n Unused; present for interface symmetry. Deprecated.
-#' @return A single numeric value.
-#' @export
-hs_stacks_pi_counts <- gene_div_2n_counts
-
-#' Multi-allelic Nei-Chesser gene diversity from allele counts
-#'
-#' @param counts Vector of gene-copy counts for one population at one locus.
-#' @param ho Observed heterozygote frequency.
-#' @param n Number of diploid individuals genotyped.
-#' @return A single numeric value.
+#' @rdname estimators
 #' @export
 hs_from_counts <- function(counts, ho, n) {
   tot <- sum(counts)
@@ -213,16 +284,7 @@ hs_from_counts <- function(counts, ho, n) {
   hs_nei_chesser(sum((counts / tot)^2), ho, n)
 }
 
-#' FIS as a ratio of sums over loci
-#'
-#' `FIS = 1 - sum(Ho) / sum(He)`, never a mean of per-locus ratios (Weir &
-#' Cockerham 1984; Bhatia et al. 2013). A locus monomorphic in a population
-#' adds 0 to both sums, so the ratio of sums does not care whether such loci
-#' are included.
-#'
-#' @param ho Per-locus (or per-site) vector of observed heterozygosity.
-#' @param he Per-locus (or per-site) vector of expected heterozygosity.
-#' @return A single numeric value.
+#' @rdname estimators
 #' @export
 fis_ratio_of_sums <- function(ho, he) {
   ok <- is.finite(ho) & is.finite(he)
@@ -230,26 +292,7 @@ fis_ratio_of_sums <- function(ho, he) {
   1 - sum(ho[ok]) / sh
 }
 
-#' Per-ascertained-SNP heterozygosity to autosomal heterozygosity
-#'
-#' Schmidt et al. (2021) conversion. `n_sites_sequenced` is the `Sites` column
-#' of the "All positions (variant and fixed)" block of
-#' `populations.sumstats_summary.tsv`.
-#'
-#' Vectorised over `n_sites_sequenced` (as well as `het_per_snp`), so a
-#' per-population sequenced-site count can be passed alongside a
-#' per-population `het_per_snp` -- e.g. [diversity_stats()]'s `sites`
-#' argument, which lets each population use its own denominator. `NA` is
-#' returned element-wise wherever `n_sites_sequenced` is non-finite or
-#' smaller than `n_snps_used`, rather than aborting the whole vector.
-#'
-#' @param het_per_snp Heterozygosity per ascertained SNP.
-#' @param n_snps_used Number of variant (SNP) records called in the dataset
-#'   -- all of them, not only those retained for estimating `het_per_snp`
-#'   (the mean over the retained records estimates the mean over all).
-#' @param n_sites_sequenced Total sequenced sites (variant and fixed). A
-#'   single value or one per element of `het_per_snp`.
-#' @return A numeric vector, the same length as `het_per_snp`.
+#' @rdname estimators
 #' @export
 autosomal_het <- function(het_per_snp, n_snps_used, n_sites_sequenced) {
   bad <- !is.finite(n_sites_sequenced) | n_sites_sequenced < n_snps_used
@@ -263,14 +306,9 @@ autosomal_het <- function(het_per_snp, n_snps_used, n_sites_sequenced) {
 ## Rarefaction
 ## ---------------------------------------------------------------------------
 
-#' Probability each allele is sampled in g gene copies
-#'
-#' Pr(each allele appears at least once in g gene copies drawn without
-#' replacement). Uses `lchoose` for numerical stability at large N.
-#'
-#' @param counts Vector of gene-copy counts, one per allele.
-#' @param g Rarefaction size in gene copies.
-#' @return Numeric vector, one probability per allele.
+## 1 - C(N - N_i, g) / C(N, g), on the log scale (lchoose) so it stays finite
+## at large N.
+#' @rdname estimators
 #' @export
 p_sampled <- function(counts, g) {
   N <- sum(counts)
@@ -278,11 +316,7 @@ p_sampled <- function(counts, g) {
   1 - exp(lchoose(N - counts, g) - lchoose(N, g))
 }
 
-#' Rarefied allelic richness at one locus
-#'
-#' @param counts Vector of gene-copy counts, one per allele.
-#' @param g Rarefaction size in gene copies.
-#' @return A single numeric value.
+#' @rdname estimators
 #' @export
 rare_richness <- function(counts, g) {
   if (!is.finite(sum(counts)) || sum(counts) < g) return(NA_real_)
@@ -290,12 +324,7 @@ rare_richness <- function(counts, g) {
   if (anyNA(ps)) return(NA_real_) else sum(ps)
 }
 
-#' Rarefied private allelic richness for one population
-#'
-#' @param count_mat Matrix of gene-copy counts, populations x alleles.
-#' @param j Row index (population) to compute private richness for.
-#' @param g Rarefaction size in gene copies.
-#' @return A single numeric value.
+#' @rdname estimators
 #' @export
 rare_private <- function(count_mat, j, g) {
   if (!is.matrix(count_mat)) count_mat <- rbind(count_mat)
@@ -307,11 +336,7 @@ rare_private <- function(count_mat, j, g) {
   sum(term)
 }
 
-#' Rarefied private allelic richness for every population
-#'
-#' @param count_mat Matrix of gene-copy counts, populations x alleles.
-#' @param g Rarefaction size in gene copies.
-#' @return Numeric vector, length `nrow(count_mat)`.
+#' @rdname estimators
 #' @export
 rare_private_all <- function(count_mat, g) {
   vapply(seq_len(nrow(count_mat)), function(j) rare_private(count_mat, j, g),

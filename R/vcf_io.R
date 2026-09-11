@@ -35,6 +35,9 @@
 #' not) into genotype matrices plus locus/allele metadata. Used by
 #' [diversity_stats()] and [het_between_pops()].
 #'
+#' `read_haps_vcf()` is this function's former name (it reads SNP VCFs too),
+#' kept as an alias for one release.
+#'
 #' @param path Path to the VCF file (`.vcf` or `.vcf.gz`).
 #' @param verbose Print progress/summary messages. Default `TRUE`.
 #' @return A list with elements `A1`, `A2` (allele-index matrices, one row per
@@ -43,7 +46,7 @@
 #'   `alleles` (list of allele strings per record), `n_alleles`, `samples`,
 #'   and `fields` (the raw parsed VCF field matrix).
 #' @export
-read_haps_vcf <- function(path, verbose = TRUE) {
+read_stacks_vcf <- function(path, verbose = TRUE) {
 
   if (grepl("\\.gz$", path)) {
     lines <- readLines(gzfile(path))
@@ -152,37 +155,41 @@ read_haps_vcf <- function(path, verbose = TRUE) {
        n_alleles = n_alleles, samples = samples, fields = f)
 }
 
+#' @rdname read_stacks_vcf
+#' @export
+read_haps_vcf <- function(path, verbose = TRUE) read_stacks_vcf(path, verbose = verbose)
+
 ## Not exported. Shared by diversity_stats() and het_between_pops() so both
 ## accept EITHER a path to a VCF file (the original behavior -- this reads
-## it with read_haps_vcf()) OR an H list someone already built themselves,
-## e.g. by running read_haps_vcf() and then one or more filter_*() functions
+## it with read_stacks_vcf()) OR an H list someone already built themselves,
+## e.g. by running read_stacks_vcf() and then one or more filter_*() functions
 ## from R/filter_loci.R. This is what lets a filtered/cleaned dataset go
 ## straight into either pipeline function without writing an intermediate
 ## VCF file to disk first.
 ##
 ## `vcf_file` is a "character" (plain text) value when it's a file path, and
-## a "list" (the shape read_haps_vcf() returns) when it's already-parsed
+## a "list" (the shape read_stacks_vcf() returns) when it's already-parsed
 ## data -- is.character()/is.list() below just tell those two cases apart.
 .resolve_H <- function(vcf_file, verbose = TRUE) {
-  if (is.character(vcf_file)) return(read_haps_vcf(vcf_file, verbose = verbose))
+  if (is.character(vcf_file)) return(read_stacks_vcf(vcf_file, verbose = verbose))
   if (!is.list(vcf_file))
     stop("vcf_file must be either a path to a VCF file, or the list returned ",
-         "by read_haps_vcf() (optionally passed through one or more filter_*() ",
+         "by read_stacks_vcf() (optionally passed through one or more filter_*() ",
          "functions first). Got an object of class: ", paste(class(vcf_file), collapse = "/"))
-  ## A hand-built or corrupted list could be missing pieces read_haps_vcf()
+  ## A hand-built or corrupted list could be missing pieces read_stacks_vcf()
   ## always includes -- check for those up front so a confusing error deep
   ## inside diversity_stats()/het_between_pops() doesn't happen instead.
   required <- c("A1", "A2", "locus", "locus_raw", "alleles", "n_alleles", "samples")
   missing_el <- setdiff(required, names(vcf_file))
   if (length(missing_el))
-    stop("vcf_file looks like a list, but is missing element(s) that read_haps_vcf() ",
+    stop("vcf_file looks like a list, but is missing element(s) that read_stacks_vcf() ",
          "always includes: ", paste(missing_el, collapse = ", "),
-         ". Pass the object returned by read_haps_vcf() (optionally filtered), not ",
+         ". Pass the object returned by read_stacks_vcf() (optionally filtered), not ",
          "something else.")
   if (!is.matrix(vcf_file$A1) || !is.matrix(vcf_file$A2) ||
       !identical(dim(vcf_file$A1), dim(vcf_file$A2)))
     stop("vcf_file$A1 and vcf_file$A2 must both be matrices of the same size ",
-         "(as read_haps_vcf() always produces).")
+         "(as read_stacks_vcf() always produces).")
   vcf_file
 }
 

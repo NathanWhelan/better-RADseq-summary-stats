@@ -1,7 +1,7 @@
 fx <- function(name) test_path("fixtures", name)
 
-test_that("read_haps_vcf() parses the small fixture", {
-  H <- suppressMessages(read_haps_vcf(fx("small.haps.vcf")))
+test_that("read_stacks_vcf() parses the small fixture", {
+  H <- suppressMessages(read_stacks_vcf(fx("small.haps.vcf")))
   expect_setequal(H$samples,
                    c(paste0("popA_", 1:4), paste0("popB_", 1:3)))
   expect_equal(nrow(H$A1), 80L)
@@ -10,7 +10,7 @@ test_that("read_haps_vcf() parses the small fixture", {
 })
 
 test_that("read_popmap() splits samples by population", {
-  H <- suppressMessages(read_haps_vcf(fx("small.haps.vcf"), verbose = FALSE))
+  H <- suppressMessages(read_stacks_vcf(fx("small.haps.vcf"), verbose = FALSE))
   pops <- suppressMessages(read_popmap(fx("small_popmap.tsv"), H$samples))
   expect_equal(names(pops), c("popA", "popB"))
   expect_equal(lengths(pops), c(popA = 4L, popB = 3L))
@@ -26,11 +26,11 @@ test_that("read_popmap() keeps IDs as text (leading zeros and T/F survive)", {
   expect_identical(pops, list(T = c("001", "002"), F = "010"))
 })
 
-test_that(".resolve_H() passes a path through to read_haps_vcf() and an H list straight through", {
+test_that(".resolve_H() passes a path through to read_stacks_vcf() and an H list straight through", {
   H_from_path <- suppressMessages(RADdiversity:::.resolve_H(fx("small.haps.vcf"), verbose = FALSE))
-  expect_equal(H_from_path$samples, suppressMessages(read_haps_vcf(fx("small.haps.vcf"), verbose = FALSE))$samples)
+  expect_equal(H_from_path$samples, suppressMessages(read_stacks_vcf(fx("small.haps.vcf"), verbose = FALSE))$samples)
 
-  H <- suppressMessages(read_haps_vcf(fx("small.haps.vcf"), verbose = FALSE))
+  H <- suppressMessages(read_stacks_vcf(fx("small.haps.vcf"), verbose = FALSE))
   expect_identical(RADdiversity:::.resolve_H(H, verbose = FALSE), H)
 })
 
@@ -46,7 +46,7 @@ test_that("diversity_stats()/het_between_pops() accept a pre-parsed H list in pl
   outdir <- tempfile("raddiversity-test-")
   dir.create(outdir)
   on.exit(unlink(outdir, recursive = TRUE), add = TRUE)
-  H <- suppressMessages(read_haps_vcf(fx("small.haps.vcf")))
+  H <- suppressMessages(read_stacks_vcf(fx("small.haps.vcf")))
 
   expect_error(
     suppressMessages(diversity_stats(H, fx("small_popmap.tsv"), g = 4, nboot = 10, outdir = outdir)),

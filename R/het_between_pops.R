@@ -43,7 +43,7 @@
 #' @param vcf_file Path to a Stacks VCF (`populations.snps.vcf` or
 #'   `populations.haps.vcf`, optionally gzip-compressed) -- OR, an already-
 #'   parsed (and optionally filtered) `H` list, i.e. the object returned by
-#'   [read_haps_vcf()], on its own or passed through one or more `filter_*()`
+#'   [read_stacks_vcf()], on its own or passed through one or more `filter_*()`
 #'   functions first (see `R/filter_loci.R`). Passing a list skips re-reading
 #'   and re-parsing the VCF file.
 #' @param popmap_f Path to a two-column, no-header popmap TSV (`sample_id

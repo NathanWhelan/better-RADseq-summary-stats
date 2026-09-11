@@ -368,7 +368,7 @@
 #' p-values should never be zero. *Statistical Applications in Genetics and
 #' Molecular Biology* 9:39.
 #'
-#' @param H A list as returned by [read_haps_vcf()] (or by another filter in
+#' @param H A list as returned by [read_stacks_vcf()] (or by another filter in
 #'   this package, since they all return the same shape).
 #' @param pops Optional named list of sample-ID vectors (from
 #'   [read_popmap()]). `NULL` (the default) pools every sample into one

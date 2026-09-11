@@ -7,7 +7,7 @@
 filter_max_het(H, max_ho, verbose = TRUE)
 }
 \arguments{
-\item{H}{A list as returned by \code{\link[=read_haps_vcf]{read_haps_vcf()}}.}
+\item{H}{A list as returned by \code{\link[=read_stacks_vcf]{read_stacks_vcf()}}.}
 
 \item{max_ho}{Maximum allowed observed heterozygosity at a locus (a
 number between 0 and 1, e.g. \code{0.5}). A locus above this is dropped.}

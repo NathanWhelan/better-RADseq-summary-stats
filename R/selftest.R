@@ -123,7 +123,7 @@ diversity_core_selftest <- function() {
     cnt <- c(round(2 * n * p), 2 * n - round(2 * n * p))
     ph <- cnt[1] / sum(cnt)
     chk(sprintf("n=%2d p=%.2f  counts form == biallelic form", n, ph),
-        hs_stacks_pi_counts(cnt), hs_stacks_pi(ph, n), tol = 1e-12)
+        gene_div_2n_counts(cnt), hs_stacks_pi(ph, n), tol = 1e-12)
   }
   ## The relationship a user can check on their own populations.sumstats.tsv,
   ## anchored on a real Stacks summary file: Exp_Het 0.40000 at Num_Indv 2

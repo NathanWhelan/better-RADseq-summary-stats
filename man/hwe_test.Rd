@@ -15,7 +15,7 @@ hwe_test(
 )
 }
 \arguments{
-\item{H}{A list as returned by \code{\link[=read_haps_vcf]{read_haps_vcf()}} (or by another filter in
+\item{H}{A list as returned by \code{\link[=read_stacks_vcf]{read_stacks_vcf()}} (or by another filter in
 this package, since they all return the same shape).}
 
 \item{pops}{Optional named list of sample-ID vectors (from

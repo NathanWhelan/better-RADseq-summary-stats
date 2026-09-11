@@ -26,8 +26,8 @@
 #  implementation of the Weir & Cockerham (1984) variance-component formula
 #  (functions .wc_components()/.fst_from_sums()/.fis_from_sums()
 #  below), NOT by calling hierfstat, even when hierfstat is installed --
-#  unlike diversity_stats(), which prefers hierfstat's own functions when
-#  available. That is a deliberate choice, not an oversight: the bootstrap
+#  like everything else this package reports. That is a deliberate choice,
+#  not an oversight: the bootstrap
 #  and jackknife below need to re-sum these per-locus building blocks tens
 #  of thousands of times, and hierfstat has no function that accepts a
 #  resampled/weighted locus set. The code implements Weir & Cockerham's
@@ -96,12 +96,12 @@
 ## Not exported. For ONE specific set of populations (`pops`, a named list of
 ## sample-ID vectors -- either every population in the dataset, for a GLOBAL
 ## FST, or just two of them, for a PAIRWISE FST between that pair), this
-## computes three numbers PER RECORD (PER LOCUS): `siga`, `sigb`, `sigw`.
+## computes three numbers PER RECORD (PER LOCUS): `comp_a`, `comp_b`, `comp_c`.
 ## These are the three pieces of variance Weir & Cockerham's method splits
 ## every locus's genetic variation into:
-##   siga  variance AMONG the populations listed in `pops`     ("a")
-##   sigb  variance among INDIVIDUALS WITHIN those populations ("b")
-##   sigw  variance WITHIN INDIVIDUALS, i.e. heterozygosity     ("c")
+##   comp_a  variance AMONG the populations listed in `pops`     ("a")
+##   comp_b  variance among INDIVIDUALS WITHIN those populations ("b")
+##   comp_c  variance WITHIN INDIVIDUALS, i.e. heterozygosity     ("c")
 ## FST is then just how big a share of the total (a+b+c) is the "among
 ## populations" share (a) -- see .fst_from_sums() below, which is
 ## where these three numbers actually turn into one FST value. Kept
@@ -119,7 +119,7 @@
 .wc_components <- function(H, pops) {
   A1 <- H$A1; A2 <- H$A2; n_alleles <- H$n_alleles
   r <- length(pops); n_rec <- nrow(A1)
-  siga <- sigb <- sigw <- numeric(n_rec)
+  comp_a <- comp_b <- comp_c <- numeric(n_rec)
   for (j in seq_len(n_rec)) {
     na_j <- n_alleles[j]
     cmat <- matrix(0, r, na_j)  # gene-copy counts: cmat[pop, allele]
@@ -142,7 +142,7 @@
     }
     has_data <- n_i > 0L
     r_eff <- sum(has_data)      # how many of these populations have ANY data here
-    if (r_eff < 1L || sum(n_i) < 2L) { siga[j] <- sigb[j] <- sigw[j] <- NA_real_; next }
+    if (r_eff < 1L || sum(n_i) < 2L) { comp_a[j] <- comp_b[j] <- comp_c[j] <- NA_real_; next }
     ni <- n_i[has_data]; cm <- cmat[has_data, , drop = FALSE]; hm <- hmat[has_data, , drop = FALSE]
     nt <- sum(ni); nbar <- nt / r_eff        # total, and average, typed individuals
     p_bar <- colSums(cm) / (2 * nt)          # pooled allele frequency, per allele
@@ -158,10 +158,9 @@
     ## The "among populations" component (a) needs at least two POPULATIONS
     ## with data at this record, and needs nbar > 1 (a single genotyped
     ## individual can't inform a variance-among-populations term). A record
-    ## that fails this contributes exactly 0 here -- confirmed against
-    ## hierfstat::wc()'s own source, which reaches the same "contributes
-    ## nothing" outcome via a different route (a not-a-number value that its
-    ## na.rm = TRUE summation silently treats as zero). `sigb`/`sigw` below
+    ## that fails this contributes exactly 0 here. hierfstat::wc() ends up
+    ## treating such records the same way (its value there is not-a-number,
+    ## which its na.rm = TRUE sums drop), so the two agree on them. `comp_b`/`comp_c` below
     ## are NOT gated the same way: a record where only one population out of
     ## several has any data still has a perfectly well-defined "within
     ## individuals" (heterozygosity) component, so it still counts there.
@@ -181,9 +180,9 @@
         ((2 * nbar - 1) / (4 * nbar)) * h_bar)
     } else 0
     c_comp <- h_bar / 2
-    siga[j] <- sum(a_comp); sigb[j] <- sum(b_comp); sigw[j] <- sum(c_comp)
+    comp_a[j] <- sum(a_comp); comp_b[j] <- sum(b_comp); comp_c[j] <- sum(c_comp)
   }
-  list(siga = siga, sigb = sigb, sigw = sigw)
+  list(comp_a = comp_a, comp_b = comp_b, comp_c = comp_c)
 }
 
 ## Not exported. FST, and the "metapopulation" FIS wc() reports, from a, b
@@ -436,16 +435,16 @@ differentiation_stats <- function(vcf_file, popmap_f, nboot = 10000L,
   pair_lab <- vapply(pair_names, paste, character(1), collapse = "__")
   n_pair <- length(pair_names)
   wc_pieces <- function(w) {
-    ok <- is.finite(w$siga) & is.finite(w$sigb) & is.finite(w$sigw)
-    cbind(ok, ifelse(ok, w$siga, 0), ifelse(ok, w$sigb, 0), ifelse(ok, w$sigw, 0))
+    ok <- is.finite(w$comp_a) & is.finite(w$comp_b) & is.finite(w$comp_c)
+    cbind(ok, ifelse(ok, w$comp_a, 0), ifelse(ok, w$comp_b, 0), ifelse(ok, w$comp_c, 0))
   }
   d_pieces <- function(d) {
     ok <- is.finite(d$Hs) & is.finite(d$Ht)
     cbind(ok, ifelse(ok, d$Hs, 0), ifelse(ok, d$Ht, 0))
   }
-  fis_ok <- is.finite(wc_global$sigb) & is.finite(wc_global$sigw)
+  fis_ok <- is.finite(wc_global$comp_b) & is.finite(wc_global$comp_c)
   rec <- cbind(wc_pieces(wc_global),
-               fis_ok, ifelse(fis_ok, wc_global$sigb, 0), ifelse(fis_ok, wc_global$sigw, 0),
+               fis_ok, ifelse(fis_ok, wc_global$comp_b, 0), ifelse(fis_ok, wc_global$comp_c, 0),
                d_pieces(d_global),
                do.call(cbind, lapply(wc_pair, wc_pieces)),
                do.call(cbind, lapply(d_pair, d_pieces)))

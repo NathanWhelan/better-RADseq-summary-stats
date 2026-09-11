@@ -2,14 +2,14 @@
 #
 #  R/filter_loci.R -- general-purpose locus and genotype filters.
 #
-#  Every function here takes `H`, the list returned by read_haps_vcf() (see
+#  Every function here takes `H`, the list returned by read_stacks_vcf() (see
 #  R/vcf_io.R), and returns a filtered version of it: same shape, same
 #  elements (A1, A2, locus, locus_raw, alleles, n_alleles, samples, fields),
 #  just fewer rows (loci) and/or some genotype cells set to missing. That
 #  means these filters CHAIN: you can run several in a row, in any order,
 #  e.g.
 #
-#    H <- read_haps_vcf("populations.snps.vcf")
+#    H <- read_stacks_vcf("populations.snps.vcf")
 #    H <- filter_call_rate(H, min_call = 0.8)
 #    H <- filter_maf(H, min_maf = 0.05)
 #    H <- filter_low_conf_alt(H, min_alt_reads = 2)$H
@@ -96,7 +96,7 @@
 #' (haplotype VCFs can have several alleles per locus): MAF there means "the
 #' combined frequency of every allele except the single most common one".
 #'
-#' @param H A list as returned by [read_haps_vcf()] (or by another filter in
+#' @param H A list as returned by [read_stacks_vcf()] (or by another filter in
 #'   this package, since they all return the same shape).
 #' @return A data frame with one row per locus, in the same order as `H$A1`,
 #'   and columns:
@@ -119,7 +119,7 @@
 #'   are different claims and must not be confused.
 #' @examples
 #' # A tiny made-up dataset: 2 loci, 3 samples, alleles coded 1 (REF) and
-#' # 2 (ALT). read_haps_vcf() builds this same shape from a real VCF file.
+#' # 2 (ALT). read_stacks_vcf() builds this same shape from a real VCF file.
 #' # Each row of A1/A2 is one locus's alleles across all 3 samples.
 #' H <- list(
 #'   A1 = rbind(locus_1 = c(1, 1, 2), locus_2 = c(1, 2, NA)),
@@ -207,7 +207,7 @@ locus_allele_stats <- function(H) {
 #' errors rather than real biological variation, so a MAF filter is one of
 #' the most common first QC steps for SNP data.
 #'
-#' @param H A list as returned by [read_haps_vcf()].
+#' @param H A list as returned by [read_stacks_vcf()].
 #' @param min_maf Minimum minor allele frequency a locus must have to be
 #'   kept (a number between 0 and 1, e.g. `0.05` for 5%).
 #' @param stats Optionally, the data frame already returned by
@@ -260,7 +260,7 @@ filter_maf <- function(H, min_maf, stats = NULL, verbose = TRUE) {
 #' when sample sizes are small or uneven, where a single individual can
 #' swing the frequency a lot.
 #'
-#' @param H A list as returned by [read_haps_vcf()].
+#' @param H A list as returned by [read_stacks_vcf()].
 #' @param min_mac Minimum minor allele count a locus must have to be kept
 #'   (a whole number, e.g. `3`).
 #' @param stats Optionally, a precomputed [locus_allele_stats()] result for
@@ -308,7 +308,7 @@ filter_mac <- function(H, min_mac, stats = NULL, verbose = TRUE) {
 #' [het_between_pops()] (which is tuned specifically for that function's own
 #' diagnostics) or the `min_n`/`complete_case` logic in [diversity_stats()].
 #'
-#' @param H A list as returned by [read_haps_vcf()].
+#' @param H A list as returned by [read_stacks_vcf()].
 #' @param min_call Minimum fraction of individuals that must be genotyped at
 #'   a locus for it to be kept (a number between 0 and 1, e.g. `0.8` for
 #'   80%).
@@ -385,7 +385,7 @@ filter_call_rate <- function(H, min_call, pops = NULL, rule = "all", verbose = T
 #' are really two different genes/copies being confused for two alleles of
 #' the same one.
 #'
-#' @param H A list as returned by [read_haps_vcf()].
+#' @param H A list as returned by [read_stacks_vcf()].
 #' @param max_ho Maximum allowed observed heterozygosity at a locus (a
 #'   number between 0 and 1, e.g. `0.5`). A locus above this is dropped.
 #' @param verbose Print how many loci were kept. Default `TRUE`.
@@ -432,7 +432,7 @@ filter_max_het <- function(H, max_ho, verbose = TRUE) {
 #' dropping the rest, so that every remaining locus is a genuinely
 #' independent RAD tag.
 #'
-#' @param H A list as returned by [read_haps_vcf()].
+#' @param H A list as returned by [read_stacks_vcf()].
 #' @param method `"first"` (the default) keeps the first record seen for
 #'   each RAD tag, giving the same result every time. `"random"` picks one
 #'   record per RAD tag at random.
@@ -641,7 +641,7 @@ filter_thin_one_snp <- function(H, method = "first", seed = NULL, verbose = TRUE
 #' `mode = "drop"` instead removes whole loci where too large a share of
 #' their ALT-containing calls were flagged.
 #'
-#' @param H A list as returned by [read_haps_vcf()].
+#' @param H A list as returned by [read_stacks_vcf()].
 #' @param min_alt_reads A genotype call with this many or fewer reads
 #'   supporting its ALT allele(s) is flagged. Default `2`. See
 #'   [low_conf_alt_sensitivity()] for a table to help pick this value.
@@ -684,7 +684,7 @@ filter_thin_one_snp <- function(H, method = "first", seed = NULL, verbose = TRUE
 #' )
 #' vcf_file <- tempfile(fileext = ".vcf")
 #' writeLines(vcf_lines, vcf_file)
-#' H <- read_haps_vcf(vcf_file, verbose = FALSE)
+#' H <- read_stacks_vcf(vcf_file, verbose = FALSE)
 #' res <- filter_low_conf_alt(H, min_alt_reads = 2, verbose = FALSE)
 #' res$flagged_calls  # ind2's call at locus_1 is flagged (1 <= 2 ALT reads)
 #' @export
@@ -763,7 +763,7 @@ filter_low_conf_alt <- function(H, min_alt_reads = 2, mode = "mask",
 #' genotype calls would be flagged. Useful for picking a threshold for
 #' [filter_low_conf_alt()] before committing to one.
 #'
-#' @param H A list as returned by [read_haps_vcf()].
+#' @param H A list as returned by [read_stacks_vcf()].
 #' @param thresholds Which `min_alt_reads` values to try. Default
 #'   `c(1, 2, 3, 4, 5, 10)`.
 #' @param calls Optionally, a precomputed result from the internal
@@ -780,7 +780,7 @@ filter_low_conf_alt <- function(H, min_alt_reads = 2, mode = "mask",
 #' )
 #' vcf_file <- tempfile(fileext = ".vcf")
 #' writeLines(vcf_lines, vcf_file)
-#' H <- read_haps_vcf(vcf_file, verbose = FALSE)
+#' H <- read_stacks_vcf(vcf_file, verbose = FALSE)
 #' low_conf_alt_sensitivity(H)
 #' @export
 low_conf_alt_sensitivity <- function(H, thresholds = c(1, 2, 3, 4, 5, 10), calls = NULL) {

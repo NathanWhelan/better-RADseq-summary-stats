@@ -7,7 +7,7 @@
 filter_maf(H, min_maf, stats = NULL, verbose = TRUE)
 }
 \arguments{
-\item{H}{A list as returned by \code{\link[=read_haps_vcf]{read_haps_vcf()}}.}
+\item{H}{A list as returned by \code{\link[=read_stacks_vcf]{read_stacks_vcf()}}.}
 
 \item{min_maf}{Minimum minor allele frequency a locus must have to be
 kept (a number between 0 and 1, e.g. \code{0.05} for 5\%).}

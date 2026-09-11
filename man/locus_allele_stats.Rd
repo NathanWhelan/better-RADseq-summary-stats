@@ -7,7 +7,7 @@
 locus_allele_stats(H)
 }
 \arguments{
-\item{H}{A list as returned by \code{\link[=read_haps_vcf]{read_haps_vcf()}} (or by another filter in
+\item{H}{A list as returned by \code{\link[=read_stacks_vcf]{read_stacks_vcf()}} (or by another filter in
 this package, since they all return the same shape).}
 }
 \value{
@@ -53,7 +53,7 @@ combined frequency of every allele except the single most common one".
 }
 \examples{
 # A tiny made-up dataset: 2 loci, 3 samples, alleles coded 1 (REF) and
-# 2 (ALT). read_haps_vcf() builds this same shape from a real VCF file.
+# 2 (ALT). read_stacks_vcf() builds this same shape from a real VCF file.
 # Each row of A1/A2 is one locus's alleles across all 3 samples.
 H <- list(
   A1 = rbind(locus_1 = c(1, 1, 2), locus_2 = c(1, 2, NA)),

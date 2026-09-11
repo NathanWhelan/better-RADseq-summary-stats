@@ -7,7 +7,7 @@
 filter_thin_one_snp(H, method = "first", seed = NULL, verbose = TRUE)
 }
 \arguments{
-\item{H}{A list as returned by \code{\link[=read_haps_vcf]{read_haps_vcf()}}.}
+\item{H}{A list as returned by \code{\link[=read_stacks_vcf]{read_stacks_vcf()}}.}
 
 \item{method}{\code{"first"} (the default) keeps the first record seen for
 each RAD tag, giving the same result every time. \code{"random"} picks one

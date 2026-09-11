@@ -22,7 +22,7 @@ make_H <- function(A1, A2, locus = NULL, locus_raw = NULL, n_alleles = NULL,
 
 test_that("differentiation_stats()'s internal WC formula matches hierfstat::wc()/pairwise.WCfst()", {
   testthat::skip_if_not_installed("hierfstat")
-  H <- suppressMessages(read_haps_vcf(fx("small.haps.vcf")))
+  H <- suppressMessages(read_stacks_vcf(fx("small.haps.vcf")))
   pops <- suppressMessages(read_popmap(fx("small_popmap.tsv"), H$samples))
 
   ## Compute hierfstat's own numbers on the exact same data/dat-encoding
@@ -132,7 +132,7 @@ test_that("FST and D increase as two populations' allele frequencies diverge fur
 ## ---------------------------------------------------------------------------
 
 test_that("differentiation_stats() returns the documented shape and honors nboot = 0", {
-  H <- suppressMessages(read_haps_vcf(fx("small.haps.vcf"), verbose = FALSE))
+  H <- suppressMessages(read_stacks_vcf(fx("small.haps.vcf"), verbose = FALSE))
   out <- suppressMessages(capture.output(
     res <- differentiation_stats(H, fx("small_popmap.tsv"), nboot = 0,
                                   stem = "shape", outdir = tempfile("dd-"), verbose = FALSE)
@@ -143,6 +143,6 @@ test_that("differentiation_stats() returns the documented shape and honors nboot
 })
 
 test_that("differentiation_stats() requires stem when given an H list, and >= 2 populations", {
-  H <- suppressMessages(read_haps_vcf(fx("small.haps.vcf"), verbose = FALSE))
+  H <- suppressMessages(read_stacks_vcf(fx("small.haps.vcf"), verbose = FALSE))
   expect_error(differentiation_stats(H, fx("small_popmap.tsv"), nboot = 0, verbose = FALSE), "stem")
 })

@@ -45,7 +45,7 @@
 #'
 #' @param vcf_file Path to `populations.snps.vcf` or `populations.haps.vcf`
 #'   (optionally gzip-compressed) -- OR, an already-parsed (and optionally
-#'   filtered) `H` list, i.e. the object returned by [read_haps_vcf()], on
+#'   filtered) `H` list, i.e. the object returned by [read_stacks_vcf()], on
 #'   its own or passed through one or more `filter_*()` functions first (see
 #'   `R/filter_loci.R`). When passing a list, `stem` must also be given (see
 #'   below), since the usual output-filename logic needs a real filename to

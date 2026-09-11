@@ -7,7 +7,7 @@
 write_genepop(H, path, pops, title = "RADdiversity export", verbose = TRUE)
 }
 \arguments{
-\item{H}{A list as returned by \code{\link[=read_haps_vcf]{read_haps_vcf()}}.}
+\item{H}{A list as returned by \code{\link[=read_stacks_vcf]{read_stacks_vcf()}}.}
 
 \item{path}{Output file path.}
 
@@ -33,7 +33,7 @@ manual, including its missing-data code (all-zero allele codes, e.g.
 }
 \examples{
 # Column (sample) names on A1/A2 matter here -- write_genepop() looks
-# up each population's samples by name, exactly as read_haps_vcf()'s
+# up each population's samples by name, exactly as read_stacks_vcf()'s
 # real output always allows.
 H <- list(
   A1 = matrix(c(1L, 2L), nrow = 1, dimnames = list(NULL, c("a1", "a2"))),

@@ -1,7 +1,7 @@
 fx <- function(name) test_path("fixtures", name)
 
 ## A small hand-built H, for tests that don't need a real VCF file. Mirrors
-## exactly the shape read_haps_vcf() returns, including sample-named
+## exactly the shape read_stacks_vcf() returns, including sample-named
 ## columns on A1/A2 (several filters look samples up by name).
 make_H <- function(A1, A2, locus = NULL, locus_raw = NULL, n_alleles = NULL,
                     alleles = NULL, samples = NULL, fields = NULL) {
@@ -219,7 +219,7 @@ test_that("filter_thin_one_snp() rejects an inexact `method`", {
 ## ---------------------------------------------------------------------------
 
 test_that("filter_low_conf_alt() flags each fixture row exactly as documented", {
-  H <- suppressMessages(read_haps_vcf(fx("small_ad.haps.vcf")))
+  H <- suppressMessages(read_stacks_vcf(fx("small_ad.haps.vcf")))
   res <- filter_low_conf_alt(H, min_alt_reads = 2, mode = "mask", verbose = FALSE)
   ls <- res$locus_summary
   row <- function(loc) ls[ls$locus == loc, ]
@@ -239,7 +239,7 @@ test_that("filter_low_conf_alt() flags each fixture row exactly as documented", 
 })
 
 test_that("filter_low_conf_alt() mode='mask' changes only the flagged cells", {
-  H <- suppressMessages(read_haps_vcf(fx("small_ad.haps.vcf")))
+  H <- suppressMessages(read_stacks_vcf(fx("small_ad.haps.vcf")))
   res <- filter_low_conf_alt(H, min_alt_reads = 2, mode = "mask", verbose = FALSE)
   j <- match("locus_ad1", H$locus)
   expect_true(is.na(res$H$A1[j, "popA_1"]))   # the flagged cell is now missing
@@ -249,7 +249,7 @@ test_that("filter_low_conf_alt() mode='mask' changes only the flagged cells", {
 })
 
 test_that("filter_low_conf_alt() mode='drop' respects drop_frac at its exact boundary", {
-  H <- suppressMessages(read_haps_vcf(fx("small_ad.haps.vcf")))
+  H <- suppressMessages(read_stacks_vcf(fx("small_ad.haps.vcf")))
   in_result <- function(drop_frac) {
     r <- filter_low_conf_alt(H, min_alt_reads = 2, mode = "drop", drop_frac = drop_frac, verbose = FALSE)
     "locus_ad8" %in% r$H$locus
@@ -261,13 +261,13 @@ test_that("filter_low_conf_alt() mode='drop' respects drop_frac at its exact bou
 })
 
 test_that("locus_summary$kept agrees with the drop rule for every locus", {
-  H <- suppressMessages(read_haps_vcf(fx("small_ad.haps.vcf")))
+  H <- suppressMessages(read_stacks_vcf(fx("small_ad.haps.vcf")))
   res <- filter_low_conf_alt(H, min_alt_reads = 2, mode = "drop", drop_frac = 0.2, verbose = FALSE)
   expect_equal(res$locus_summary$kept, res$locus_summary$flagged_fraction <= 0.2 + 1e-9)
 })
 
 test_that("masking then dropping does not reproduce the two independent Python-script views", {
-  H <- suppressMessages(read_haps_vcf(fx("small_ad.haps.vcf")))
+  H <- suppressMessages(read_stacks_vcf(fx("small_ad.haps.vcf")))
   masked <- filter_low_conf_alt(H, min_alt_reads = 2, mode = "mask", verbose = FALSE)$H
   ## After masking, the flagged calls are gone -- a further drop pass, even
   ## at drop_frac = 0, has nothing left to drop.
@@ -276,7 +276,7 @@ test_that("masking then dropping does not reproduce the two independent Python-s
 })
 
 test_that("low_conf_alt_sensitivity() is monotonic and agrees with filter_low_conf_alt() at its own threshold", {
-  H <- suppressMessages(read_haps_vcf(fx("small_ad.haps.vcf")))
+  H <- suppressMessages(read_stacks_vcf(fx("small_ad.haps.vcf")))
   sens <- low_conf_alt_sensitivity(H, thresholds = c(1, 2, 3, 4, 5, 10))
   expect_true(all(diff(sens$n_flagged) >= 0))
   res <- filter_low_conf_alt(H, min_alt_reads = 2, mode = "mask", verbose = FALSE)

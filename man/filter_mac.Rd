@@ -7,7 +7,7 @@
 filter_mac(H, min_mac, stats = NULL, verbose = TRUE)
 }
 \arguments{
-\item{H}{A list as returned by \code{\link[=read_haps_vcf]{read_haps_vcf()}}.}
+\item{H}{A list as returned by \code{\link[=read_stacks_vcf]{read_stacks_vcf()}}.}
 
 \item{min_mac}{Minimum minor allele count a locus must have to be kept
 (a whole number, e.g. \code{3}).}

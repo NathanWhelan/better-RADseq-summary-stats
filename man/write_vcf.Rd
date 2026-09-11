@@ -7,12 +7,12 @@
 write_vcf(H, path, verbose = TRUE)
 }
 \arguments{
-\item{H}{A list as returned by \code{\link[=read_haps_vcf]{read_haps_vcf()}}. Must still have its
+\item{H}{A list as returned by \code{\link[=read_stacks_vcf]{read_stacks_vcf()}}. Must still have its
 \code{fields} element (present by default; only missing if \code{H} was built by
 hand rather than from a real VCF file).}
 
 \item{path}{Output file path. Ending it in \code{.gz} writes a gzip-compressed
-file, same as \code{\link[=read_haps_vcf]{read_haps_vcf()}} can read back in.}
+file, same as \code{\link[=read_stacks_vcf]{read_stacks_vcf()}} can read back in.}
 
 \item{verbose}{Print a short summary once written. Default \code{TRUE}.}
 }
@@ -22,7 +22,7 @@ file, same as \code{\link[=read_haps_vcf]{read_haps_vcf()}} can read back in.}
 \description{
 Serializes \code{H} -- including any changes made by \code{\link[=filter_maf]{filter_maf()}},
 \code{\link[=filter_low_conf_alt]{filter_low_conf_alt()}}, or any other filter in this package -- back into
-a valid VCF file, so it can be re-read with \code{\link[=read_haps_vcf]{read_haps_vcf()}} or handed to
+a valid VCF file, so it can be re-read with \code{\link[=read_stacks_vcf]{read_stacks_vcf()}} or handed to
 another VCF-based tool.
 }
 \details{
@@ -44,7 +44,7 @@ vcf_lines <- c(
 )
 in_file <- tempfile(fileext = ".vcf")
 writeLines(vcf_lines, in_file)
-H <- read_haps_vcf(in_file, verbose = FALSE)
+H <- read_stacks_vcf(in_file, verbose = FALSE)
 out_file <- tempfile(fileext = ".vcf")
 write_vcf(H, out_file, verbose = FALSE)
 cat(readLines(out_file), sep = "\n")

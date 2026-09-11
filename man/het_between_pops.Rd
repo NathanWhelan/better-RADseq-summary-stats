@@ -18,7 +18,7 @@ het_between_pops(
 \item{vcf_file}{Path to a Stacks VCF (\code{populations.snps.vcf} or
 \code{populations.haps.vcf}, optionally gzip-compressed) -- OR, an already-
 parsed (and optionally filtered) \code{H} list, i.e. the object returned by
-\code{\link[=read_haps_vcf]{read_haps_vcf()}}, on its own or passed through one or more \verb{filter_*()}
+\code{\link[=read_stacks_vcf]{read_stacks_vcf()}}, on its own or passed through one or more \verb{filter_*()}
 functions first (see \code{R/filter_loci.R}). Passing a list skips re-reading
 and re-parsing the VCF file.}
 

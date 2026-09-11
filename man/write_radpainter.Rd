@@ -7,7 +7,7 @@
 write_radpainter(H, path, verbose = TRUE)
 }
 \arguments{
-\item{H}{A list as returned by \code{\link[=read_haps_vcf]{read_haps_vcf()}}, ideally from a
+\item{H}{A list as returned by \code{\link[=read_stacks_vcf]{read_stacks_vcf()}}, ideally from a
 haplotype VCF.}
 
 \item{path}{Output file path.}

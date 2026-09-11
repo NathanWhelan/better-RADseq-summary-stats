@@ -14,7 +14,7 @@ filter_low_conf_alt(
 )
 }
 \arguments{
-\item{H}{A list as returned by \code{\link[=read_haps_vcf]{read_haps_vcf()}}.}
+\item{H}{A list as returned by \code{\link[=read_stacks_vcf]{read_stacks_vcf()}}.}
 
 \item{min_alt_reads}{A genotype call with this many or fewer reads
 supporting its ALT allele(s) is flagged. Default \code{2}. See
@@ -76,7 +76,7 @@ vcf_lines <- c(
 )
 vcf_file <- tempfile(fileext = ".vcf")
 writeLines(vcf_lines, vcf_file)
-H <- read_haps_vcf(vcf_file, verbose = FALSE)
+H <- read_stacks_vcf(vcf_file, verbose = FALSE)
 res <- filter_low_conf_alt(H, min_alt_reads = 2, verbose = FALSE)
 res$flagged_calls  # ind2's call at locus_1 is flagged (1 <= 2 ALT reads)
 }

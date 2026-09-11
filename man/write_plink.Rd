@@ -13,7 +13,7 @@ write_plink(
 )
 }
 \arguments{
-\item{H}{A list as returned by \code{\link[=read_haps_vcf]{read_haps_vcf()}}.}
+\item{H}{A list as returned by \code{\link[=read_stacks_vcf]{read_stacks_vcf()}}.}
 
 \item{path_prefix}{Output files are \verb{<path_prefix>.map} and
 \verb{<path_prefix>.ped}.}

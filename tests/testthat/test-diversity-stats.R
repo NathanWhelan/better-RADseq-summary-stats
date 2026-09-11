@@ -16,6 +16,18 @@ test_that("diversity_stats() returns the expected structure on a small fixture",
   expect_true(file.exists(file.path(outdir, "diversity_richness.haps.tsv")))
 })
 
+test_that("diversity_stats(hierfstat_check = TRUE) agrees with hierfstat", {
+  skip_if_not_installed("hierfstat")
+  outdir <- tempfile("raddiversity-test-")
+  dir.create(outdir)
+  on.exit(unlink(outdir, recursive = TRUE), add = TRUE)
+  msgs <- capture_messages(expect_no_warning(invisible(capture.output(
+    diversity_stats(fx("small.haps.vcf"), fx("small_popmap.tsv"), g = 4, nboot = 0,
+                    outdir = outdir, hierfstat_check = TRUE)))))
+  expect_true(any(grepl("cross-check vs hierfstat::basic.stats", msgs)))
+  expect_true(any(grepl("cross-check vs hierfstat::allelic.richness", msgs)))
+})
+
 test_that("diversity_stats() requires g and validates its arguments", {
   expect_error(diversity_stats(fx("small.haps.vcf"), fx("small_popmap.tsv")),
                "missing")

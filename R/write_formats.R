@@ -502,8 +502,7 @@ write_radpainter <- function(H, path, verbose = TRUE) {
   ## and/or a locus commonly has more than 2 of them. If NEITHER is true
   ## anywhere in this dataset, it's very likely per-site SNP data instead --
   ## still writeable, just probably not what RADpainter is meant to analyze.
-  looks_snp <- max(H$n_alleles) <= 2L &&
-    all(nchar(unlist(H$alleles, use.names = FALSE)) == 1L)
+  looks_snp <- !.is_haplotype_H(H)
   if (looks_snp && verbose)
     message("write_radpainter(): every locus here looks biallelic with single-",
             "nucleotide alleles, i.e. this looks like SNP data rather than RAD-tag ",

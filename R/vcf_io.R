@@ -186,6 +186,51 @@ read_haps_vcf <- function(path, verbose = TRUE) {
   vcf_file
 }
 
+## Not exported. Input checks shared by diversity_stats(), het_between_pops()
+## and differentiation_stats(), run before any (potentially slow) reading.
+.check_run_inputs <- function(vcf_file, popmap_f, stem) {
+  if (is.character(vcf_file) && !file.exists(vcf_file))
+    stop("VCF file not found: ", vcf_file, "\n  Check the path and try again.")
+  if (!is.character(vcf_file) && is.null(stem))
+    stop("vcf_file is an already-parsed list rather than a file path, so its ",
+         "filename can't be used to name the output files. Pass stem ",
+         "explicitly, e.g. stem = \"haps\" or stem = \"snps\", matching which ",
+         "VCF this data came from.")
+  if (!file.exists(popmap_f))
+    stop("Popmap file not found: ", popmap_f, "\n  Check the path and try again.")
+  invisible(NULL)
+}
+
+## Not exported. Is H a haplotype VCF (one multi-allelic record per RAD tag)
+## rather than a SNP VCF (one site per record)? Either signal is decisive:
+## Stacks writes multi-nucleotide alleles ("AC", "CA") for haplotype records
+## and single bases for SNP records, and haplotype records are often
+## multi-allelic.
+.is_haplotype_H <- function(H)
+  max(H$n_alleles) > 2L || any(nchar(unlist(H$alleles, use.names = FALSE)) > 1L)
+
+## Not exported. Typed (non-missing) individuals per record and population:
+## an integer matrix, one row per record of H, one column per population.
+.typed_by_pop <- function(H, pops) {
+  out <- vapply(pops, function(ids) rowSums(!is.na(H$A1[, ids, drop = FALSE])),
+                numeric(nrow(H$A1)))
+  out <- matrix(out, nrow = nrow(H$A1), dimnames = list(NULL, names(pops)))
+  storage.mode(out) <- "integer"
+  out
+}
+
+## Not exported. H (records `rows`) as the data frame hierfstat expects: a
+## population number, then one column per locus with each genotype as a
+## 3-digits-per-allele integer (alleles 1 and 12 -> 1012).
+.to_hierfstat_df <- function(H, pops, rows = seq_len(nrow(H$A1))) {
+  ids <- unlist(pops, use.names = FALSE)
+  a <- H$A1[rows, ids, drop = FALSE]; b <- H$A2[rows, ids, drop = FALSE]
+  Gm <- t(pmin(a, b) * 1000L + pmax(a, b))           # individuals x loci
+  dat <- data.frame(pop = rep(seq_along(pops), lengths(pops)), Gm, row.names = NULL)
+  names(dat)[-1] <- paste0("L", seq_along(rows))
+  dat
+}
+
 ## Not exported. The text used in output filenames, e.g.
 ## diversity_per_population.<stem>.tsv. A caller-supplied `stem` always wins;
 ## otherwise it comes from the VCF's own name (populations.haps.vcf.gz ->

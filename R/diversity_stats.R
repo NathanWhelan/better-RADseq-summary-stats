@@ -23,8 +23,9 @@
 #           where EVERY individual of EVERY population is genotyped (Schmidt
 #           et al. 2021). Watch the retention lines either way.
 #
-#  Engine: hierfstat when installed, internal fallback otherwise; the run says
-#  which. Validation provenance is in README.md, Step 0.
+#  Engine: this package's own estimators (R/estimators.R). With
+#  hierfstat_check = TRUE they are cross-checked against hierfstat when it is
+#  installed. Validation provenance is in README.md, Step 0.
 #
 ###############################################################################
 
@@ -106,6 +107,14 @@
 #'   rather than guessing. Default `NULL` (derive automatically from
 #'   `vcf_file` when it is a path; required otherwise). Supplying `stem`
 #'   alongside a path overrides the automatic derivation.
+#' @param hierfstat_check If `TRUE` and the `hierfstat` package is installed,
+#'   also compute per-locus Ho/Hs with `hierfstat::basic.stats()` and
+#'   rarefied allelic richness with `hierfstat::allelic.richness()`, and
+#'   report the largest difference from this package's own values (with a
+#'   warning if they disagree). Default `FALSE`: every number is computed by
+#'   this package either way, the package tests already make this comparison,
+#'   and on large datasets the hierfstat calls were most of the run time. For
+#'   Weir & Cockerham FST, use [differentiation_stats()].
 #' @return Invisibly, a list with elements `per_population`, `richness`, and
 #'   `autosomal` (`NULL` unless `sites` gave at least one population a
 #'   plausible value -- see `sites` above; when present it is also written
@@ -116,7 +125,7 @@ diversity_stats <- function(vcf_file, popmap_f, g, nboot = 10000L,
                              boot = "loci",
                              sites = 0, min_n = 2L, complete_case = FALSE,
                              outdir = ".", seed = 2024, verbose = TRUE,
-                             stem = NULL) {
+                             stem = NULL, hierfstat_check = FALSE) {
 
   g <- as.integer(g)
   if (is.na(g)) stop("g must be an integer (gene copies).")
@@ -146,15 +155,7 @@ diversity_stats <- function(vcf_file, popmap_f, g, nboot = 10000L,
   ## `stem` supplied up front (checked here, before any of the potentially
   ## slow work below runs), since the output filenames later in this
   ## function have no other way to know what to call themselves.
-  if (is.character(vcf_file) && !file.exists(vcf_file))
-    stop("VCF file not found: ", vcf_file, "\n  Check the path and try again.")
-  if (!is.character(vcf_file) && is.null(stem))
-    stop("vcf_file is an already-parsed list rather than a file path, so its ",
-         "filename can't be used to name the output files (see \"diversity_per_",
-         "population.<stem>.tsv\" below). Pass stem explicitly, e.g. ",
-         "stem = \"haps\" or stem = \"snps\", matching which VCF this data came from.")
-  if (!file.exists(popmap_f))
-    stop("Popmap file not found: ", popmap_f, "\n  Check the path and try again.")
+  .check_run_inputs(vcf_file, popmap_f, stem)
   dir.create(outdir, showWarnings = FALSE, recursive = TRUE)
   ## Restore the caller's RNG state on exit -- this function is meant to be
   ## called interactively (not just as a fresh Rscript process), so
@@ -170,7 +171,9 @@ diversity_stats <- function(vcf_file, popmap_f, g, nboot = 10000L,
   old_opts <- options(width = 200)
   on.exit(options(old_opts), add = TRUE)
 
-  have_hf <- requireNamespace("hierfstat", quietly = TRUE)
+  have_hf <- isTRUE(hierfstat_check) && .hierfstat_available()
+  if (isTRUE(hierfstat_check) && !have_hf)
+    message("hierfstat_check = TRUE but hierfstat is not installed; skipping the cross-check.")
 
   if (is.character(vcf_file)) message("Reading ", vcf_file, " ...")
   H <- .resolve_H(vcf_file, verbose = verbose)
@@ -205,8 +208,7 @@ diversity_stats <- function(vcf_file, popmap_f, g, nboot = 10000L,
   ## SNP records, and haplotype records are frequently multi-allelic. Either one
   ## is decisive. This matters because the autosomal conversion below is only
   ## nucleotide diversity when one record is one SITE.
-  is_hapvcf <- max(H$n_alleles) > 2L ||
-               any(nchar(unlist(H$alleles, use.names = FALSE)) > 1L)
+  is_hapvcf <- .is_haplotype_H(H)
   message(sprintf("  record type: %s",
                   if (is_hapvcf) "HAPLOTYPE (one multi-allelic locus per RAD tag)"
                   else "SNP (one site per record)"))
@@ -228,9 +230,7 @@ diversity_stats <- function(vcf_file, popmap_f, g, nboot = 10000L,
   ## per-cell threshold below, the reporting, and (for complete_case) the old
   ## joint filter.
   ## ---------------------------------------------------------------------------
-  n_typed <- matrix(NA_integer_, n_rec, r, dimnames = list(NULL, names(pops)))
-  for (p in names(pops))
-    n_typed[, p] <- rowSums(!is.na(H$A1[, pops[[p]], drop = FALSE]))
+  n_typed <- .typed_by_pop(H, pops)
 
   cells_used <- cells_total <- NA_real_
   if (complete_case) {
@@ -273,75 +273,41 @@ diversity_stats <- function(vcf_file, popmap_f, g, nboot = 10000L,
   rad_k <- rad[idx]; uloc <- unique(rad_k); li <- match(rad_k, uloc); nL <- length(uloc)
 
   ## ---------------------------------------------------------------------------
-  ## hierfstat-format data frame: population, then one column per locus,
-  ## genotypes as 3-digits-per-allele integers.
+  ## Per-locus Ho, Hs and Hp, and the allele-count table everything later is
+  ## built from:
+  ##   Ho[j, i]  fraction of population i's typed individuals heterozygous at j
+  ##   Hs[j, i]  Nei & Chesser (1983) gene diversity, hs_from_counts()
+  ##   Hp[j, i]  the SAME quantity with the estimator behind Stacks' `Pi`
+  ##             (gene_div_2n_counts()), so the two can be printed side by side
+  ##             and the reader can see exactly where they diverge; not used
+  ##             for anything downstream
+  ## `lown` marks cells with fewer than min_n typed individuals: below 2, Hs is
+  ## undefined; above that, min_n is the caller's own floor. Under
+  ## complete_case every used cell is fully typed, so the floor is just 2 and
+  ## the mask is empty.
   ## ---------------------------------------------------------------------------
-  ids <- unlist(pops, use.names = FALSE)
-  popvec <- rep(seq_len(r), lengths(pops))
-  Gm <- matrix(NA_integer_, length(ids), L)
-  for (j in seq_len(L)) {
-    a <- H$A1[idx[j], ids]; b <- H$A2[idx[j], ids]
-    Gm[, j] <- pmin(a, b) * 1000L + pmax(a, b)
-  }
-  dat <- data.frame(pop = popvec, Gm)
-  names(dat)[-1] <- paste0("L", seq_len(L))
-
-  ## ---------------------------------------------------------------------------
-  ## Per-locus Ho and Hs
-  ## ---------------------------------------------------------------------------
-  bs <- NULL
-  if (have_hf) {
-    message("Engine: hierfstat::basic.stats()")
-    bs <- hierfstat::basic.stats(dat, diploid = TRUE, digits = 12)
-    Ho <- as.matrix(bs$Ho); Hs <- as.matrix(bs$Hs)
-    colnames(Ho) <- colnames(Hs) <- names(pops)
-  } else {
-    message("Engine: internal (hierfstat not installed).")
-    message("  Validated against hierfstat's source: Hs to 5.0e-13, FIS to 3.2e-13.")
-    Ho <- Hs <- matrix(NA_real_, L, r, dimnames = list(NULL, names(pops)))
-    for (j in seq_len(L)) for (i in seq_len(r)) {
-      a <- H$A1[idx[j], pops[[i]]]; b <- H$A2[idx[j], pops[[i]]]
-      ok <- !is.na(a); n <- sum(ok)
-      if (n < 2) next
-      ho <- mean(a[ok] != b[ok])
-      cnt <- tabulate(c(a[ok], b[ok]), nbins = H$n_alleles[idx[j]])
-      Ho[j, i] <- ho; Hs[j, i] <- hs_from_counts(cnt, ho, n)
-    }
-  }
-  ## Enforce `min_n` uniformly regardless of engine, but ONLY in available-data
-  ## mode: min_n is documented as ignored under complete_case, and every used
-  ## cell there already has n_typed == that population's own size by
-  ## construction (the joint filter above), so this would be a no-op anyway
-  ## unless a user passed a min_n exceeding a population's size together with
-  ## complete_case -- skip it outright rather than depend on that coincidence.
-  ## hierfstat::basic.stats() computes Ho/Hs from whatever individuals are
-  ## non-missing at each cell (down to n = 1, where Hs is undefined and it
-  ## already reports NaN/NA) -- it has no way to know the caller's chosen
-  ## floor, so apply it here rather than trusting each engine to enforce the
-  ## same threshold independently.
-  if (!complete_case) {
-    nt_idx <- n_typed[idx, , drop = FALSE]
-    lown <- nt_idx < min_n
-    Ho[lown] <- NA_real_; Hs[lown] <- NA_real_
-  } else {
-    lown <- matrix(FALSE, L, r, dimnames = list(NULL, names(pops)))
-  }
+  message("Engine: internal (Nei & Chesser Hs, R/estimators.R)",
+          if (have_hf) "; hierfstat cross-check requested" else "")
+  min_n_eff <- if (complete_case) 2L else min_n
+  lown <- n_typed[idx, , drop = FALSE] < min_n_eff
+  Ho <- Hs <- Hp <- matrix(NA_real_, L, r, dimnames = list(NULL, names(pops)))
+  for (i in seq_len(r))    # NaN where nobody is typed; masked by `lown` below
+    Ho[, i] <- rowMeans(H$A1[idx, pops[[i]], drop = FALSE] !=
+                        H$A2[idx, pops[[i]], drop = FALSE], na.rm = TRUE)
   n_all <- matrix(NA_integer_, L, r, dimnames = list(NULL, names(pops)))
-  ## Hp: the SAME per-locus quantity computed with the estimator behind Stacks'
-  ## `Pi` column, so the two can be reported side by side and the reader can see
-  ## exactly where they diverge. Not used for anything downstream.
-  Hp <- matrix(NA_real_, L, r, dimnames = list(NULL, names(pops)))
   cmats <- vector("list", L)
   for (j in seq_len(L)) {
-    m <- matrix(0L, r, H$n_alleles[idx[j]], dimnames = list(names(pops), NULL))
+    k <- H$n_alleles[idx[j]]
+    m <- matrix(0L, r, k, dimnames = list(names(pops), NULL))
     for (i in seq_len(r)) {
-      a <- H$A1[idx[j], pops[[i]]]; b <- H$A2[idx[j], pops[[i]]]
-      v <- c(a, b); v <- v[!is.na(v)]
-      m[i, ] <- tabulate(v, nbins = H$n_alleles[idx[j]])
+      v <- c(H$A1[idx[j], pops[[i]]], H$A2[idx[j], pops[[i]]])
+      m[i, ] <- tabulate(v[!is.na(v)], nbins = k)
       Hp[j, i] <- gene_div_2n_counts(m[i, ])
+      if (!lown[j, i]) Hs[j, i] <- hs_from_counts(m[i, ], Ho[j, i], n_typed[idx[j], i])
     }
     cmats[[j]] <- m; n_all[j, ] <- rowSums(m > 0)
   }
+  Ho[lown] <- NA_real_
 
   ## ---------------------------------------------------------------------------
   ## Rarefied allelic and private allelic richness, over GENE COPIES
@@ -354,18 +320,27 @@ diversity_stats <- function(vcf_file, popmap_f, g, nboot = 10000L,
     for (i in seq_len(r)) Ar[j, i] <- rare_richness(cmats[[j]][i, ], g)
     Pr[j, ] <- rare_private_all(cmats[[j]], g)
   }
-  ## Enforce `min_n` on Ar/Pr too, mirroring the Ho/Hs mask above (same
-  ## available-data-mode-only scope, same reasoning). Without this, min_n
-  ## changes Ho/He/Fis but silently has no effect on allelic richness: `cmats`
-  ## above is built from every typed individual regardless of min_n, so a
-  ## locus/population cell with, say, only 1 typed individual would otherwise
-  ## still contribute an Ar/privAr value even after raising min_n past that.
-  ## `lown` (built above from the same `n_typed[idx, ]` matrix) has matching
-  ## dimensions, so it applies directly.
-  if (!complete_case) {
-    Ar[lown] <- NA_real_; Pr[lown] <- NA_real_
-  }
+  ## Enforce `min_n` on Ar/Pr too, mirroring the Ho/Hs mask above. Without
+  ## this, min_n changes Ho/He/Fis but silently has no effect on allelic
+  ## richness: `cmats` above is built from every typed individual regardless of
+  ## min_n, so a locus/population cell with, say, only 1 typed individual
+  ## would otherwise still contribute an Ar/privAr value even after raising
+  ## min_n past that.
+  Ar[lown] <- NA_real_; Pr[lown] <- NA_real_
+
+  ## Optional cross-check against hierfstat (hierfstat_check = TRUE). Every
+  ## number reported comes from this package; this only prints how far
+  ## hierfstat's own values are from them.
   if (have_hf) {
+    dat <- .to_hierfstat_df(H, pops, idx)
+    bs <- try(hierfstat::basic.stats(dat, diploid = TRUE, digits = 12), silent = TRUE)
+    if (!inherits(bs, "try-error")) {
+      d_ho <- max(abs(as.matrix(bs$Ho)[!lown] - Ho[!lown]), na.rm = TRUE)
+      d_hs <- max(abs(as.matrix(bs$Hs)[!lown] - Hs[!lown]), na.rm = TRUE)
+      message(sprintf("  cross-check vs hierfstat::basic.stats(): max diff Ho %.2e, Hs %.2e",
+                      d_ho, d_hs))
+      if (max(d_ho, d_hs) > 1e-8) warning("Ho/Hs disagree with hierfstat::basic.stats().")
+    }
     hfar <- try(hierfstat::allelic.richness(dat, min.n = g)$Ar, silent = TRUE)
     ## hierfstat pads a "dummy.loc" row onto its result when given exactly one
     ## locus, so hfar and Ar disagree in shape and cannot be diffed. That only
@@ -451,10 +426,6 @@ diversity_stats <- function(vcf_file, popmap_f, g, nboot = 10000L,
     out
   }
 
-  ## min_n is documented as ignored under complete_case (every used cell
-  ## already has every individual typed there by construction); the floor of
-  ## 2 is the mathematical minimum below which Hs/FIS are undefined regardless.
-  min_n_eff <- if (complete_case) 2L else min_n
 
   ## The boot="individuals"/boot="both" engine: recomputes every statistic
   ## from a fresh per-population individual reweighting, for a given locus
@@ -471,10 +442,8 @@ diversity_stats <- function(vcf_file, popmap_f, g, nboot = 10000L,
   ## recomputing directly (Rubin 1981 exchangeable weighting) -- cheaper here
   ## because a weight vector is drawn once per replicate, not once per locus.
   ##
-  ## hierfstat's own functions cannot accept a weighted/resampled individual
-  ## set, so this always uses this package's internal formulas (validated
-  ## against hierfstat's source to 5.0e-13/3.2e-13), even when hierfstat is
-  ## installed and used for the point estimate and for boot="loci".
+  ## Uses the same internal formulas as the point estimate, fed the
+  ## resampled (weighted) counts.
   ##
   ## COVERAGE CAVEAT (why this is not the default): a duplicated individual
   ## (weight > 1) makes the resample's He/Fis/Ar/privAr come out biased low,
@@ -850,22 +819,8 @@ diversity_stats <- function(vcf_file, popmap_f, g, nboot = 10000L,
   see("Which file for which statistic")
   cat("---------------------------------------------------------------------\n")
 
-  ## Weir & Cockerham, straight from the package
-  if (have_hf) {
-    w <- try(hierfstat::wc(dat), silent = TRUE)
-    if (!inherits(w, "try-error")) {
-      cat(sprintf("\nWeir & Cockerham via hierfstat::wc():  FST %.4f   FIS %.4f\n",
-                  w$FST, w$FIS))
-      cat("  wc()'s FIS is the metapopulation value across all populations; the\n")
-      cat("  per-population column above is the one to report per population.\n")
-    }
-    bsov <- try(round(bs$overall, 4), silent = TRUE)
-    if (!inherits(bsov, "try-error")) {
-      cat("\nhierfstat::basic.stats() overall\n"); print(bsov)
-    }
-  } else {
-    cat("\nInstall hierfstat for Weir & Cockerham FST: install.packages(\"hierfstat\")\n")
-  }
+  cat("\nFor Weir & Cockerham FST, Jost's D and Weir & Goudet's beta between these\n")
+  cat("populations, run differentiation_stats() on the same file.\n")
 
   if (nboot > 0 && r == 2) {
     p1 <- names(pops)[1]; p2 <- names(pops)[2]

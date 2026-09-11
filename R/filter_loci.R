@@ -353,9 +353,7 @@ filter_call_rate <- function(H, min_call, pops = NULL, rule = "all", verbose = T
         format(n_rec, big.mark = ","), 100 * mean(keep)))
   } else {
     r <- length(pops)
-    cr_pop <- matrix(NA_real_, n_rec, r, dimnames = list(NULL, names(pops)))
-    for (p in names(pops))
-      cr_pop[, p] <- rowMeans(!is.na(H$A1[, pops[[p]], drop = FALSE]))
+    cr_pop <- sweep(.typed_by_pop(H, pops), 2L, lengths(pops), "/")
     ok_pop <- cr_pop >= min_call - 1e-9
     ## rowSums(ok_pop) counts how many populations clear the threshold at
     ## each locus; "all" needs that count to equal every population, "any"

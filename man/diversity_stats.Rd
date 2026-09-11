@@ -16,7 +16,8 @@ diversity_stats(
   outdir = ".",
   seed = 2024,
   verbose = TRUE,
-  stem = NULL
+  stem = NULL,
+  hierfstat_check = FALSE
 )
 }
 \arguments{
@@ -94,6 +95,15 @@ so \code{stem} must be supplied explicitly in that case (e.g.
 rather than guessing. Default \code{NULL} (derive automatically from
 \code{vcf_file} when it is a path; required otherwise). Supplying \code{stem}
 alongside a path overrides the automatic derivation.}
+
+\item{hierfstat_check}{If \code{TRUE} and the \code{hierfstat} package is installed,
+also compute per-locus Ho/Hs with \code{hierfstat::basic.stats()} and
+rarefied allelic richness with \code{hierfstat::allelic.richness()}, and
+report the largest difference from this package's own values (with a
+warning if they disagree). Default \code{FALSE}: every number is computed by
+this package either way, the package tests already make this comparison,
+and on large datasets the hierfstat calls were most of the run time. For
+Weir & Cockerham FST, use \code{\link[=differentiation_stats]{differentiation_stats()}}.}
 }
 \value{
 Invisibly, a list with elements \code{per_population}, \code{richness}, and

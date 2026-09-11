@@ -41,9 +41,10 @@
 #  loci with 2-4 alleles each, random missingness INCLUDING a population with
 #  zero individuals genotyped at a locus), and they agree to machine
 #  precision (~1e-16) for the global value and every pairwise value.
-#  hierfstat is also used at run time, when installed, for two things this
-#  package does not reimplement: Weir & Goudet's beta, and a printed
-#  cross-check of this run's own global FST against hierfstat::wc()'s.
+#  hierfstat is also used at run time, when installed, for Weir & Goudet's
+#  beta (which this package does not reimplement) and -- only with
+#  hierfstat_check = TRUE -- a printed cross-check of this run's own global
+#  FST against hierfstat::wc()'s.
 #
 #  Jost's D has no hierfstat equivalent. `.jost_hsht()` below is an
 #  ADAPTATION -- not an independent re-derivation from the Jost (2008)
@@ -340,6 +341,10 @@
 #'   <TAB> population`).
 #' @param nboot Bootstrap replicates over RAD loci. Default `10000L`; `0` =
 #'   none (only the jackknife standard error is then available).
+#' @param hierfstat_check If `TRUE` and `hierfstat` is installed, also run
+#'   `hierfstat::wc()` and report how far its global FST is from this
+#'   package's. Default `FALSE` (the package tests already make this
+#'   comparison, and `wc()` was most of the run time on large datasets).
 #' @return Invisibly, a list:
 #'   \describe{
 #'     \item{global}{One-row data frame: `FST`, `FST_se`, `FST_lo`, `FST_hi`,
@@ -374,18 +379,11 @@
 #' @export
 differentiation_stats <- function(vcf_file, popmap_f, nboot = 10000L,
                                    outdir = ".", seed = 2024, verbose = TRUE,
-                                   stem = NULL) {
+                                   stem = NULL, hierfstat_check = FALSE) {
 
   nboot <- as.integer(nboot)
   if (is.na(nboot) || nboot < 0) stop("nboot must be a non-negative integer.")
-  if (is.character(vcf_file) && !file.exists(vcf_file))
-    stop("VCF file not found: ", vcf_file, "\n  Check the path and try again.")
-  if (!is.character(vcf_file) && is.null(stem))
-    stop("vcf_file is an already-parsed list rather than a file path, so its ",
-         "filename can't be used to name the output files. Pass stem ",
-         "explicitly, e.g. stem = \"haps\" or stem = \"snps\".")
-  if (!file.exists(popmap_f))
-    stop("Popmap file not found: ", popmap_f, "\n  Check the path and try again.")
+  .check_run_inputs(vcf_file, popmap_f, stem)
   dir.create(outdir, showWarnings = FALSE, recursive = TRUE)
 
   ## Same RNG-preservation convention as diversity_stats()/het_between_pops():
@@ -396,7 +394,7 @@ differentiation_stats <- function(vcf_file, popmap_f, nboot = 10000L,
   on.exit(restore_rng(), add = TRUE)
   set.seed(seed)
 
-  have_hf <- requireNamespace("hierfstat", quietly = TRUE)
+  have_hf <- .hierfstat_available()
 
   if (is.character(vcf_file)) message("Reading ", vcf_file, " ...")
   H <- .resolve_H(vcf_file, verbose = verbose)
@@ -485,25 +483,20 @@ differentiation_stats <- function(vcf_file, popmap_f, nboot = 10000L,
     ci <- matrix(NA_real_, length(point), 2, dimnames = list(names(point), NULL))
   }
 
-  ## Cross-check against hierfstat's own wc(), when installed -- exactly the
-  ## same style of cross-check diversity_stats() already does for allelic
-  ## richness (message the max difference; warn only if it is surprisingly
-  ## large). This package's own formula is what actually gets reported (see
-  ## the file header for why), hierfstat's copy is only a second opinion.
+  ## With hierfstat installed: Weir & Goudet's beta (a reported statistic this
+  ## package does not reimplement), and -- only with hierfstat_check = TRUE --
+  ## a cross-check of this run's own FST against hierfstat::wc() (message the
+  ## difference; warn only if it is surprisingly large). This package's own
+  ## formula is what gets reported either way.
   if (have_hf) {
-    ids <- unlist(pops, use.names = FALSE)
-    popvec <- rep(seq_len(r), lengths(pops))
-    Gm <- matrix(NA_integer_, length(ids), n_rec)
-    for (j in seq_len(n_rec)) {
-      a <- H$A1[j, ids]; b <- H$A2[j, ids]
-      Gm[, j] <- pmin(a, b) * 1000L + pmax(a, b)
-    }
-    dat <- data.frame(pop = popvec, Gm); names(dat)[-1] <- paste0("L", seq_len(n_rec))
-    hw <- try(hierfstat::wc(dat), silent = TRUE)
-    if (!inherits(hw, "try-error")) {
-      d_fst <- abs(hw$FST - point[["FST"]])
-      message(sprintf("  cross-check vs hierfstat::wc(): FST diff %.2e", d_fst))
-      if (d_fst > 1e-6) warning("This run's internal FST disagrees with hierfstat::wc().")
+    dat <- .to_hierfstat_df(H, pops)
+    if (isTRUE(hierfstat_check)) {
+      hw <- try(hierfstat::wc(dat), silent = TRUE)
+      if (!inherits(hw, "try-error")) {
+        d_fst <- abs(hw$FST - point[["FST"]])
+        message(sprintf("  cross-check vs hierfstat::wc(): FST diff %.2e", d_fst))
+        if (d_fst > 1e-6) warning("This run's internal FST disagrees with hierfstat::wc().")
+      }
     }
     beta_mat <- try(hierfstat::pairwise.betas(dat), silent = TRUE)
     if (inherits(beta_mat, "try-error")) {
@@ -566,7 +559,7 @@ differentiation_stats <- function(vcf_file, popmap_f, nboot = 10000L,
     cat("  beta not available (hierfstat not installed) -- see above.\n")
 
   cat("\n---------------------------------------------------------------------\n")
-  is_hapvcf <- max(H$n_alleles) > 2L || any(nchar(unlist(H$alleles, use.names = FALSE)) > 1L)
+  is_hapvcf <- .is_haplotype_H(H)
   if (is_hapvcf) {
     cat("  This is a HAPLOTYPE VCF: prefer D (or beta) over FST here -- FST's\n")
     cat("  ceiling shrinks as marker diversity grows, and haplotype loci are\n")

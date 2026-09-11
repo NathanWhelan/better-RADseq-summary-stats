@@ -79,14 +79,7 @@ het_between_pops <- function(vcf_file, popmap_f, min_call = 0.9, outdir = ".",
   ## vcf_file may be a path (checked with file.exists() below) or an
   ## already-parsed H list (see .resolve_H() in R/vcf_io.R) -- only a path
   ## needs this existence check before we try to read it.
-  if (is.character(vcf_file) && !file.exists(vcf_file))
-    stop("VCF file not found: ", vcf_file, "\n  Check the path and try again.")
-  if (!is.character(vcf_file) && is.null(stem))
-    stop("vcf_file is an already-parsed list rather than a file path, so its ",
-         "filename can't be used to name the output files. Pass stem ",
-         "explicitly, e.g. stem = \"haps\" or stem = \"snps\".")
-  if (!file.exists(popmap_f))
-    stop("Popmap file not found: ", popmap_f, "\n  Check the path and try again.")
+  .check_run_inputs(vcf_file, popmap_f, stem)
   min_call <- as.numeric(min_call)
   if (is.na(min_call) || min_call < 0 || min_call > 1) stop("min_call must be in 0-1.")
   dir.create(outdir, showWarnings = FALSE, recursive = TRUE)
@@ -183,9 +176,7 @@ het_between_pops <- function(vcf_file, popmap_f, min_call = 0.9, outdir = ".",
   ## down -- the asymmetry this whole redesign exists to avoid.
   ## ---------------------------------------------------------------------------
   n_rec_all <- nrow(H$A1)
-  cr_pop <- matrix(NA_real_, n_rec_all, r, dimnames = list(NULL, names(pops)))
-  for (p in names(pops))
-    cr_pop[, p] <- rowMeans(!is.na(H$A1[, pops[[p]], drop = FALSE]))
+  cr_pop <- sweep(.typed_by_pop(H, pops), 2L, lengths(pops), "/")
   keep_pop <- cr_pop >= min_call - 1e-9
 
   ## Per-population individual heterozygosity, each on ITS OWN locus set.

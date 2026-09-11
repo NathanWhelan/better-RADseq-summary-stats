@@ -11,7 +11,8 @@ differentiation_stats(
   outdir = ".",
   seed = 2024,
   verbose = TRUE,
-  stem = NULL
+  stem = NULL,
+  hierfstat_check = FALSE
 )
 }
 \arguments{
@@ -50,6 +51,11 @@ so \code{stem} must be supplied explicitly in that case (e.g.
 rather than guessing. Default \code{NULL} (derive automatically from
 \code{vcf_file} when it is a path; required otherwise). Supplying \code{stem}
 alongside a path overrides the automatic derivation.}
+
+\item{hierfstat_check}{If \code{TRUE} and \code{hierfstat} is installed, also run
+\code{hierfstat::wc()} and report how far its global FST is from this
+package's. Default \code{FALSE} (the package tests already make this
+comparison, and \code{wc()} was most of the run time on large datasets).}
 }
 \value{
 Invisibly, a list:

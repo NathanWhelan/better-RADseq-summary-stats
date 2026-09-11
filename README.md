@@ -148,13 +148,13 @@ erroring, or filter/thin to a biallelic set first.
 
 - Stacks 2, already run through `gstacks` (or `ustacks`/`cstacks`/`sstacks`).
 - `popmap.tsv`: two columns, no header, `sample_id <TAB> population`.
-- R. Base R is enough. `hierfstat` is used as the engine when installed
-  (`basic.stats()` for per-locus H<sub>o</sub>/H<sub>s</sub>,
-  `allelic.richness()`, `wc()` for Weir & Cockerham). Without it the scripts
-  fall back to internal code checked against hierfstat's own source over 30
-  random datasets: per-locus H<sub>s</sub> agreed to 5.0e-13, per-population
-  F<sub>IS</sub> to 3.2e-13, rarefied allelic richness exactly. Each run states
-  which engine it used. Rarefied *private* allelic richness, the block bootstrap
+- R. Base R is enough: every statistic is computed by this package's own
+  code. Checked against hierfstat over 30 random datasets, per-locus
+  H<sub>s</sub> agreed to 5.0e-13, per-population F<sub>IS</sub> to 3.2e-13
+  and rarefied allelic richness exactly. If `hierfstat` is installed,
+  `hierfstat_check = TRUE` repeats that comparison on your own data, and
+  `differentiation_stats()` also uses it for Weir & Goudet's beta.
+  Rarefied *private* allelic richness, the block bootstrap
   over RAD loci, and the autosomal conversion are in no package and are
   implemented here, validated against brute-force Monte Carlo in
   `diversity_core.R --selftest`.
@@ -1556,9 +1556,9 @@ with.
 
 ## Requirements
 
-R (>= 3.5). Base R is sufficient. `hierfstat` is used as the engine when
-installed and the package falls back to validated internal code otherwise;
-each run says which. Install the package once from the repo root —
+R (>= 3.5). Base R is sufficient. `hierfstat` is optional: it supplies Weir &
+Goudet's beta in `differentiation_stats()`, and `hierfstat_check = TRUE`
+cross-checks this package's values against it. Install the package once from the repo root —
 `R CMD INSTALL .` or, from an R session, `devtools::install()` — before
 using either the command-line scripts or `library(RADdiversity)`.
 

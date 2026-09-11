@@ -1,5 +1,5 @@
 Package: RADdiversity
-Title: Population Genetic Statistics from RAD-seq Data
+Title: Population Genetic Statistics from RAD-Seq Data
 Version: 0.1.0
 Authors@R: person("Nathan", "Whelan", email = "nathan.whelan@gmail.com", role = c("aut", "cre"))
 Description: Population-genetic summary statistics from RAD-seq data,
@@ -14,6 +14,7 @@ Description: Population-genetic summary statistics from RAD-seq data,
     screen, and export to PLINK, STRUCTURE, Genepop, FSTAT, RADpainter and
     VCF formats.
 License: MIT + file LICENSE
+Language: en-US
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.3

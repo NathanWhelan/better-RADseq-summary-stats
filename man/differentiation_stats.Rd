@@ -116,15 +116,15 @@ estimator; the package tests check it numerically against
 
 \strong{References.} Weir, B.S. & Cockerham, C.C. (1984) Estimating
 F-statistics for the analysis of population structure. \emph{Evolution}
-38:1358-1370. \url{https://doi.org/10.1111/j.1558-5646.1984.tb05657.x} --
+38:1358-1370. \doi{10.1111/j.1558-5646.1984.tb05657.x} --
 Weir, B.S. & Goudet, J. (2017) A unified characterization of population
 structure and relatedness. \emph{Genetics} 206:2085-2103.
-\url{https://doi.org/10.1534/genetics.116.198424} -- Jost, L. (2008) GST and
+\doi{10.1534/genetics.116.198424} -- Jost, L. (2008) GST and
 its relatives do not measure differentiation. \emph{Molecular Ecology}
-17:4015-4026. \url{https://doi.org/10.1111/j.1365-294X.2008.03887.x} --
+17:4015-4026. \doi{10.1111/j.1365-294X.2008.03887.x} --
 Winter, D.J. (2012) mmod: an R library for the calculation of population
 differentiation statistics. \emph{Molecular Ecology Resources} 12:1158-1160.
-\url{https://doi.org/10.1111/j.1755-0998.2012.03174.x} (this package's
+\doi{10.1111/j.1755-0998.2012.03174.x} (this package's
 \code{.jost_hsht()} is an attributed adaptation of mmod's \code{HsHt()}; see
 \code{inst/NOTICE}).
 }

@@ -1,4 +1,5 @@
 ^\.claude$
 ^\.github$
 ^LICENSE\.md$
+^cran-comments\.md$
 ^populations\.

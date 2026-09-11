@@ -78,15 +78,15 @@ well-supported pair.
 \strong{References.} Manichaikul, A., Mychaleckyj, J.C., Rich, S.S., Daly, K.,
 Sale, M. & Chen, W.-M. (2010) Robust relationship inference in
 genome-wide association studies. \emph{Bioinformatics} 26:2867-2873.
-\url{https://doi.org/10.1093/bioinformatics/btq559} (KING-robust, primary
+\doi{10.1093/bioinformatics/btq559} (KING-robust, primary
 source) -- Waples, R.K., Albrechtsen, A. & Moltke, I. (2019) Allele
 frequency-free inference of close familial relationships from genotypes
 or low-depth sequencing data. \emph{Molecular Ecology} 28:35-48.
-\url{https://doi.org/10.1111/mec.14954} (independent re-derivation of the
+\doi{10.1111/mec.14954} (independent re-derivation of the
 same statistic, more directly on-point for RADseq/low-depth data) --
 McMaster, E.S. et al. (2025) Evaluating kinship estimation methods for
 reduced-representation SNP data in non-model species. \emph{Molecular
-Ecology Resources}. \url{https://doi.org/10.1111/1755-0998.70038} (the
+Ecology Resources}. \doi{10.1111/1755-0998.70038} (the
 sensitivity/precision benchmark this function's \verb{@details} cites
 above).
 }

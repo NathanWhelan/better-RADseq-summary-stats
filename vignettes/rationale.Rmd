@@ -187,7 +187,7 @@ whichever population happens to be smallest.
 ### Two words that are not synonyms
 
 Get these apart before anything else, because the rest of Step 2 depends on it
-and mixing them produces a number that is wrong rather than merely mislabelled.
+and mixing them produces a number that is wrong rather than merely mislabeled.
 
 **Gene diversity** (H<sub>e</sub>, H<sub>s</sub>) = 1 − Σp². A property of **one
 locus**: the chance that two gene copies drawn from the population are different
@@ -289,7 +289,7 @@ replicates), all three files recover it — the difference is precision:
 | `.snps`, all SNPs | 0.1010 | +0.0010 | 0.0321 | 2,247 |
 | `.snps`, one per tag | 0.0996 | −0.0004 | 0.0339 | 1,200 |
 
-One modelling note, because it is the thing that would have rigged this
+One modeling note, because it is the thing that would have rigged this
 comparison if done wrong: inbreeding makes the two chromosomes identical by
 descent across the **whole tag**, not independently at each SNP. A simulator
 that inbreeds each SNP separately understates haplotype homozygosity and makes

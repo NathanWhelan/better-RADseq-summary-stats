@@ -97,7 +97,7 @@ genetics. \emph{Annals of Mathematical Statistics} 20:91-94. -- Haldane, J.B.S.
 test of Hardy-Weinberg proportion for multiple alleles. \emph{Biometrics}
 48:361-372. -- Huber, M., Chen, Y., Dinwoodie, I., Dobra, A. & Nicholas,
 M. (2006) Monte Carlo algorithms for Hardy-Weinberg proportions.
-\emph{Biometrics} 62:49-53. \url{https://doi.org/10.1111/j.1541-0420.2005.00418.x}
+\emph{Biometrics} 62:49-53. \doi{10.1111/j.1541-0420.2005.00418.x}
 -- Pearman, W.S., Urban, L. & Alexander, A. (2022) Commonly used
 Hardy-Weinberg equilibrium filtering schemes impact population structure
 inferences using RADseq data. \emph{Molecular Ecology Resources} 22:2599-2613.

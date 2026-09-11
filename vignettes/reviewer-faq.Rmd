@@ -105,7 +105,7 @@ columns don't reconcile; mixing sources can recreate that. A reader computing
 F<sub>IS</sub>. It will, to within 3–5%, **provided the marker sets match** — and
 it won't if you print Stacks' per-SNP numbers beside a F<sub>IS</sub> from the
 haplotype run. Either report everything from the SNP VCF and use the haplotype
-run only for allelic richness (labelled as such), or report the script's own
+run only for allelic richness (labeled as such), or report the script's own
 H<sub>o</sub> and H<sub>e</sub> and note that they agree with Stacks' `Obs_Het`
 and `Pi` to within X%. `diversity_stats.R` prints the records it used; that
 should be close to Stacks' `Variant_Sites`. If it isn't, your discrepancy is the
@@ -252,7 +252,7 @@ monomorphic, which deflates it."**
 > heterozygous — true if any SNP on it is — while π is per-site. The file each
 > statistic comes from is given in the table.
 
-**"Schmidt et al. (2021) recommend analysing populations in independent
+**"Schmidt et al. (2021) recommend analyzing populations in independent
 `populations` runs to avoid SNP-ascertainment bias from joint calling across
 differentiated populations. You called SNPs once, jointly. Why?"**
 

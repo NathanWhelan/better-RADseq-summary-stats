@@ -321,15 +321,15 @@
 #'
 #' **References.** Weir, B.S. & Cockerham, C.C. (1984) Estimating
 #' F-statistics for the analysis of population structure. *Evolution*
-#' 38:1358-1370. <https://doi.org/10.1111/j.1558-5646.1984.tb05657.x> --
+#' 38:1358-1370. \doi{10.1111/j.1558-5646.1984.tb05657.x} --
 #' Weir, B.S. & Goudet, J. (2017) A unified characterization of population
 #' structure and relatedness. *Genetics* 206:2085-2103.
-#' <https://doi.org/10.1534/genetics.116.198424> -- Jost, L. (2008) GST and
+#' \doi{10.1534/genetics.116.198424} -- Jost, L. (2008) GST and
 #' its relatives do not measure differentiation. *Molecular Ecology*
-#' 17:4015-4026. <https://doi.org/10.1111/j.1365-294X.2008.03887.x> --
+#' 17:4015-4026. \doi{10.1111/j.1365-294X.2008.03887.x} --
 #' Winter, D.J. (2012) mmod: an R library for the calculation of population
 #' differentiation statistics. *Molecular Ecology Resources* 12:1158-1160.
-#' <https://doi.org/10.1111/j.1755-0998.2012.03174.x> (this package's
+#' \doi{10.1111/j.1755-0998.2012.03174.x} (this package's
 #' `.jost_hsht()` is an attributed adaptation of mmod's `HsHt()`; see
 #' `inst/NOTICE`).
 #'

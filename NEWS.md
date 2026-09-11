@@ -1,4 +1,4 @@
-# RADdiversity 0.1.0 (development version)
+# RADdiversity 0.1.0
 
 First release as an R package. Notes for anyone who used the earlier
 stand-alone scripts:

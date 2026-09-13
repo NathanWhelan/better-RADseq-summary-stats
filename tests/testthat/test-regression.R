@@ -18,7 +18,11 @@ run_div <- function(vcf, popmap = "popmap.tsv", g = 20, ...) {
   suppressMessages(
     res <- diversity_stats(lg(vcf), lg(popmap), g = g, nboot = 0, outdir = od, ...))
   ## The report is what print() on the result shows.
-  list(res = res, out = capture.output(print(res)), dir = od)
+  ## The full report, printed as the command-line script prints it (wide, so
+  ## no table is split across lines).
+  old <- options(width = 200)
+  on.exit(options(old), add = TRUE)
+  list(res = res, out = capture.output(print(summary(res))), dir = od)
 }
 
 ## Same rule as the old check_golden.R: identical columns and rows, numbers
@@ -93,7 +97,7 @@ test_that("diversity_stats() rejects bad input with a message naming the problem
     list("bad_mono.vcf.gz",          "popmap.tsv",     list(),         "No locus is polymorphic"),
     list("locus_driven_miss.vcf.gz", "popmap.tsv",     list(min_n = 1), "min_n must be"))
   for (b in bad) {
-    args <- utils::modifyList(list(vcf_file = lg(b[[1]]), popmap_f = lg(b[[2]]), g = 20,
+    args <- utils::modifyList(list(vcf = lg(b[[1]]), popmap = lg(b[[2]]), g = 20,
                                    nboot = 0, outdir = tempfile("legacy-")), b[[3]])
     expect_error(suppressMessages(capture.output(do.call(diversity_stats, args))),
                  b[[4]], fixed = TRUE, info = paste(b[[1]], b[[2]]))
@@ -114,7 +118,7 @@ test_that("diversity_stats() accepts the edge cases it should", {
     list("locus_driven_miss.vcf.gz", "popmap.tsv",        list(complete_case = TRUE)),
     list("locus_driven_miss.vcf.gz", "popmap.tsv",        list(min_n = 3)))
   for (o in good) {
-    args <- utils::modifyList(list(vcf_file = lg(o[[1]]), popmap_f = lg(o[[2]]), g = 20,
+    args <- utils::modifyList(list(vcf = lg(o[[1]]), popmap = lg(o[[2]]), g = 20,
                                    nboot = 0, outdir = tempfile("legacy-")), o[[3]])
     expect_no_error(suppressMessages(capture.output(do.call(diversity_stats, args))),
                     message = paste(o[[1]], o[[2]]))
@@ -144,7 +148,7 @@ test_that("het_between_pops() edge cases", {
   expect_true(any(grepl("EXCLUDED", msgs)))
 })
 
-test_that("the printed report never names a column it does not print", {
+test_that("the full report never names a column it does not print", {
   ## Ported from test/check_labels.R: every Ho_x/He_x/Fis_x/Ar_x/priv_x/pct_x
   ## identifier mentioned in the report's prose must be a printed column
   ## header -- except mentions that explicitly point to the OTHER run.

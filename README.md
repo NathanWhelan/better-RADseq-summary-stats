@@ -33,6 +33,8 @@ Three things routine RAD-seq summaries tend to get wrong:
 ## Install
 
 ```r
+install.packages("RADdiversity")        # once the package is on CRAN
+# the development version:
 # install.packages("remotes")
 remotes::install_github("NathanWhelan/better-RADseq-summary-stats")
 ```
@@ -52,17 +54,23 @@ snps   <- system.file("extdata", "small.snps.vcf",   package = "RADdiversity")
 popmap <- system.file("extdata", "small_popmap.tsv", package = "RADdiversity")
 sumstats <- system.file("extdata", "populations.sumstats_summary.tsv", package = "RADdiversity")
 
+set.seed(2024)                              # reproducible bootstrap intervals
 div_haps <- diversity_stats(haps, popmap, g = 4)                     # FIS, Ar, privAr
 div_snps <- diversity_stats(snps, popmap, g = 4, sites = sumstats)   # Ho, He, per-site values
-div_haps                                    # printing shows the full report
+div_haps                                    # the main tables
+summary(div_haps)                           # the full report, with notes on interpretation
 het <- het_between_pops(haps, popmap, min_call = 0.5)                # do populations differ?
 het$pairwise_F_tests
 ```
 
-Results are returned as tables (`div_haps$per_population`,
-`div_haps$richness`, ...); add `outdir = "results"` to also write them as TSV
-files. On your own data, `g` is the rarefaction size in **gene copies**
-(10 diploids = 20), at most twice your smallest population.
+Every result is a list of tables (`div_haps$per_population`,
+`div_haps$richness`, ...) kept at full precision; printing rounds them. Add
+`outdir = "results"` to also write the tables as TSV files, and
+`verbose = FALSE` to silence progress messages. Every analysis function
+accepts the data as a file path or as the object from `read_stacks_vcf()`,
+and the popmap as a file path or as the list from `read_popmap()`. On your own
+data, `g` is the rarefaction size in **gene copies** (10 diploids = 20), at
+most twice your smallest population.
 
 From the shell, the same analyses run with the scripts installed alongside
 the package:
@@ -82,7 +90,7 @@ package = "RADdiversity")` walks through a whole analysis.
 
 ```bash
 populations --in-path ./stacks_out --popmap popmap.tsv -O ./out \
-            --min-gt-depth 6 -r 0.8 -p 2 --min-mac 3 \
+            --min-gt-depth 6 -r 0.8 -p 2 \
             --max-obs-het 0.70 --fstats --vcf --genepop --fasta-samples -t 8
 ```
 
@@ -98,6 +106,13 @@ populations --in-path ./stacks_out --popmap popmap.tsv -O ./out \
   populations as -R lets the larger population's coverage carry the
   smaller one, which then carries more missing data -- an artificial
   difference between exactly the two samples you mean to compare.
+* No `--min-mac` or `--min-maf` for the diversity run. Stacks turns a SNP that
+  fails them into a fixed site that still counts in `Sites`, so its diversity
+  is simply lost. Rare variants carry a lot of it: under a neutral site
+  frequency spectrum, sites with a minor allele count of 2 or less hold about
+  21% of π at 10 diploids and 10% at 20 -- a bias that depends on sample size.
+  If STRUCTURE, PCA or kinship need a MAC/MAF filter, make a second, filtered
+  run for those.
 
 
 Add `--vcf-all` for an all-sites VCF (Stacks ≥ 2.62), which `pi_allsites()`
@@ -115,7 +130,7 @@ uses to compute nucleotide diversity directly.
 | F<sub>ST</sub>, Jost's D, Weir & Goudet's beta | `differentiation_stats()` |
 | are there close relatives in the sample? | `kinship_check()` |
 | Hardy–Weinberg departures (a report, never a filter) | `hwe_test()` |
-| read and filter | `read_stacks_vcf()`, `read_popmap()`, `filter_call_rate()`, `filter_maf()`, `filter_mac()`, `filter_max_het()`, `filter_thin_one_snp()`, `filter_low_conf_alt()`, `locus_allele_stats()`, `low_conf_alt_sensitivity()` |
+| read and filter | `read_stacks_vcf()`, `read_popmap()`, `filter_call_rate()`, `filter_genotype_depth()`, `filter_maf()`, `filter_mac()`, `filter_max_het()`, `filter_thin_one_snp()`, `filter_low_conf_alt()`, `locus_allele_stats()`, `low_conf_alt_calls()`, `low_conf_alt_sensitivity()` |
 | export | `write_vcf()`, `write_plink()`, `write_structure()`, `write_genepop()`, `write_fstat()`, `write_radpainter()` |
 | read Stacks' `sumstats_summary.tsv` | `read_sumstats_summary()` |
 | the individual estimators | `?estimators` |
@@ -135,7 +150,7 @@ locus (`populations.haps.vcf`). They answer different questions:
 
 H<sub>o</sub> and H<sub>e</sub> are **not** comparable between the two files
 (haplotype H<sub>o</sub> asks "is this tag heterozygous?", per-site
-H<sub>o</sub> "is this site?"); F<sub>IS</sub> is. Each printed report says
+H<sub>o</sub> "is this site?"); F<sub>IS</sub> is. Each printed result says
 which of its numbers to take.
 
 ## Which standard error to report
@@ -202,13 +217,19 @@ way, never compare populations by overlapping intervals -- use
 * **hierfstat** (Goudet 2005) uses the same H<sub>s</sub> and Weir &
   Cockerham estimators; the package's own implementations are checked
   against it in the tests. Its bootstrap resamples loci as independent rows,
-  ignoring linkage within RAD tags.
+  ignoring linkage within RAD tags. One deliberate difference: at a record
+  where only one of the compared populations is genotyped, `hierfstat::wc()`
+  keeps the within-population variance, which pulls F<sub>ST</sub> toward 0;
+  `differentiation_stats()` skips such records, as VCFtools and Stacks' own
+  pairwise F<sub>ST</sub> do.
 * **dartR** can correct heterozygosity for invariant sites (Schmidt et al.
   2021); **snpR** (Hemstrom & Jones 2023) computes many SNP statistics across
   categorical metadata.
 * **pixy** (Korunes & Samuk 2021) computes π and d<sub>xy</sub> from
   all-sites VCFs; `pi_allsites()` uses the same estimator, with standard
-  errors over RAD loci.
+  errors over RAD loci, and adds `pi_nc`, which leaves out the comparison
+  between the two gene copies inside each individual and so stays unbiased
+  when individuals are inbred (Nei & Chesser's H<sub>e</sub> per site).
 * **inbreedR** (Stoffel et al. 2016) computes g2; `identity_disequilibrium()`
   estimates it from its definition, using exactly the locus pairs typed when
   data are missing.

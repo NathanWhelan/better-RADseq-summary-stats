@@ -2,73 +2,64 @@
 % Please edit documentation in R/filter_loci.R
 \name{filter_low_conf_alt}
 \alias{filter_low_conf_alt}
-\title{Flag and remove low-confidence ALT genotype calls}
+\title{Remove low-confidence ALT genotype calls}
 \usage{
 filter_low_conf_alt(
   H,
   min_alt_reads = 2,
   mode = "mask",
   drop_frac = 0,
-  calls = NULL,
   verbose = TRUE
 )
 }
 \arguments{
-\item{H}{A list as returned by \code{\link[=read_stacks_vcf]{read_stacks_vcf()}}.}
+\item{H}{The object returned by \code{\link[=read_stacks_vcf]{read_stacks_vcf()}} (optionally filtered).
+It must still contain \verb{$fields}, the raw VCF columns, which hold the AD
+(allele depth) values.}
 
-\item{min_alt_reads}{A genotype call with this many or fewer reads
-supporting its ALT allele(s) is flagged. Default \code{2}. See
-\code{\link[=low_conf_alt_sensitivity]{low_conf_alt_sensitivity()}} for a table to help pick this value.}
+\item{min_alt_reads}{A call with this many or fewer reads supporting its
+ALT allele(s) is flagged. Default \code{2}.}
 
-\item{mode}{\code{"mask"} (the default) sets only the flagged genotype calls
-to missing. \code{"drop"} removes whole loci instead (see \code{drop_frac}).
-Unlike the original Python script, this function can only apply ONE of
-these per call (it returns a single \code{H}, not two separate files) -- if
-you want both views, call this function twice on the SAME starting
-\code{H}, once with each \code{mode}, and keep the two results separately.
-Calling \code{mode = "drop"} on an \code{H} you already ran through
-\code{mode = "mask"} will not reproduce that: the flagged calls are already
-gone by then, so there is nothing left for a second pass to drop.}
+\item{mode}{\code{"mask"} (default): set only the flagged calls to missing.
+\code{"drop"}: remove whole records instead (see \code{drop_frac}). To compare both,
+run the function twice on the same starting \code{H}: after masking, the
+flagged calls are gone, so a second, dropping pass finds nothing to drop.}
 
-\item{drop_frac}{Only used when \code{mode = "drop"}. A locus is dropped if
+\item{drop_frac}{Used only with \code{mode = "drop"}. A record is removed when
 the fraction of its ALT-containing calls that were flagged is greater
-than this (default \code{0}, meaning "drop a locus if even one of its calls
-is flagged"). A locus with no ALT-containing calls at all is never
-dropped by this rule.}
+than this. Default \code{0}: remove a record if any call is flagged. A record
+with no ALT-containing call is never removed.}
 
-\item{calls}{Optionally, a precomputed result from the internal
-\code{.parse_alt_ad()} helper, to avoid re-parsing the same data if you're
-also calling \code{\link[=low_conf_alt_sensitivity]{low_conf_alt_sensitivity()}} on this \code{H}. Left \code{NULL}
-(the default), it's computed automatically.}
-
-\item{verbose}{Print flagging counts. Default \code{TRUE}.}
+\item{verbose}{Print how many calls were flagged. Default \code{TRUE}.}
 }
 \value{
-A list with three elements:
-\describe{
-\item{H}{The filtered/masked \code{H}.}
-\item{flagged_calls}{One row per flagged genotype call: \verb{locus, sample, GT, AD_ref, AD_alt, DP, alt_fraction}.}
-\item{locus_summary}{One row per ORIGINAL locus, in original order:
-\verb{locus, n_alt_calls, n_flagged, flagged_fraction, kept} -- \code{kept}
-records whether that locus survived (always \code{TRUE} under
-\code{mode = "mask"}, since masking never removes a locus).}
-}
+\code{H}, with flagged calls set to missing (\code{mode = "mask"}) or
+records removed (\code{mode = "drop"}).
 }
 \description{
-Ports the standalone \code{filter_low_conf_alt.py} script's logic natively
-into R. A genotype call carrying an ALT allele (e.g. \code{0/1}, \code{1/1}) is
-flagged if the number of sequencing reads supporting that ALT allele is
-\verb{<= min_alt_reads} -- i.e. Stacks called an alternate allele on the
-strength of very little read evidence, which is exactly the profile of a
-sequencing-error false positive. You then choose what to do with flagged
-calls: \code{mode = "mask"} blanks out just those individual genotype calls
-(leaving the rest of that locus, and every other individual, untouched);
-\code{mode = "drop"} instead removes whole loci where too large a share of
-their ALT-containing calls were flagged.
+A genotype call carrying an ALT allele (e.g. \code{0/1}, \code{1/1}) is flagged when
+the reads supporting that ALT allele number \code{min_alt_reads} or fewer: the
+genotyper called an alternate allele on very little evidence, which is the
+profile of a sequencing error. \code{mode = "mask"} sets just the flagged calls
+to missing; \code{mode = "drop"} removes whole records where too large a share of
+the ALT-containing calls were flagged. Use \code{\link[=low_conf_alt_calls]{low_conf_alt_calls()}} to see
+which calls are flagged, and \code{\link[=low_conf_alt_sensitivity]{low_conf_alt_sensitivity()}} to choose
+\code{min_alt_reads}.
+}
+\details{
+\strong{Not before diversity statistics.} Only calls that carry an ALT allele
+can be flagged; a REF homozygote on equally few reads never is. Masking
+therefore removes heterozygotes more readily than homozygotes, which biases
+Ho and allele frequencies down and FIS up, most in low-coverage libraries.
+A true heterozygote read 6 times shows 2 or fewer ALT reads 34\% of the
+time (15\% at 8 reads, 5.5\% at 10), before the genotype caller's own
+threshold. Before \code{\link[=diversity_stats]{diversity_stats()}}, \code{\link[=het_between_pops]{het_between_pops()}} or
+\code{\link[=individual_inbreeding]{individual_inbreeding()}}, use \code{\link[=filter_genotype_depth]{filter_genotype_depth()}}, which masks by
+depth whatever the genotype. The message reports the share of heterozygous
+calls masked, so the imbalance can be seen.
 }
 \examples{
-# A tiny hand-built VCF: locus_1's second sample has an ALT call backed
-# by only 1 read.
+# A tiny VCF: ind2's ALT call at locus_1 is supported by only 1 read.
 vcf_lines <- c(
   "##fileformat=VCFv4.2",
   "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tind1\tind2",
@@ -77,6 +68,7 @@ vcf_lines <- c(
 vcf_file <- tempfile(fileext = ".vcf")
 writeLines(vcf_lines, vcf_file)
 H <- read_stacks_vcf(vcf_file, verbose = FALSE)
-res <- filter_low_conf_alt(H, min_alt_reads = 2, verbose = FALSE)
-res$flagged_calls  # ind2's call at locus_1 is flagged (1 <= 2 ALT reads)
+low_conf_alt_calls(H, min_alt_reads = 2)$flagged_calls
+H_masked <- filter_low_conf_alt(H, min_alt_reads = 2)
+H_masked$A1          # ind2's genotype is now missing
 }

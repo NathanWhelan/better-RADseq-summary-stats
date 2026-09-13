@@ -66,6 +66,19 @@ test_that("het_between_pops CLI: flag form and the older positional form agree",
                        "--min-call=5")$status, 1L)                       # out of range
 })
 
+test_that("CLI numbers are checked, and --seed makes a run reproducible", {
+  bad_g <- run_cli("diversity_stats", fx("small.haps.vcf"), fx("small_popmap.tsv"), "--g=twenty")
+  expect_equal(bad_g$status, 1L)
+  expect_true(any(grepl("--g must be a number", bad_g$msgs)))
+  d1 <- tempfile("cli-"); d2 <- tempfile("cli-")
+  on.exit(unlink(c(d1, d2), recursive = TRUE), add = TRUE)
+  for (d in c(d1, d2))
+    run_cli("diversity_stats", fx("small.haps.vcf"), fx("small_popmap.tsv"), "--g=4",
+            "--nboot=50", "--seed=7", paste0("--outdir=", d))
+  expect_identical(readLines(file.path(d1, "diversity_per_population.haps.tsv")),
+                   readLines(file.path(d2, "diversity_per_population.haps.tsv")))
+})
+
 test_that("diversity_core CLI needs --selftest", {
   expect_equal(run_cli("diversity_core")$status, 1L)
 })

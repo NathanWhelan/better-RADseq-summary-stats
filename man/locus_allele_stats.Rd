@@ -2,64 +2,46 @@
 % Please edit documentation in R/filter_loci.R
 \name{locus_allele_stats}
 \alias{locus_allele_stats}
-\title{Per-locus allele-frequency statistics}
+\title{Per-record allele-frequency statistics}
 \usage{
 locus_allele_stats(H)
 }
 \arguments{
-\item{H}{A list as returned by \code{\link[=read_stacks_vcf]{read_stacks_vcf()}} (or by another filter in
-this package, since they all return the same shape).}
+\item{H}{The object returned by \code{\link[=read_stacks_vcf]{read_stacks_vcf()}} (optionally filtered).}
 }
 \value{
-A data frame with one row per locus, in the same order as \code{H$A1},
-and columns:
+A data frame with one row per record, in the order of \code{H}:
 \describe{
-\item{locus, locus_raw, n_alleles}{Copied straight from \code{H}, for
-convenience.}
-\item{n_observed_alleles}{How many DIFFERENT allele numbers were
-actually seen in the genotypes at this locus. Can be smaller than
-\code{n_alleles} if the VCF lists an ALT allele that nobody happened to
-carry.}
-\item{n_called}{Total number of allele copies genotyped at this
-locus (each diploid individual contributes up to 2).}
-\item{major_af}{Frequency of the single most common allele.}
+\item{locus, locus_raw, n_alleles}{Copied from \code{H}.}
+\item{n_observed_alleles}{How many different alleles were actually
+seen. Can be smaller than \code{n_alleles} when the VCF lists an ALT
+allele that nobody carries.}
+\item{n_called}{Allele copies genotyped (2 per genotyped individual).}
+\item{major_af}{Frequency of the most common allele.}
 \item{maf}{Minor allele frequency, \code{1 - major_af}.}
-\item{mac}{Minor allele count: how many allele copies were NOT the
-major allele.}
+\item{mac}{Minor allele count: copies that are not the major allele.}
 }
-A locus with zero genotyped individuals gets \code{NA} (not \code{0}) for
-\code{major_af}/\code{maf}/\code{mac}, since "zero data" and "definitely monomorphic"
-are different claims and must not be confused.
+A record with no genotyped individual gets \code{NA} (not \code{0}) for
+\code{major_af}, \code{maf} and \code{mac}: "no data" is not "monomorphic".
 }
 \description{
-Computes, for every locus in \code{H}, how many allele copies were actually
-genotyped, which allele was the most common ("major") one, the minor
-allele frequency, and the minor allele count. This is the shared
-groundwork behind \code{\link[=filter_maf]{filter_maf()}} and \code{\link[=filter_mac]{filter_mac()}} -- call it yourself
-first if you want to look at the numbers before deciding on a threshold
-(e.g. \code{hist(locus_allele_stats(H)$maf)}), or pass its result into
-\code{filter_maf()}/\code{filter_mac()} via their \code{stats} argument to avoid
-recomputing it twice when you're going to apply both filters.
+For every record in \code{H}: how many allele copies were genotyped, the
+frequency of the most common ("major") allele, the minor allele frequency
+and the minor allele count. This is what \code{\link[=filter_maf]{filter_maf()}} and \code{\link[=filter_mac]{filter_mac()}}
+filter on; look at it before choosing a threshold (for example
+\code{hist(locus_allele_stats(H)$maf)}).
 }
 \details{
-How this works, step by step: for every locus, every called allele copy
-(from both \code{H$A1} and \code{H$A2}, ignoring anything missing) is counted up by
-allele number. The allele with the highest count is the "major" allele;
-everything else, added together, is the "minor" share. This is the usual
-definition of minor allele frequency (MAF) when a locus has exactly two
-possible alleles, and it generalizes sensibly to loci with more than two
-(haplotype VCFs can have several alleles per locus): MAF there means "the
-combined frequency of every allele except the single most common one".
+Every genotyped allele copy is counted by allele. The most common allele is
+the "major" allele; all others together are the "minor" share. At a
+biallelic record this is the usual minor allele frequency (MAF); at a
+multi-allelic (haplotype) record it is the combined frequency of every
+allele except the most common one.
 }
 \examples{
-# A tiny made-up dataset: 2 loci, 3 samples, alleles coded 1 (REF) and
-# 2 (ALT). read_stacks_vcf() builds this same shape from a real VCF file.
-# Each row of A1/A2 is one locus's alleles across all 3 samples.
-H <- list(
-  A1 = rbind(locus_1 = c(1, 1, 2), locus_2 = c(1, 2, NA)),
-  A2 = rbind(locus_1 = c(1, 1, 2), locus_2 = c(2, 2, NA)),
-  locus = c("locus_1", "locus_2"), locus_raw = c("locus_1", "locus_2"),
-  n_alleles = c(2L, 2L), samples = c("ind1", "ind2", "ind3")
-)
-locus_allele_stats(H)  # locus_2 is missing in ind3, so n_called = 4 there
+H <- read_stacks_vcf(system.file("extdata", "small.snps.vcf",
+                                 package = "RADdiversity"), verbose = FALSE)
+allele_stats <- locus_allele_stats(H)
+head(allele_stats)
+summary(allele_stats$maf)
 }

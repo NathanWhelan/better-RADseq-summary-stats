@@ -19,7 +19,8 @@ README; for what to write in a paper and how to answer reviewers, see
 > with the package, in `system.file("scripts", package = "RADdiversity")`;
 > run them as `Rscript <that folder>/diversity_stats.R ...`. Every command has
 > an R equivalent: `diversity_stats()`, `het_between_pops()`,
-> `diversity_core_selftest()`.
+> `diversity_core_selftest()`. A script prints the full report; in R, printing
+> a result shows its main tables and `summary(result)` shows the full report.
 >
 > **Where the numbers come from.** The simulation results quoted here were
 > produced while the package was developed. Three sets ship with runnable
@@ -35,7 +36,6 @@ README; for what to write in a paper and how to answer reviewers, see
 populations --in-path ./stacks_out --popmap popmap.tsv -O ./out \
             --min-gt-depth 6 \
             -r 0.8 -p 2 \
-            --min-mac 3 \
             --max-obs-het 0.70 \
             --fstats --vcf --genepop --fasta-samples -t 8
 ```
@@ -95,14 +95,33 @@ two populations differently is disqualifying.
 
 ### The other flags
 
-`--min-mac 3` (minor allele count ≥3 — prefer a count to a frequency, because a
-fixed MAF demands different numbers of copies from differently sized samples),
+**No `--min-mac` or `--min-maf` in this run.** An allele-frequency filter
+removes rare variants, and rare variants carry a large share of the
+diversity. Stacks does not delete a SNP that fails the filter: it turns it
+into a fixed site (`LocusFilter::erase_snp()`), which still counts in
+`Sites`, so the loss shows up in Stacks' own all-positions `Pi`, in
+`He_autosomal` and in `pi_allsites()` alike. Under a neutral site-frequency
+spectrum, a site whose derived allele is carried by *i* of *N* gene copies
+contributes in proportion to *N* − *i*, so sites with a minor allele count of
+2 or less hold about 4/(*N* − 1) of π:
+
+| diploids in the run | share of π removed by `--min-mac 3` |
+|---|---|
+| 10 | 21% |
+| 20 | 10% |
+| 30 | 7% |
+
+That is a bias that depends on sample size — the kind this whole document
+argues against — and it also removes rare, often population-private,
+heterozygous sites before `het_between_pops()`. If STRUCTURE, PCA or a
+kinship estimator needs a MAC or MAF filter, make a second, filtered
+`populations` run for those analyses.
+
 `--max-obs-het 0.70` (a crude paralog screen; users have reported Stacks
 retaining sites above the stated threshold, so spot-check against your own
 `sumstats.tsv`), `--fstats`, `--vcf`, `--genepop`, `--fasta-samples` (extra
-output formats some workflows want directly). These are conventional and are
-**not** part of the four changes. Set them how you like; just set them the
-same way for both populations.
+output formats some workflows want directly). These are conventional. Set
+them how you like; just set them the same way for both populations.
 
 Note there is no `--hwe` filtering here. A heterozygote deficit is exactly what
 inbreeding produces, so an HWE filter deletes the signal you are trying to
@@ -175,9 +194,10 @@ Rscript diversity_stats.R out/populations.snps.vcf popmap.tsv --g=<gene_copies> 
 ```
 
 `<vcf>` and `<popmap>` are positional; everything else is a flag:
-`--g=N` (required), `--nboot=N`, `--sites=N`, `--min-n=N`, `--complete-case`.
-Each run prints a `TAKE FROM THIS RUN` box naming the statistics it is the
-right file for, so you do not have to remember the split.
+`--g=N` (required), `--nboot=N`, `--sites=N`, `--min-n=N`, `--seed=N`,
+`--complete-case`. Each run prints a `TAKE FROM THIS RUN` box (in R:
+`summary(result)`) naming the statistics it is the right file for, so you do
+not have to remember the split.
 
 `--g` is the rarefaction size in **gene copies**, not individuals: 10 diploids
 is g = 20. It is required and has no default -- pick it deliberately (no more
@@ -376,10 +396,20 @@ reader who checks 1 − H<sub>o</sub>/H<sub>e</sub> against your F<sub>IS</sub>
 across mismatched files will find a discrepancy far larger than any of the
 estimator issues in this document.
 
-**Free diagnostic:** F<sub>IS</sub> from the two files should agree closely. If
-it does not, that is informative — the usual suspects are sequencing error
-creating spurious rare haplotypes (inflates haplotype H<sub>o</sub>, pushes haps
-F<sub>IS</sub> down) or dropout removing whole tags. Run both and check.
+**Free diagnostic — run it:** F<sub>IS</sub> from the two files should agree
+closely. If it does not, that is informative. The usual suspects:
+
+- Sequencing error creating spurious rare haplotypes. This inflates haplotype
+  H<sub>o</sub> and pushes haps F<sub>IS</sub> down.
+- Missing data that is not random with respect to genotype. Stacks writes a
+  whole haplotype genotype as missing (`./.`) if *any* SNP on the tag is
+  uncalled in that individual (`export_formats.cc`, Stacks 2.68). A true
+  heterozygote needs more reads to be called than a homozygote, so tags with
+  several SNPs are more likely to go missing in heterozygous individuals.
+  That would push haps H<sub>o</sub> down and haps F<sub>IS</sub> up, most in
+  low-coverage libraries.
+
+Run both files and report the check.
 
 #### The thinning question
 
@@ -541,15 +571,21 @@ et al. 2021). In practice, the two estimates typically agree to within about
 missing from a population is exactly what makes that population's own
 `Sites` count (in Stacks' `sumstats_summary.tsv`) come out a little smaller
 than another population's — using one shared number for everyone papers over
-that difference on the one axis this conversion is about. `sites` accepts:
+that difference on the one axis this conversion is about. The numerator is
+per population too: each population's `He` is multiplied by the number of
+variant records at which it has a genotyped individual (`variant_records` in
+the output), which is what Stacks pairs with its `Sites`. `sites` accepts:
 
 - a single number, broadcast to every population (as above);
 - a named numeric vector or data frame, one value per population
   (`c(PopA = 466815, PopB = 466926)`, or `data.frame(population = ...,
   sites = ...)`);
 - a path to `populations.sumstats_summary.tsv` itself — each population's own
-  `Sites` (the All-positions block) is read automatically, by name, via
-  `read_sumstats_summary()`.
+  `Sites` and `Variant_Sites` (the All-positions block) are read
+  automatically, by name, via `read_sumstats_summary()`. This is the safest
+  form. If records were removed in R after reading (`filter_*()`), those
+  sites are still in `Sites`, and the file's unfiltered `Variant_Sites` keeps
+  the scaling right. A warning says when the VCF and the file disagree.
 
 ```r
 diversity_stats("populations.snps.vcf", "popmap.tsv", g = 20,
@@ -560,8 +596,9 @@ diversity_stats("populations.snps.vcf", "popmap.tsv", g = 20,
 `Obs_Het`, `Exp_Het`, `Pi`, `Fis`, etc. exactly as Stacks computed them.
 Nothing in this package uses those values as an estimate of Ho, He, π or
 F<sub>IS</sub> — `diversity_stats()` computes all of those itself, for the
-reasons in "Formulas" below. The only column this package's own functions
-ever read from that file is `Sites`, a plain tally rather than an estimator.
+reasons in "Formulas" below. The only columns this package's own functions
+ever read from that file are `Sites` and `Variant_Sites`, plain tallies
+rather than estimators.
 
 A population whose `sites` value turns out to be less than the number of
 variant records called (implausible — `sites` should be orders of magnitude
@@ -962,7 +999,7 @@ relatedness rather than inbreeding: 5% type I error with unrelated individuals,
 **This is not a new objection.** Van Dongen (1995, *Heredity* 74:445–447)
 concluded that resampling over loci does not satisfy the bootstrap's assumptions
 and should be avoided, and suggested resampling over individual genotypes
-instead. Petit & Pons (1998) repeat it; Neff (2010) wrote software for both. Most
+instead. Petit & Pons (1998) repeat it; Neff & Fraser (2010) wrote software for both. Most
 papers ignore it.
 
 ### The fix
@@ -1100,9 +1137,24 @@ not touch F<sub>IS</sub> at all. A mean of ratios has no such property: every
 fixed site adds a 0 to the average and drags it toward zero, which is why
 F<sub>IS</sub> must never be read from the All-positions block.
 
-The script's autosomal figure is `He_autosomal` = (mean `He` over the loci
-actually used) × *n*<sub>rec</sub> / *S*, where *n*<sub>rec</sub> is **all**
-variant records, not just the used subset. Scaling by the subset instead would
+The script's autosomal figure, for each population, is `He_autosomal` = (mean
+`He` over the loci actually used) × *n*<sub>var</sub> / *S*.
+
+- *S* is that population's `Sites`. Stacks counts a site there only if the
+  population has at least one genotyped individual at it
+  (`SumStatsSummary::accumulate()`, Stacks 2.68).
+- *n*<sub>var</sub> must be counted the same way: the variant sites at which
+  that population has at least one genotyped individual. That is Stacks'
+  `Variant_Sites` in the same block, and the `variant_records` column of the
+  output.
+
+*n*<sub>var</sub> is not every record in the VCF. With three or more
+populations and `-p` below their number, Stacks blanks a population at the
+sites where it fails `-r` and keeps the site for the others. Those records
+are not in that population's *S*, and scaling by all records would inflate
+its `He_autosomal` — by 1/0.7 if it is absent from 30% of records.
+
+Nor is *n*<sub>var</sub> just the used subset: scaling by the subset would
 understate π by the retention fraction. Under the default available-data mode
 the used subset is close to all *n*<sub>rec</sub> records for most real
 datasets, which is why `He_autosomal` in practice tracks Stacks' `Pi` closely
@@ -1174,14 +1226,16 @@ Research* 23: 1514–1521.
 Nei, M. & Chesser, R.K. (1983) Estimation of fixation indices and gene
 diversities. *Annals of Human Genetics* 47: 253–259.
 
-Neff, B.D. (2010) *Molecular Ecology Resources* 10: 546–550.
+Neff, B.D. & Fraser, B.A. (2010) A program to compare genetic differentiation
+statistics across loci using resampling of individuals and loci. *Molecular
+Ecology Resources* 10: 546–550.
 
 Pearman, W.S., Urban, L. & Alexander, A. (2022) Commonly used Hardy–Weinberg
 equilibrium filtering schemes impact population structure inferences using
 RADseq data. *Molecular Ecology Resources* 22: 2599–2613.
 
 Petit, R.J. & Pons, O. (1998) Bootstrap variance of diversity and
-differentiation estimators. *Heredity* 80: 56–61.
+differentiation estimators in a subdivided population. *Heredity* 80: 56–61.
 
 Guo, S.-W. & Thompson, E.A. (1992) Performing the exact test of
 Hardy-Weinberg proportion for multiple alleles. *Biometrics* 48: 361–372.

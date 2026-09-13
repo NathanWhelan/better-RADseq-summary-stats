@@ -16,7 +16,8 @@ The reasoning behind each answer is in `vignette("rationale", package = "RADdive
 > with the package, in `system.file("scripts", package = "RADdiversity")`;
 > run them as `Rscript <that folder>/diversity_stats.R ...`. Every command has
 > an R equivalent: `diversity_stats()`, `het_between_pops()`,
-> `diversity_core_selftest()`.
+> `diversity_core_selftest()`. A script prints the full report; in R, printing
+> a result shows its main tables and `summary(result)` shows the full report.
 >
 > **Where the numbers come from.** The simulation results quoted here were
 > produced while the package was developed. Three sets ship with runnable
@@ -223,8 +224,11 @@ monomorphic, which deflates it."**
 > once that population had at least `min_n` (default 2) individuals genotyped
 > there, decided independently per population and per locus — the run prints,
 > per population, how many of N total loci cleared that bar. Per-sequenced-site
-> values are scaled using the full variant-record count regardless, since the
-> used subset is a sample of all variant records rather than the whole of them.
+> values are scaled, for each population, by all variant sites at which that
+> population has a genotyped individual (Stacks' `Variant_Sites`, the count
+> Stacks pairs with its `Sites`), not only by the records that cleared the
+> bar, since the used subset is a sample of those sites rather than the whole
+> of them.
 >
 > If `--complete-case` was used instead: sites were retained only where every
 > individual of every population was genotyped, following Schmidt et al. (2021)

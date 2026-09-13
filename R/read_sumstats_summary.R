@@ -2,23 +2,15 @@
 #
 #  R/read_sumstats_summary.R -- parser for Stacks' populations.sumstats_summary.tsv
 #
-#  WHAT THIS IS FOR. This package's own Ho, He and FIS estimators
-#  deliberately differ from Stacks' (see vignette("rationale"), "Formulas": Nei-Chesser
-#  He instead of Stacks' `Pi`, which assumes FIS = 0; FIS as a ratio of sums
-#  instead of Stacks' mean of per-locus ratios). NOTHING in this package
-#  treats sumstats_summary.tsv as a source of Ho, He, pi or FIS -- diversity_
-#  stats() computes all of those itself. The one column in this file that is
-#  a plain tally rather than an estimator is `Sites`, in the "All positions
-#  (variant and fixed)" block: how many nucleotide positions Stacks retained
-#  for that population. That count is genuinely useful -- it is the
-#  sequenced-site denominator diversity_stats()'s `sites` argument needs for
-#  the autosomal Ho/He (nucleotide diversity) conversion, and it differs
-#  slightly per population for the same reason a locus can be missing from
-#  one population and not another. read_sumstats_summary() below is a
-#  general parser for the whole file (both blocks, every column) so that
-#  number can be pulled out by name instead of retyped by hand -- see
-#  diversity_stats()'s `sites` argument for the intended use. Nothing else in
-#  this package calls it.
+#  WHAT THIS IS FOR. This package's Ho, He and FIS estimators deliberately
+#  differ from Stacks' (vignette("rationale"), "Formulas"), so NOTHING here
+#  uses sumstats_summary.tsv as a source of Ho, He, pi or FIS. The one column
+#  that is a plain count rather than an estimate is `Sites` in the "All
+#  positions (variant and fixed)" block: how many nucleotide positions Stacks
+#  kept for each population. That is the denominator diversity_stats()' `sites`
+#  argument needs for per-site Ho and He. read_sumstats_summary() reads the
+#  whole file (both blocks, every column) so that number can be taken by name
+#  instead of retyped by hand.
 #
 #  FILE SHAPE. Two blocks, always in this order:
 #    # Variant positions
@@ -29,13 +21,12 @@
 #    <one data row per population>
 #  `Var`/`StdErr` repeat after every one of 8 statistics (Num_Indv, P,
 #  Obs_Het, Obs_Hom, Exp_Het, Exp_Hom, Pi, Fis), and `%Polymorphic_Loci`
-#  isn't a syntactic name -- this header cannot be read with
-#  read.delim()/column names. It is matched POSITIONALLY against the known
-#  token sequence below (the same idiom read_stacks_vcf() uses for the
-#  GT-first-FORMAT check, R/vcf_io.R), and disambiguated into `<stat>`,
-#  `<stat>_var`, `<stat>_se`. A header that doesn't match -- e.g. a Stacks
-#  version that changed this file's columns -- is a loud, found-vs-expected
-#  error rather than a silent misalignment.
+#  isn't a syntactic name, so this header cannot be read by column name. It is
+#  compared POSITIONALLY with the expected token sequence below, and the
+#  repeated columns are renamed `<stat>`, `<stat>_var`, `<stat>_se`. A header
+#  that doesn't match (e.g. from a Stacks version that changed the columns)
+#  stops with a found-vs-expected message rather than misaligning silently.
+#  Checked by tests/testthat/test-read-sumstats-summary.R.
 #
 ###############################################################################
 
@@ -162,8 +153,9 @@
 #' read_sumstats_summary(f)$all_positions$sites  # 1e5
 #' @export
 read_sumstats_summary <- function(path) {
+  .check_string(path, "path")
   if (!file.exists(path))
-    stop("File not found: ", path, "\n  Check the path and try again.")
+    stop("File not found: ", path, "\n  Check the path and try again.", call. = FALSE)
   lines <- readLines(path)
   lines <- lines[nzchar(lines)]
 
@@ -184,10 +176,16 @@ read_sumstats_summary <- function(path) {
 
   block_bounds <- c(title_i, length(lines) + 1L)
   parse_one <- function(b, lead_cols) {
-    start <- block_bounds[b]; end <- block_bounds[b + 1L] - 1L
+    start <- block_bounds[b]                # the block's title line
+    end <- block_bounds[b + 1L] - 1L        # its last line
     header <- strsplit(sub("^#\\s*", "", lines[start + 1L]), "\t", fixed = TRUE)[[1]]
-    body   <- lines[(start + 2L):end]
-    rows   <- strsplit(body, "\t", fixed = TRUE)
+    ## Data rows are the lines after the header. seq_len() gives an empty
+    ## range when there are none; (start + 2L):end would count DOWN instead.
+    body <- lines[start + 1L + seq_len(max(0L, end - start - 1L))]
+    if (!length(body))
+      stop("populations.sumstats_summary.tsv: the \"", titles[b], "\" block has a header ",
+           "but no population rows.", call. = FALSE)
+    rows <- strsplit(body, "\t", fixed = TRUE)
     .parse_sumstats_block(titles[b], header, rows, lead_cols)
   }
 

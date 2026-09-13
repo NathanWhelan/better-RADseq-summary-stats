@@ -49,12 +49,15 @@
 ## for a replicate -- a duplicated individual counts as distinct copies). `h`
 ## and `m` are loci x individuals 0/1 matrices: heterozygous, typed.
 .g2_weighted <- function(h, m, W) {
-  r <- colSums(h); t <- colSums(m)
-  Ps <- colSums((r^2 - r) * W); Qs <- colSums((t^2 - t) * W)
-  C <- h %*% W; U <- m %*% W
-  Pd <- colSums(C)^2 - colSums(C^2) - Ps
-  Qd <- colSums(U)^2 - colSums(U^2) - Qs
-  g2 <- (Ps / Qs) / (Pd / Qd) - 1
+  het_loci <- colSums(h)        # r_i: heterozygous loci of each individual
+  typed_loci <- colSums(m)      # t_i: typed loci of each individual
+  P_same <- colSums((het_loci^2 - het_loci) * W)
+  Q_same <- colSums((typed_loci^2 - typed_loci) * W)
+  het_individuals <- h %*% W    # c_l: heterozygous individuals at each locus
+  typed_individuals <- m %*% W  # u_l: typed individuals at each locus
+  P_diff <- colSums(het_individuals)^2 - colSums(het_individuals^2) - P_same
+  Q_diff <- colSums(typed_individuals)^2 - colSums(typed_individuals^2) - Q_same
+  g2 <- (P_same / Q_same) / (P_diff / Q_diff) - 1
   g2[!is.finite(g2)] <- NA_real_
   g2
 }
@@ -64,19 +67,29 @@
 ## individuals. Heterozygote counts per locus (c), and all typed counts (t,
 ## u), are unchanged, so only the same-individual sum P_s changes.
 .g2_perm <- function(h, m, nperm) {
-  L <- nrow(h); n <- ncol(h)
-  cell <- which(m == 1)
-  row_of <- (cell - 1L) %% L + 1L; col_of <- (cell - 1L) %/% L + 1L
-  cnt <- rowSums(h); u <- rowSums(m); t <- colSums(m)
-  row_start <- cumsum(c(0, u))[seq_len(L)]          # typed cells before row l
-  Qs <- sum(t^2 - t); Qd <- sum(u)^2 - sum(u^2) - Qs
-  tot <- sum(cnt)^2 - sum(cnt^2)
+  n_loci <- nrow(h)
+  n_ind <- ncol(h)
+  ## Every typed cell, as its (locus, individual) position.
+  typed_cell <- which(m == 1)
+  locus_of <- (typed_cell - 1L) %% n_loci + 1L
+  individual_of <- (typed_cell - 1L) %/% n_loci + 1L
+  het_per_locus <- rowSums(h)
+  typed_per_locus <- rowSums(m)
+  typed_loci <- colSums(m)
+  cells_before_locus <- cumsum(c(0, typed_per_locus))[seq_len(n_loci)]
+  Q_same <- sum(typed_loci^2 - typed_loci)
+  Q_diff <- sum(typed_per_locus)^2 - sum(typed_per_locus^2) - Q_same
+  P_total <- sum(het_per_locus)^2 - sum(het_per_locus^2)
   vapply(seq_len(nperm), function(k) {
-    o <- order(row_of + stats::runif(length(row_of)))   # rows kept together, shuffled within
-    rank_in_row <- seq_along(o) - row_start[row_of[o]]
-    r <- tabulate(col_of[o][rank_in_row <= cnt[row_of[o]]], nbins = n)
-    Ps <- sum(r^2 - r)
-    (Ps / Qs) / ((tot - Ps) / Qd) - 1
+    ## Shuffle typed cells within each locus (sorting on locus + a uniform
+    ## keeps each locus's cells together), then make the first c_l cells of
+    ## locus l its heterozygotes.
+    o <- order(locus_of + stats::runif(length(locus_of)))
+    rank_in_locus <- seq_along(o) - cells_before_locus[locus_of[o]]
+    het_loci <- tabulate(individual_of[o][rank_in_locus <= het_per_locus[locus_of[o]]],
+                         nbins = n_ind)
+    P_same <- sum(het_loci^2 - het_loci)
+    (P_same / Q_same) / ((P_total - P_same) / Q_diff) - 1
   }, numeric(1))
 }
 
@@ -86,29 +99,26 @@
 .g2_summary <- function(a1, a2, nboot, nperm) {
   m <- !is.na(a1)
   h <- m & (a1 != a2)
-  storage.mode(h) <- "double"; storage.mode(m) <- "double"
-  n <- ncol(h)
-  est <- .g2_weighted(h, m, matrix(1, n, 1))
-  lo <- hi <- se <- p <- NA_real_
+  storage.mode(h) <- "double"
+  storage.mode(m) <- "double"
+  n_ind <- ncol(h)
+  estimate <- .g2_weighted(h, m, matrix(1, n_ind, 1))
+  lo <- hi <- se <- p_value <- NA_real_
   if (nboot > 0) {
-    batch <- max(1L, min(nboot, floor(5e6 / max(1, nrow(h)))))
-    bt <- numeric(0)
-    while (length(bt) < nboot) {
-      b <- min(batch, nboot - length(bt))
-      W <- vapply(seq_len(b), function(i)
-        as.numeric(tabulate(sample.int(n, n, replace = TRUE), nbins = n)), numeric(n))
-      bt <- c(bt, .g2_weighted(h, m, matrix(W, n, b)))
-    }
-    lo <- stats::quantile(bt, 0.025, na.rm = TRUE, names = FALSE)
-    hi <- stats::quantile(bt, 0.975, na.rm = TRUE, names = FALSE)
-    se <- stats::sd(bt, na.rm = TRUE)
+    ## Each column of `times_drawn` is one bootstrap sample of individuals.
+    boot <- .boot_in_batches(n_ind, nboot,
+                             function(times_drawn) cbind(.g2_weighted(h, m, times_drawn)),
+                             cells_per_replicate = nrow(h))[, 1]
+    lo <- stats::quantile(boot, 0.025, na.rm = TRUE, names = FALSE)
+    hi <- stats::quantile(boot, 0.975, na.rm = TRUE, names = FALSE)
+    se <- stats::sd(boot, na.rm = TRUE)
   }
-  if (nperm > 0 && is.finite(est)) {
+  if (nperm > 0 && is.finite(estimate)) {
     null <- .g2_perm(h, m, nperm)
-    p <- (sum(null >= est, na.rm = TRUE) + 1) / (nperm + 1)
+    p_value <- (sum(null >= estimate, na.rm = TRUE) + 1) / (nperm + 1)
   }
-  data.frame(n_ind = n, n_loci = nrow(h), g2 = est, g2_se = se,
-             g2_lo = lo, g2_hi = hi, p_value = p)
+  data.frame(n_ind = n_ind, n_loci = nrow(h), g2 = estimate, g2_se = se,
+             g2_lo = lo, g2_hi = hi, p_value = p_value)
 }
 
 #' Identity disequilibrium (g2): do individuals differ in inbreeding?
@@ -140,17 +150,21 @@
 #' populations inflates g2 (Wahlund effect), hence one estimate per
 #' population.
 #'
-#' @param H A list as returned by [read_stacks_vcf()] (optionally filtered),
-#'   or the path to a VCF.
-#' @param pops A named list of sample-ID vectors, one per population, as
-#'   returned by [read_popmap()], or the path to a popmap file.
+#' @param vcf Path to a VCF file, or the object returned by [read_stacks_vcf()]
+#'   (optionally filtered).
+#' @param popmap Path to a popmap file, or the list returned by
+#'   [read_popmap()].
 #' @param nboot Bootstrap replicates over individuals for the CI. Default
 #'   `1000`; `0` for none.
 #' @param nperm Permutations for the p-value. Default `1000`; `0` for none.
 #' @param min_call Use a locus for a population only if at least this fraction
 #'   of that population's individuals is genotyped there. Default `0.9`.
-#' @param seed Random seed, for reproducibility. The caller's own RNG state is
-#'   restored on exit.
+#' @param seed Random seed. Default `NULL`: use R's current random-number
+#'   stream (call `set.seed()` first for reproducible results). A number makes
+#'   the result reproducible on its own and leaves your session's
+#'   random-number stream as it was.
+#' @param verbose Print progress messages (when `vcf` or `popmap` is a path).
+#'   Default `TRUE`.
 #' @return A data frame, one row per population: `population`, `n_ind`,
 #'   `n_loci`, `g2`, `g2_se` (bootstrap SD), `g2_lo`, `g2_hi` (95% bootstrap
 #'   interval) and `p_value` (one-sided, g2 > 0).
@@ -170,29 +184,31 @@
 #' Nei, M. & Roychoudhury, A.K. (1974) Sampling variances of heterozygosity
 #' and genetic distance. *Genetics* 76:379-390.
 #' @examples
-#' H <- read_stacks_vcf(system.file("extdata", "small.haps.vcf",
-#'                                  package = "RADdiversity"), verbose = FALSE)
-#' pops <- read_popmap(system.file("extdata", "small_popmap.tsv",
-#'                                 package = "RADdiversity"), H$samples)
-#' identity_disequilibrium(H, pops, nboot = 200, nperm = 200, min_call = 0.5)
+#' vcf    <- system.file("extdata", "small.haps.vcf", package = "RADdiversity")
+#' popmap <- system.file("extdata", "small_popmap.tsv", package = "RADdiversity")
+#' set.seed(1)
+#' identity_disequilibrium(vcf, popmap, nboot = 200, nperm = 200, min_call = 0.5,
+#'                         verbose = FALSE)
 #' @export
-identity_disequilibrium <- function(H, pops, nboot = 1000L, nperm = 1000L,
-                                    min_call = 0.9, seed = 2024) {
-  H <- .resolve_H(H, verbose = FALSE)
-  if (is.character(pops) && length(pops) == 1L) pops <- read_popmap(pops, H$samples, verbose = FALSE)
-  if (!is.list(pops) || is.null(names(pops)))
-    stop("pops must be a named list of sample IDs per population (see read_popmap()).")
-  nboot <- as.integer(nboot); nperm <- as.integer(nperm)
-  if (is.na(nboot) || nboot < 0 || is.na(nperm) || nperm < 0)
-    stop("nboot and nperm must be non-negative integers.")
-  restore_rng <- .save_rng_state()
-  on.exit(restore_rng(), add = TRUE)
-  set.seed(seed)
-  keep <- sweep(.typed_by_pop(H, pops), 2L, lengths(pops), "/") >= min_call - 1e-9
+identity_disequilibrium <- function(vcf, popmap, nboot = 1000L, nperm = 1000L,
+                                    min_call = 0.9, seed = NULL, verbose = TRUE) {
+  nboot <- .check_count(nboot, "nboot")
+  nperm <- .check_count(nperm, "nperm")
+  .check_number(min_call, "min_call", min = 0, max = 1)
+  .check_seed(seed)
+  .check_flag(verbose, "verbose")
+  H <- .resolve_H(vcf, verbose = verbose)
+  pops <- .resolve_pops(popmap, H$samples, verbose = verbose)
+  if (!is.null(seed)) {
+    restore_rng <- .save_rng_state()
+    on.exit(restore_rng(), add = TRUE)
+    set.seed(seed)
+  }
+  locus_sets <- .population_locus_sets(H, pops, min_call)
   do.call(rbind, lapply(names(pops), function(p) {
-    rows <- keep[, p]
+    loci <- locus_sets[, p]
     cbind(population = p,
-          .g2_summary(H$A1[rows, pops[[p]], drop = FALSE],
-                      H$A2[rows, pops[[p]], drop = FALSE], nboot, nperm))
+          .g2_summary(H$A1[loci, pops[[p]], drop = FALSE],
+                      H$A2[loci, pops[[p]], drop = FALSE], nboot, nperm))
   }))
 }

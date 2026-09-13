@@ -7,25 +7,25 @@
 write_plink(
   H,
   path_prefix,
-  pops = NULL,
+  popmap = NULL,
   drop_multiallelic = FALSE,
   verbose = TRUE
 )
 }
 \arguments{
-\item{H}{A list as returned by \code{\link[=read_stacks_vcf]{read_stacks_vcf()}}.}
+\item{H}{The object returned by \code{\link[=read_stacks_vcf]{read_stacks_vcf()}} (optionally filtered).
+It must still contain \verb{$fields}, the original VCF columns.}
 
 \item{path_prefix}{Output files are \verb{<path_prefix>.map} and
 \verb{<path_prefix>.ped}.}
 
-\item{pops}{Optionally, a named list of sample-ID vectors (from
-\code{\link[=read_popmap]{read_popmap()}}) -- when given, each individual's PLINK family ID (FID)
-is their population name; otherwise FID is just their sample name.}
+\item{popmap}{Optional: a popmap file path or the list returned by
+\code{\link[=read_popmap]{read_popmap()}}. When given, each individual's PLINK family ID (FID) is
+its population name; otherwise FID is the sample name.}
 
-\item{drop_multiallelic}{If \code{FALSE} (the default), a locus with more than
-2 observed alleles causes an error (rather than writing a file PLINK
-can't correctly read). Set to \code{TRUE} to instead silently exclude just
-those loci and write everything else.}
+\item{drop_multiallelic}{If \code{FALSE} (default), a record with more than 2
+observed alleles stops the function. If \code{TRUE}, such records are left
+out (with a message).}
 
 \item{verbose}{Print a short summary once written. Default \code{TRUE}.}
 }
@@ -33,25 +33,20 @@ those loci and write everything else.}
 \code{path_prefix}, invisibly.
 }
 \description{
-Writes the classic PLINK 1.x text format: \verb{<path_prefix>.map} (one line
-per locus) and \verb{<path_prefix>.ped} (one line per individual). Confirmed
-against PLINK's own documented \code{.map}/\code{.ped} column layout and missing-
-data code.
+Writes the PLINK 1 text format: \verb{<path_prefix>.map} (one line per record)
+and \verb{<path_prefix>.ped} (one line per individual), with PLINK's documented
+column layout and missing-data code (\code{0}).
 }
 \details{
-PLINK's \code{.ped} format has exactly two allele columns per locus -- it has
-no way to represent a locus with more than two alleles. Haplotype VCFs
-from Stacks routinely do have loci with 3 or more alleles, so this
-function checks for that using \code{\link[=locus_allele_stats]{locus_allele_stats()}} before writing
-anything.
+PLINK's \code{.ped} format has exactly two allele columns per locus, so it
+cannot represent a record with more than two alleles, which haplotype VCFs
+often have. Such records stop the function unless \code{drop_multiallelic = TRUE}.
 }
 \examples{
-H <- list(
-  A1 = matrix(c(1L, 1L, 1L, 2L), nrow = 1), A2 = matrix(c(1L, 2L, 1L, 2L), nrow = 1),
-  locus = "locus_1", locus_raw = "locus_1", alleles = list(c("A", "C")),
-  n_alleles = 2L, samples = c("a1", "a2", "a3", "a4")
-)
+H <- read_stacks_vcf(system.file("extdata", "small.snps.vcf",
+                                 package = "RADdiversity"), verbose = FALSE)
+popmap <- system.file("extdata", "small_popmap.tsv", package = "RADdiversity")
 out <- tempfile()
-write_plink(H, out, verbose = FALSE)
-cat(readLines(paste0(out, ".ped")), sep = "\n")
+write_plink(H, out, popmap = popmap)
+readLines(paste0(out, ".map"))[1:3]
 }

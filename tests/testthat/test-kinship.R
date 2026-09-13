@@ -126,5 +126,65 @@ test_that("a pair with no heterozygous locus between them gets NA, not NaN/-Inf"
 
 test_that("method must be exactly \"king\" or \"beta\"", {
   H <- make_kinship_H()
-  expect_error(kinship_check(H, method = "kinship", verbose = FALSE), "method must be")
+  expect_error(kinship_check(H, method = "kinship", verbose = FALSE), "`method` must be one of")
+})
+
+test_that("threshold = NULL lists every pair that has a kinship value", {
+  H <- make_kinship_H(n_loc = 50)
+  H$A1[1:30, "s1"] <- NA
+  H$A2[1:30, "s1"] <- NA                       # s1-s4 falls below 30 shared loci
+  res <- kinship_check(H, threshold = NULL, verbose = FALSE)
+  expect_equal(nrow(res$flagged_pairs), sum(!is.na(res$pairwise$kinship)))
+  expect_false(any(is.na(res$flagged_pairs$kinship)))
+})
+
+test_that("the evidence floors are arguments, and the result is returned visibly", {
+  H <- make_kinship_H(n_loc = 40)
+  expect_visible(kinship_check(H, verbose = FALSE))
+  strict <- kinship_check(H, min_shared_loci = 45, verbose = FALSE)
+  expect_true(all(is.na(strict$pairwise$kinship)))
+  lenient <- kinship_check(H, low_confidence_loci = 10, verbose = FALSE)
+  expect_false(any(lenient$pairwise$low_confidence))
+})
+
+test_that("method = \"beta\" with popmap uses each population as its own reference", {
+  skip_if_not_installed("hierfstat")
+  ## Two populations at FST 0.1 with no relatives except one planted full-sib
+  ## pair in X. Pooled beta reads unrelated same-population pairs as related;
+  ## within-population beta must not, and must still find the sibs.
+  set.seed(11)
+  L <- 3000; n <- 15
+  p_anc <- pmin(pmax(stats::rbeta(L, 1, 1), 0.05), 0.95)
+  pX <- sim_diverged_freqs(p_anc, 0.1)
+  X <- sim_genotypes(pX, n)
+  Y <- sim_genotypes(sim_diverged_freqs(p_anc, 0.1), n)
+  parents <- sim_genotypes(pX, 2)
+  child <- function() {
+    from <- function(k) ifelse(stats::runif(L) < 0.5, parents$A1[, k], parents$A2[, k])
+    list(from(1), from(2))
+  }
+  for (j in 1:2) { kid <- child(); X$A1[, j] <- kid[[1]]; X$A2[, j] <- kid[[2]] }
+  ids <- c(paste0("x", 1:n), paste0("y", 1:n))
+  A1 <- cbind(X$A1, Y$A1); A2 <- cbind(X$A2, Y$A2)
+  colnames(A1) <- colnames(A2) <- ids
+  H <- sim_H(A1, A2)
+  pops <- list(X = ids[1:n], Y = ids[n + 1:n])
+
+  within <- kinship_check(H, pops, method = "beta", threshold = NULL, verbose = FALSE)$pairwise
+  expect_true(all(c("population1", "population2") %in% names(within)))
+  same <- within$population1 == within$population2
+  expect_true(all(is.na(within$kinship[!same])))
+  sibs <- within$sample1 == "x1" & within$sample2 == "x2"
+  expect_gt(within$kinship[sibs], 0.177)
+  expect_equal(sum(within$kinship[same & !sibs] > 0.0442), 0)
+
+  expect_message(pooled <- kinship_check(H, method = "beta", threshold = NULL)$pairwise,
+                 "without `popmap`")
+  same_pooled <- substr(pooled$sample1, 1, 1) == substr(pooled$sample2, 1, 1)
+  expect_gt(mean(pooled$kinship[same_pooled] > 0.0442), 0.3)
+
+  ## KING needs no reference population and is unchanged by the popmap.
+  king_all <- kinship_check(H, method = "king", verbose = FALSE)$pairwise
+  king_pm <- kinship_check(H, pops, method = "king", verbose = FALSE)$pairwise
+  expect_equal(king_pm$kinship, king_all$kinship)
 })

@@ -5,20 +5,21 @@
 \title{Identity disequilibrium (g2): do individuals differ in inbreeding?}
 \usage{
 identity_disequilibrium(
-  H,
-  pops,
+  vcf,
+  popmap,
   nboot = 1000L,
   nperm = 1000L,
   min_call = 0.9,
-  seed = 2024
+  seed = NULL,
+  verbose = TRUE
 )
 }
 \arguments{
-\item{H}{A list as returned by \code{\link[=read_stacks_vcf]{read_stacks_vcf()}} (optionally filtered),
-or the path to a VCF.}
+\item{vcf}{Path to a VCF file, or the object returned by \code{\link[=read_stacks_vcf]{read_stacks_vcf()}}
+(optionally filtered).}
 
-\item{pops}{A named list of sample-ID vectors, one per population, as
-returned by \code{\link[=read_popmap]{read_popmap()}}, or the path to a popmap file.}
+\item{popmap}{Path to a popmap file, or the list returned by
+\code{\link[=read_popmap]{read_popmap()}}.}
 
 \item{nboot}{Bootstrap replicates over individuals for the CI. Default
 \code{1000}; \code{0} for none.}
@@ -28,8 +29,13 @@ returned by \code{\link[=read_popmap]{read_popmap()}}, or the path to a popmap f
 \item{min_call}{Use a locus for a population only if at least this fraction
 of that population's individuals is genotyped there. Default \code{0.9}.}
 
-\item{seed}{Random seed, for reproducibility. The caller's own RNG state is
-restored on exit.}
+\item{seed}{Random seed. Default \code{NULL}: use R's current random-number
+stream (call \code{set.seed()} first for reproducible results). A number makes
+the result reproducible on its own and leaves your session's
+random-number stream as it was.}
+
+\item{verbose}{Print progress messages (when \code{vcf} or \code{popmap} is a path).
+Default \code{TRUE}.}
 }
 \value{
 A data frame, one row per population: \code{population}, \code{n_ind},
@@ -65,11 +71,11 @@ populations inflates g2 (Wahlund effect), hence one estimate per
 population.
 }
 \examples{
-H <- read_stacks_vcf(system.file("extdata", "small.haps.vcf",
-                                 package = "RADdiversity"), verbose = FALSE)
-pops <- read_popmap(system.file("extdata", "small_popmap.tsv",
-                                package = "RADdiversity"), H$samples)
-identity_disequilibrium(H, pops, nboot = 200, nperm = 200, min_call = 0.5)
+vcf    <- system.file("extdata", "small.haps.vcf", package = "RADdiversity")
+popmap <- system.file("extdata", "small_popmap.tsv", package = "RADdiversity")
+set.seed(1)
+identity_disequilibrium(vcf, popmap, nboot = 200, nperm = 200, min_call = 0.5,
+                        verbose = FALSE)
 }
 \references{
 David, P., Pujol, B., Viard, F., Castella, V. & Goudet, J. (2007) Reliable

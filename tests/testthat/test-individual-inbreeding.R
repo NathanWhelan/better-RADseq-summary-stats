@@ -40,10 +40,8 @@ test_that("with complete data, the population mean of F equals diversity_stats()
   pm <- tempfile(); writeLines(paste0(H$samples, "\t", rep(names(pops), lengths(pops))), pm)
   f <- individual_inbreeding(H, pops)
   fis <- suppressMessages(diversity_stats(H, pm, g = 4, nboot = 0, stem = "f"))$per_population
-  ## diversity_stats() rounds FIS to 4 decimals, so compare on an absolute
-  ## scale (a relative tolerance fails for the population whose FIS is ~0).
   for (p in names(pops))
-    expect_lt(abs(mean(f$F[f$population == p]) - fis$Fis[fis$population == p]), 6e-5)
+    expect_lt(abs(mean(f$F[f$population == p]) - fis$Fis[fis$population == p]), 1e-10)
 })
 
 test_that("het_between_pops() tests F between populations and finds an inbreeding difference", {
@@ -57,7 +55,7 @@ test_that("het_between_pops() tests F between populations and finds an inbreedin
   expect_identical(names(ft), names(res$pairwise_tests))
   expect_gt(ft$diff, 0.15)                 # inbred minus outbred F
   expect_lt(ft$p_welch, 1e-4)
-  expect_true(any(grepl("INBREEDING", capture.output(print(res)))))
+  expect_true(any(grepl("INBREEDING", capture.output(print(summary(res))))))
 })
 
 test_that("individual_inbreeding() validates its inputs", {

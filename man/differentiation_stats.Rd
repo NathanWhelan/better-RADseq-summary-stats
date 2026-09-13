@@ -3,116 +3,110 @@
 \name{differentiation_stats}
 \alias{differentiation_stats}
 \alias{print.raddiv_differentiation}
+\alias{summary.raddiv_differentiation}
 \title{Population differentiation: FST, Weir & Goudet's beta, and Jost's D}
 \usage{
 differentiation_stats(
-  vcf_file,
-  popmap_f,
+  vcf,
+  popmap,
   nboot = 10000L,
+  hierfstat_check = FALSE,
   outdir = NULL,
-  seed = 2024,
-  verbose = TRUE,
   stem = NULL,
-  hierfstat_check = FALSE
+  seed = NULL,
+  verbose = TRUE
 )
 
 \method{print}{raddiv_differentiation}(x, ...)
+
+\method{summary}{raddiv_differentiation}(object, ...)
 }
 \arguments{
-\item{vcf_file}{Path to a Stacks VCF, or an already-parsed \code{H} list (see
-\code{\link[=diversity_stats]{diversity_stats()}} for the same option there).}
+\item{vcf}{Path to \code{populations.snps.vcf} or \code{populations.haps.vcf}
+(optionally gzip-compressed), or the object returned by
+\code{\link[=read_stacks_vcf]{read_stacks_vcf()}}, optionally passed through \verb{filter_*()} functions.}
 
-\item{popmap_f}{Path to a two-column, no-header popmap TSV (\verb{sample_id <TAB> population}).}
+\item{popmap}{Path to a two-column, no-header popmap file (\verb{sample_id <TAB> population}), or the list returned by \code{\link[=read_popmap]{read_popmap()}}.}
 
-\item{nboot}{Bootstrap replicates over RAD loci. Default \code{10000L}; \code{0} =
-none (only the jackknife standard error is then available).}
-
-\item{outdir}{Directory to write the result tables into as TSV files
-(created if needed). Default \code{NULL}: write no files -- the tables are in
-the returned object. The command-line script writes to the current
-directory.}
-
-\item{seed}{Random seed set before bootstrapping, for reproducibility.
-Default \code{2024}. The caller's own RNG state (e.g. from their own prior
-\code{set.seed()}) is restored when this function returns, so calling it
-interactively does not affect subsequent random draws in the caller's
-session.}
-
-\item{verbose}{Print the VCF/popmap parsing summary. Default \code{TRUE}.
-Progress messages can be silenced with \code{suppressMessages()}; the report
-itself appears only when the result is printed.}
-
-\item{stem}{Text used to build the two output filenames (e.g.
-\verb{diversity_per_population.<stem>.tsv}) -- ordinarily derived
-automatically from \code{vcf_file}'s own filename (e.g.
-\code{populations.haps.vcf} gives \code{stem = "haps"}), which is why this
-package's documented workflow runs this function once on the haplotype
-VCF and once on the SNP VCF without the second run silently overwriting
-the first run's files. That automatic derivation has no filename to
-work from when \code{vcf_file} is an already-parsed list rather than a path,
-so when writing files (\code{outdir}) from a list, \code{stem} must be given
-(e.g. \code{stem = "snps"}) -- this function stops with an explanatory error
-rather than guessing. Default \code{NULL}. Supplying \code{stem} alongside a path
-overrides the automatic derivation.}
+\item{nboot}{Bootstrap replicates over RAD loci. Default \code{10000}; \code{0} for
+none (the jackknife standard errors are always computed).}
 
 \item{hierfstat_check}{If \code{TRUE} and \code{hierfstat} is installed, also run
 \code{hierfstat::wc()} and report how far its global FST is from this
-package's. Default \code{FALSE} (the package tests already make this
-comparison, and \code{wc()} was most of the run time on large datasets).}
+package's. Default \code{FALSE} (the package tests make this comparison, and
+\code{wc()} is slow on large datasets).}
 
-\item{x}{A \code{raddiv_differentiation} object, as returned by
+\item{outdir}{Directory to write the result tables to as TSV files
+(created if needed). Default \code{NULL}: write nothing.}
+
+\item{stem}{Text in the output file names
+(\verb{diversity_per_population.<stem>.tsv}). By default it comes from the
+VCF's file name (\code{populations.haps.vcf} gives \code{"haps"}), so runs on the
+haplotype and SNP VCFs can share \code{outdir} without overwriting each other.
+Required when writing files from an already-read object, which has no
+file name.}
+
+\item{seed}{Random seed for the bootstrap. Default \code{NULL}: use R's current
+random-number stream, so call \code{set.seed()} first for reproducible
+intervals. A number makes the result reproducible on its own and leaves
+your session's random-number stream as it was.}
+
+\item{verbose}{Print progress messages. Default \code{TRUE}.}
+
+\item{x, object}{A \code{raddiv_differentiation} object, as returned by
 \code{differentiation_stats()}.}
 
 \item{...}{Ignored.}
 }
 \value{
-An object of class \code{raddiv_differentiation} (printing it shows the
-report): a list with
+An object of class \code{raddiv_differentiation}, a list of:
 \describe{
-\item{global}{One-row data frame: \code{FST}, \code{FST_se}, \code{FST_lo}, \code{FST_hi},
-\code{FIS}, \code{FIS_se}, \code{FIS_lo}, \code{FIS_hi}, \code{D}, \code{D_se}, \code{D_lo}, \code{D_hi}.}
+\item{global}{One row: \code{FST}, \code{FIS} and \code{D}, each with jackknife SE
+(\verb{_se}) and 95\% bootstrap interval (\verb{_lo}, \verb{_hi}).}
 \item{pairwise}{One row per pair of populations: FST, beta and D, with
-their standard errors and bootstrap CIs (also written to
-\verb{differentiation_pairwise.<stem>.tsv} when \code{outdir} is given, as the
-global table is to \verb{differentiation_global.<stem>.tsv}).}
+standard errors and bootstrap intervals.}
 \item{pairwise_fst, pairwise_beta, pairwise_D}{The pairwise point
-estimates as symmetric matrices (\code{NA} on the diagonal), one
-row/column per population. \code{pairwise_beta} is \code{NULL} (with an
-explanatory message) when hierfstat is not installed.}
+estimates as symmetric matrices (\code{NA} on the diagonal).
+\code{pairwise_beta} is \code{NULL} when hierfstat is not installed.}
+\item{settings}{The settings of this run.}
 }
+Values are stored at full precision. With \code{outdir}, \code{global} and
+\code{pairwise} are written to \verb{differentiation_global.<stem>.tsv} and
+\verb{differentiation_pairwise.<stem>.tsv}.
 }
 \description{
-Computes how much these populations differ from each other -- as opposed
-to \code{\link[=diversity_stats]{diversity_stats()}}, which asks how variable each population is on its
-own. Reports Weir & Cockerham's (1984) FST and FIS (global, i.e. across
-every population at once, and pairwise, i.e. one value per pair of
-populations), Jost's (2008) D (global and pairwise, generally the better
-choice on highly variable markers such as RAD haplotypes -- see
-\verb{@details}), and, when the \code{hierfstat} package is installed, Weir &
-Goudet's (2017) pairwise beta as a third, reference-population-free
-alternative.
+Computes how much populations differ from each other (as opposed to
+\code{\link[=diversity_stats]{diversity_stats()}}, which asks how variable each population is). Reports
+Weir & Cockerham's (1984) FST and FIS and Jost's (2008) D, for all
+populations together (global) and for each pair, and, when the \code{hierfstat}
+package is installed, Weir & Goudet's (2017) pairwise beta. Printing the
+result shows the tables; \code{summary()} adds notes on interpretation.
 }
 \details{
-\strong{Why report both FST and D.} FST has a ceiling that shrinks as a
-locus's own diversity grows, so two datasets with genuinely identical
-population structure can show very different FST values just because one
-used more variable markers (this is a well known, much-discussed property
-of FST itself, described at length in Jost (2008), the paper this
-function's D estimator comes from). RAD-haplotype loci are exactly the
-kind of highly variable marker where this matters, so on a haplotype VCF,
-prefer D (or beta) over FST for comparing datasets -- the same caution
-\code{\link[=diversity_stats]{diversity_stats()}} already gives for allelic richness and gene diversity
-on haplotype data.
+\strong{Why report both FST and D.} FST's ceiling shrinks as a locus's own
+diversity grows, so two datasets with identical population structure can
+show very different FST just because one used more variable markers (Jost
+2008). RAD haplotype loci are such markers, so on a haplotype VCF prefer D
+(or beta) for comparing datasets.
 
-\strong{Bootstrap and jackknife, not hierfstat's.} Confidence intervals here
-always come from this package's own block bootstrap over RAD loci (the
-same mechanism \code{\link[=diversity_stats]{diversity_stats()}} validates and uses), never from
-\code{hierfstat::boot.ppfst()}, which resamples individual SNP rows
-independently and so ignores the linkage between SNPs on the same RAD
-tag. The internal FST/FIS formula is Weir & Cockerham's (1984) published
-estimator; the package tests check it numerically against
-\code{hierfstat::wc()} (see the comment at the top of
-\code{R/differentiation_stats.R}).
+\strong{Bootstrap and jackknife.} Confidence intervals come from this package's
+bootstrap over whole RAD loci, not from \code{hierfstat::boot.ppfst()}, which
+resamples SNP rows independently and so ignores the linkage between SNPs
+on one RAD tag. The FST/FIS formula is Weir & Cockerham's (1984) published
+estimator; the package tests check it against \code{hierfstat::wc()}.
+
+\strong{Records typed in only one population.} FST (global and pairwise) uses
+a record only where at least two of the compared populations have a
+genotyped individual. A record typed in only one of them carries no
+information about differences between populations, but including it
+would add its within-population variance to FST's denominator and pull
+FST toward 0. Such records are common when a Stacks run has 3 or more
+populations and \code{-p} below their number. VCFtools and Stacks' own
+pairwise FST skip them too; \code{hierfstat::wc()} and \code{pairwise.WCfst()} do
+not, so on such data their FST is lower than this function's. Jost's D
+uses the same records as FST. Missing individuals within a typed
+population are handled by the estimator itself and are not affected. The
+number of skipped records is in \code{settings$fst_records_skipped}.
 
 \strong{References.} Weir, B.S. & Cockerham, C.C. (1984) Estimating
 F-statistics for the analysis of population structure. \emph{Evolution}
@@ -124,26 +118,13 @@ its relatives do not measure differentiation. \emph{Molecular Ecology}
 17:4015-4026. \doi{10.1111/j.1365-294X.2008.03887.x} --
 Winter, D.J. (2012) mmod: an R library for the calculation of population
 differentiation statistics. \emph{Molecular Ecology Resources} 12:1158-1160.
-\doi{10.1111/j.1755-0998.2012.03174.x} (this package's
-\code{.jost_hsht()} is an attributed adaptation of mmod's \code{HsHt()}; see
-\code{inst/NOTICE}).
+\doi{10.1111/j.1755-0998.2012.03174.x}
 }
 \examples{
-# A tiny made-up dataset: 2 populations, 4 loci, biallelic.
-samp <- c("a1","a2","a3","a4","b1","b2","b3","b4")
-H <- list(
-  A1 = rbind(locus_1 = c(1,1,1,1, 2,2,2,1), locus_2 = c(1,2,1,2, 1,1,2,2),
-             locus_3 = c(1,1,2,1, 1,1,1,1), locus_4 = c(2,1,1,2, 1,2,1,1)),
-  A2 = rbind(locus_1 = c(1,1,2,1, 2,2,1,2), locus_2 = c(2,2,1,1, 1,2,1,2),
-             locus_3 = c(1,2,2,1, 1,1,2,1), locus_4 = c(2,2,1,2, 1,2,2,1)),
-  locus = paste0("locus_", 1:4), locus_raw = paste0("locus_", 1:4),
-  n_alleles = rep(2L, 4), alleles = replicate(4, c("A", "C"), simplify = FALSE),
-  samples = samp
-)
-colnames(H$A1) <- colnames(H$A2) <- samp
-popmap <- tempfile()
-writeLines(c("a1\tpopA","a2\tpopA","a3\tpopA","a4\tpopA",
-             "b1\tpopB","b2\tpopB","b3\tpopB","b4\tpopB"), popmap)
-res <- differentiation_stats(H, popmap, nboot = 100, verbose = FALSE)
-res$global
+vcf    <- system.file("extdata", "small.haps.vcf", package = "RADdiversity")
+popmap <- system.file("extdata", "small_popmap.tsv", package = "RADdiversity")
+set.seed(1)
+res <- differentiation_stats(vcf, popmap, nboot = 100, verbose = FALSE)
+res
+res$global$D
 }

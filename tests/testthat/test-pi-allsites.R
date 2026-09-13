@@ -14,9 +14,13 @@ test_that("pi, dxy and per-individual heterozygosity match a hand calculation", 
                            site("1", 2, c("0/0", "0/0", "0/0", "0/0")),
                            site("2", 1, c("0/1", "./.", "0/0", "0/1"))))
   res <- suppressMessages(pi_allsites(vcf, pm4, nboot = 0))
-  expect_equal(res$pi$pi, signif(c(4 / 13, 3 / 18), 4))
-  expect_equal(res$dxy$dxy, signif(16 / 40, 4))
-  expect_equal(res$dxy$da, signif(16 / 40 - (4 / 13 + 3 / 18) / 2, 4))
+  expect_equal(res$pi$pi, c(4 / 13, 3 / 18))
+  ## pi_nc drops each typed individual's own pair (a difference if it is
+  ## heterozygous): popA 2/4 + 0/4 + 0/0 (site 3 has one individual, so no
+  ## between-individual pair); popB 0/4 + 0/4 + 2/4.
+  expect_equal(res$pi$pi_nc, c(2 / 8, 2 / 12))
+  expect_equal(res$dxy$dxy, 16 / 40)
+  expect_equal(res$dxy$da, 16 / 40 - (4 / 13 + 3 / 18) / 2)
   expect_equal(res$individual$het_sites, c(1, 1, 0, 1))
   expect_equal(res$individual$called_sites, c(3, 2, 3, 3))
 })
@@ -47,7 +51,36 @@ test_that("with no missing data, pi is the per-site 2n-corrected gene diversity 
   res <- suppressMessages(pi_allsites(write_tmp(d$lines), d$popmap, nboot = 0))
   per_site <- vapply(seq_len(400), function(i)
     gene_div_2n_counts(tabulate(c(d$a1[i, 1:6], d$a2[i, 1:6]) + 1L, nbins = 2)), 0)
-  expect_equal(res$pi$pi[1], signif(mean(per_site), 4))
+  expect_equal(res$pi$pi[1], mean(per_site))
+  ## ... and pi_nc is Nei & Chesser's He averaged over every site.
+  per_site_nc <- vapply(seq_len(400), function(i) {
+    counts <- tabulate(c(d$a1[i, 1:6], d$a2[i, 1:6]) + 1L, nbins = 2)
+    hs_from_counts(counts, ho = mean(d$a1[i, 1:6] != d$a2[i, 1:6]), n = 6)
+  }, 0)
+  expect_equal(res$pi$pi_nc[1], mean(per_site_nc))
+})
+
+test_that("pi_nc stays unbiased under inbreeding where pi does not", {
+  ## Every individual inbred with F = 0.5, 4 individuals per population: pi's
+  ## expectation is H (1 - F/(2n - 1)) = 0.93 H, pi_nc's is H.
+  set.seed(5)
+  L <- 20000; n_each <- 4; n <- 2 * n_each; F <- 0.5
+  p <- ifelse(stats::runif(L) < 0.5, stats::runif(L, 0.1, 0.9), 0)
+  a1 <- matrix(stats::runif(L * n) < p, L) * 1L
+  ibd <- matrix(stats::runif(L * n) < F, L)
+  a2 <- ifelse(ibd, a1, matrix(stats::runif(L * n) < p, L) * 1L)
+  gt <- matrix(paste0(a1, "/", a2), L)
+  lines <- vapply(seq_len(L), function(i)
+    paste(c(ceiling(i / 50), i, ".", "A", "C", ".", "PASS", ".", "GT", gt[i, ]), collapse = "\t"), "")
+  samp <- c(paste0("a", seq_len(n_each)), paste0("b", seq_len(n_each)))
+  vcf <- write_tmp(c("##fileformat=VCFv4.2",
+                     paste(c("#CHROM", "POS", "ID", "REF", "ALT", "QUAL", "FILTER", "INFO",
+                             "FORMAT", samp), collapse = "\t"), lines))
+  pm <- write_tmp(paste0(samp, "\t", rep(c("popA", "popB"), each = n_each)), ".tsv")
+  res <- suppressMessages(pi_allsites(vcf, pm, nboot = 0))
+  truth <- mean(2 * p * (1 - p))
+  expect_lt(abs(mean(res$pi$pi_nc) / truth - 1), 0.02)
+  expect_lt(mean(res$pi$pi) / truth - 1, -0.04)
 })
 
 test_that("with missing data pixy's estimator stays unbiased; missing-as-reference does not", {
@@ -69,12 +102,12 @@ test_that("with missing data pixy's estimator stays unbiased; missing-as-referen
 test_that("results do not depend on chunk size, and .gz input works", {
   d <- sim_allsites(300, 5, miss = 0.1, seed = 3)
   f <- write_tmp(d$lines)
-  big   <- suppressMessages(pi_allsites(f, d$popmap, nboot = 50, chunk_lines = 1e5))
-  small <- suppressMessages(pi_allsites(f, d$popmap, nboot = 50, chunk_lines = 7))
+  big   <- suppressMessages(pi_allsites(f, d$popmap, nboot = 50, chunk_lines = 1e5, seed = 1))
+  small <- suppressMessages(pi_allsites(f, d$popmap, nboot = 50, chunk_lines = 7, seed = 1))
   expect_equal(small$pi, big$pi)
   expect_equal(small$dxy, big$dxy)
   gz <- tempfile(fileext = ".vcf.gz"); con <- gzfile(gz, "w"); writeLines(d$lines, con); close(con)
-  expect_equal(suppressMessages(pi_allsites(gz, d$popmap, nboot = 50))$pi, big$pi)
+  expect_equal(suppressMessages(pi_allsites(gz, d$popmap, nboot = 50, seed = 1))$pi, big$pi)
   expect_equal(big$pi$sites[1], 300L)
 })
 
@@ -83,5 +116,5 @@ test_that("complete_sites uses only sites typed in every individual of the popul
                            site("1", 2, c("0/1", "0/0", "0/0", "0/0"))))
   res <- suppressMessages(pi_allsites(vcf, pm4, nboot = 0, complete_sites = TRUE))
   expect_equal(res$pi$sites, c(1L, 2L))           # popA loses site 1
-  expect_equal(res$pi$pi[1], signif(3 / 6, 4))    # site 2 only: copies 3 A, 1 C
+  expect_equal(res$pi$pi[1], 3 / 6)                # site 2 only: copies 3 A, 1 C
 })

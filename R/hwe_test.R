@@ -106,8 +106,10 @@
 ## 0 and unused. Untyped (missing) individuals are simply excluded first.
 .hwe_geno_table <- function(a, b, k) {
   ok <- !is.na(a) & !is.na(b)
-  a <- a[ok]; b <- b[ok]
-  gi <- pmin(a, b); gj <- pmax(a, b)   # gi <= gj always, by construction
+  a <- a[ok]
+  b <- b[ok]
+  gi <- pmin(a, b)                     # the smaller allele of each genotype
+  gj <- pmax(a, b)                     # the larger one, so gi <= gj
   idx <- (gj - 1L) * k + gi            # linear index into a k x k matrix
   tab <- tabulate(idx, nbins = k * k)
   dim(tab) <- c(k, k)
@@ -180,8 +182,9 @@
 .hwe_exact_biallelic <- function(tab) {
   n1 <- 2L * tab[1, 1] + tab[1, 2]   # allele-1 copy count
   n2 <- 2L * tab[2, 2] + tab[1, 2]   # allele-2 copy count
-  feasible <- seq.int(n1 %% 2L, min(n1, n2), by = 2L)
-  n11 <- (n1 - feasible) / 2; n22 <- (n2 - feasible) / 2
+  feasible <- seq.int(n1 %% 2L, min(n1, n2), by = 2L)   # feasible heterozygote counts
+  n11 <- (n1 - feasible) / 2
+  n22 <- (n2 - feasible) / 2
   w <- -lfactorial(n11) - lfactorial(feasible) - lfactorial(n22) + log(2) * feasible
   obs_w <- w[feasible == tab[1, 2]]
   ## Shift by the largest weight before exponentiating -- w can be a very
@@ -231,13 +234,17 @@
 ## small (most loci stop early) and doubles each round.
 .hwe_exact_multiallelic <- function(a, b, k_obs, n_draws, stop_after = 20) {
   obs_w <- .levene_log_weight(.hwe_geno_table(a, b, k_obs))
-  n <- length(a); n2 <- 2L * n
+  n <- length(a)
+  n2 <- 2L * n
   copies <- c(a, b)   # the locus's own 2n allele copies, as a flat multiset
   kk <- k_obs * k_obs
   hom_cells <- which(diag(k_obs) == 1)           # (i, i) cells of a k x k table
   het_cells <- which(upper.tri(diag(k_obs)))     # (i, j) cells, i < j
-  odd <- seq.int(1L, n2, 2L); even <- odd + 1L
-  ge <- 0L; used <- 0L; batch <- 64L
+  odd <- seq.int(1L, n2, 2L)
+  even <- odd + 1L
+  ge <- 0L          # draws at least as extreme as the observed table
+  used <- 0L        # draws made so far
+  batch <- 64L
   while (used < n_draws && ge < stop_after) {
     m <- as.integer(min(batch, n_draws - used))
     ## Row r of `pos` is a random permutation of 1..2n: sorting on
@@ -246,7 +253,8 @@
     o <- order(rep(seq_len(m), each = n2) + stats::runif(m * n2))
     pos <- matrix(o, m, n2, byrow = TRUE) - (seq_len(m) - 1L) * n2
     perm <- matrix(copies[pos], m, n2)
-    g1 <- perm[, odd, drop = FALSE]; g2 <- perm[, even, drop = FALSE]
+    g1 <- perm[, odd, drop = FALSE]
+    g2 <- perm[, even, drop = FALSE]
     cell <- (pmax(g1, g2) - 1L) * k_obs + pmin(g1, g2)   # as in .hwe_geno_table()
     tab <- matrix(tabulate(as.vector(cell) + rep.int((seq_len(m) - 1L) * kk, n),
                            nbins = m * kk), m, kk, byrow = TRUE)
@@ -258,7 +266,8 @@
       used <- used + which(ge + hits >= stop_after)[1L]   # stop exactly at the hit
       ge <- as.integer(stop_after)
     } else {
-      used <- used + m; ge <- ge + hits[m]
+      used <- used + m
+      ge <- ge + hits[m]
     }
     batch <- min(2L * batch, 4096L)
   }
@@ -296,8 +305,11 @@
   allele_n <- rowSums(tab) + colSums(tab)
   p <- allele_n / (2 * n)
   exp_tab <- matrix(0, k_obs, k_obs)
-  for (i in seq_len(k_obs)) for (j in i:k_obs)
-    exp_tab[i, j] <- if (i == j) n * p[i]^2 else 2 * n * p[i] * p[j]
+  for (i in seq_len(k_obs)) {
+    for (j in i:k_obs) {
+      exp_tab[i, j] <- if (i == j) n * p[i]^2 else 2 * n * p[i] * p[j]
+    }
+  }
   obs_cells <- c(diag(tab), tab[upper.tri(tab)])
   exp_cells <- c(diag(exp_tab), exp_tab[upper.tri(exp_tab)])
   stat <- sum((obs_cells - exp_cells)^2 / exp_cells)
@@ -368,97 +380,108 @@
 #' p-values should never be zero. *Statistical Applications in Genetics and
 #' Molecular Biology* 9:39.
 #'
-#' @param H A list as returned by [read_stacks_vcf()] (or by another filter in
-#'   this package, since they all return the same shape).
-#' @param pops Optional named list of sample-ID vectors (from
-#'   [read_popmap()]). `NULL` (the default) pools every sample into one
-#'   group named `"pooled"`; given, tests each population separately.
+#' @param vcf Path to a VCF file, or the object returned by [read_stacks_vcf()]
+#'   (optionally filtered).
+#' @param popmap Optional: a popmap file path or the list returned by
+#'   [read_popmap()], to test each population separately. Default `NULL`: pool
+#'   every sample into one group named `"pooled"`.
 #' @param method `"exact"` (default) or `"chisq"`.
 #' @param n_draws Maximum Monte Carlo draws per multiallelic locus under
-#'   `method = "exact"`. Default `10000L`. Ignored for biallelic loci
-#'   (exact by enumeration) and under `method = "chisq"`.
+#'   `method = "exact"`. Default `10000`. Ignored for biallelic loci (exact by
+#'   enumeration) and under `method = "chisq"`.
 #' @param stop_after Stop drawing for a locus once this many draws at least
 #'   as extreme as the observed table have been seen (Besag & Clifford
 #'   1991). Default `20`. `Inf` always uses all `n_draws` draws.
-#' @param seed Random seed for the Monte Carlo draws, for reproducibility.
-#'   Default `2024`. The caller's own RNG state is restored when this
-#'   function returns (see [diversity_stats()] for the same convention).
+#' @param seed Random seed for the Monte Carlo draws. Default `NULL`: use R's
+#'   current random-number stream (call `set.seed()` first for reproducible
+#'   p-values). A number makes the result reproducible on its own and leaves
+#'   your session's random-number stream as it was.
 #' @param verbose Print a short summary. Default `TRUE`.
 #' @return A data frame, one row per (locus, population) combination:
 #'   `locus`, `population`, `method`, `submethod` (`"exact-enum"`,
 #'   `"exact-mc"`, or `"chisq"`), `n_alleles` (declared), `n_observed_alleles`,
-#'   `n_called` (typed individuals in that group), `statistic`, `df`,
+#'   `n_called` (typed individuals in that group), `F` (`1 - Ho/He`, with
+#'   Nei & Chesser's He: positive for a heterozygote deficit, negative for an
+#'   excess -- the test itself is two-sided, so `F` says which way a small
+#'   p-value points), `statistic`, `df`,
 #'   `p_value`, `p_value_se` and `n_draws_used` (only defined for
-#'   `"exact-mc"` rows),
-#'   `pct_low_expected` (only defined for `"chisq"` rows). A locus/group
-#'   combination with fewer than 2 observed alleles (monomorphic there) or
-#'   fewer than 2 typed individuals gets `NA` throughout except `n_called`/
-#'   `n_observed_alleles` themselves.
+#'   `"exact-mc"` rows), and `pct_low_expected` (only defined for `"chisq"`
+#'   rows). A locus/group with fewer than 2 observed alleles (monomorphic
+#'   there) or fewer than 2 typed individuals gets `NA` throughout except
+#'   `n_called` and `n_observed_alleles`.
 #' @examples
-#' # 2 loci: locus_1 biallelic (12 individuals, exact-enum path), locus_2
-#' # triallelic (exact-mc path).
-#' samp <- paste0("s", 1:12)
-#' H <- list(
-#'   A1 = rbind(locus_1 = rep(c(1L,1L,2L), 4), locus_2 = rep(c(1L,2L,3L), 4)),
-#'   A2 = rbind(locus_1 = rep(c(1L,2L,2L), 4), locus_2 = rep(c(2L,3L,1L), 4)),
-#'   locus = c("locus_1","locus_2"), locus_raw = c("locus_1","locus_2"),
-#'   n_alleles = c(2L, 3L), alleles = list(c("A","C"), c("A","C","T")),
-#'   samples = samp
-#' )
-#' colnames(H$A1) <- colnames(H$A2) <- samp
-#' hwe_test(H, n_draws = 500, verbose = FALSE)
+#' vcf    <- system.file("extdata", "small.haps.vcf", package = "RADdiversity")
+#' popmap <- system.file("extdata", "small_popmap.tsv", package = "RADdiversity")
+#' set.seed(1)
+#' hw <- hwe_test(vcf, popmap, n_draws = 500, verbose = FALSE)
+#' head(hw)
+#' table(hw$submethod, useNA = "ifany")
 #' @export
-hwe_test <- function(H, pops = NULL, method = "exact", n_draws = 10000L,
-                      stop_after = 20, seed = 2024, verbose = TRUE) {
-  if (!(length(method) == 1L && method %in% c("exact", "chisq")))
-    stop("method must be exactly \"exact\" or \"chisq\" (got: ", paste(method, collapse = ", "), ").")
-  n_draws <- as.integer(n_draws)
-  if (is.na(n_draws) || n_draws < 1L)
-    stop("n_draws must be a positive integer.")
-  if (length(stop_after) != 1L || is.na(stop_after) || stop_after < 1)
-    stop("stop_after must be a single number >= 1 (Inf for a fixed n_draws).")
+hwe_test <- function(vcf, popmap = NULL, method = "exact", n_draws = 10000L,
+                     stop_after = 20, seed = NULL, verbose = TRUE) {
+  .check_choice(method, "method", c("exact", "chisq"))
+  n_draws <- .check_count(n_draws, "n_draws", min = 1)
+  .check_number(stop_after, "stop_after", min = 1)
+  .check_seed(seed)
+  .check_flag(verbose, "verbose")
+  H <- .resolve_H(vcf, verbose = verbose)
+  groups <- if (is.null(popmap)) stats::setNames(list(H$samples), "pooled")
+            else .resolve_pops(popmap, H$samples, verbose = verbose)
+  if (!is.null(seed)) {
+    restore_rng <- .save_rng_state()
+    on.exit(restore_rng(), add = TRUE)
+    set.seed(seed)
+  }
 
-  ## Same RNG-preservation convention as every other stochastic function in
-  ## this package: restore the caller's own random-number state on exit.
-  restore_rng <- .save_rng_state()
-  on.exit(restore_rng(), add = TRUE)
-  set.seed(seed)
+  if (is.null(popmap))
+    .inform(verbose, "hwe_test(): no popmap, so every sample is tested as ONE group. If the ",
+            "samples come from more than one population, allele-frequency differences ",
+            "between them look like a heterozygote deficit (Wahlund effect); pass `popmap` ",
+            "to test each population separately.")
 
-  groups <- if (is.null(pops)) stats::setNames(list(H$samples), "pooled") else pops
   n_rec <- nrow(H$A1)
   n_out <- n_rec * length(groups)
 
   ## One slot per (population, locus) row, filled in place and turned into a
-  ## data frame once at the end -- building a one-row data.frame() per locus
-  ## and rbind()-ing tens of thousands of them was a large share of the run
-  ## time on a real dataset.
+  ## data frame once at the end (building and rbind()-ing one small data
+  ## frame per locus is very slow on a real dataset).
   submethod <- rep(NA_character_, n_out)
-  n_obs_all <- n_called <- integer(n_out)
-  statistic <- df <- p_value <- p_value_se <- pct_low <- rep(NA_real_, n_out)
+  n_observed <- n_called <- integer(n_out)
+  statistic <- df <- p_value <- p_value_se <- pct_low <- F_locus <- rep(NA_real_, n_out)
   n_used <- rep(NA_integer_, n_out)
-  ri <- 0L
+  row <- 0L
 
   for (g in names(groups)) {
     ids <- groups[[g]]
     for (j in seq_len(n_rec)) {
-      ri <- ri + 1L
-      cp <- .hwe_compact(H$A1[j, ids], H$A2[j, ids], H$n_alleles[j])
-      ok <- !is.na(cp$a) & !is.na(cp$b)
-      n_obs_all[ri] <- cp$k_obs
-      n_called[ri]  <- sum(ok)
-      if (cp$k_obs < 2L || n_called[ri] < 2L) next  # monomorphic here, or < 2 typed
-      a <- cp$a[ok]; b <- cp$b[ok]
+      row <- row + 1L
+      compact <- .hwe_compact(H$A1[j, ids], H$A2[j, ids], H$n_alleles[j])
+      typed <- !is.na(compact$a) & !is.na(compact$b)
+      n_observed[row] <- compact$k_obs
+      n_called[row] <- sum(typed)
+      if (compact$k_obs < 2L || n_called[row] < 2L) next   # monomorphic here, or < 2 typed
+      a <- compact$a[typed]
+      b <- compact$b[typed]
+      ## Direction of any departure: F = 1 - Ho/He (Nei & Chesser He).
+      ## Positive = heterozygote deficit (inbreeding, null alleles, Wahlund);
+      ## negative = excess (a common sign of collapsed paralogs in RAD data).
+      ho <- mean(a != b)
+      he <- hs_from_counts(tabulate(c(a, b), nbins = compact$k_obs), ho, length(a))
+      F_locus[row] <- if (isTRUE(he > .zero_tol)) 1 - ho / he else NA_real_
       res <- if (method == "chisq") {
-        .hwe_chisq(.hwe_geno_table(a, b, cp$k_obs), cp$k_obs)
-      } else if (cp$k_obs == 2L) {
-        .hwe_exact_biallelic(.hwe_geno_table(a, b, cp$k_obs))
+        .hwe_chisq(.hwe_geno_table(a, b, compact$k_obs), compact$k_obs)
+      } else if (compact$k_obs == 2L) {
+        .hwe_exact_biallelic(.hwe_geno_table(a, b, compact$k_obs))
       } else {
-        .hwe_exact_multiallelic(a, b, cp$k_obs, n_draws, stop_after = stop_after)
+        .hwe_exact_multiallelic(a, b, compact$k_obs, n_draws, stop_after = stop_after)
       }
-      submethod[ri] <- res$submethod
-      statistic[ri] <- res$statistic; df[ri] <- res$df
-      p_value[ri] <- res$p_value; p_value_se[ri] <- res$p_value_se
-      n_used[ri] <- res$n_draws_used; pct_low[ri] <- res$pct_low_expected
+      submethod[row] <- res$submethod
+      statistic[row] <- res$statistic
+      df[row] <- res$df
+      p_value[row] <- res$p_value
+      p_value_se[row] <- res$p_value_se
+      n_used[row] <- res$n_draws_used
+      pct_low[row] <- res$pct_low_expected
     }
   }
   out <- data.frame(
@@ -466,7 +489,7 @@ hwe_test <- function(H, pops = NULL, method = "exact", n_draws = 10000L,
     population = rep(names(groups), each = n_rec),
     method = rep(method, n_out), submethod = submethod,
     n_alleles = rep(as.integer(H$n_alleles), length(groups)),
-    n_observed_alleles = n_obs_all, n_called = n_called,
+    n_observed_alleles = n_observed, n_called = n_called, F = F_locus,
     statistic = statistic, df = df, p_value = p_value, p_value_se = p_value_se,
     n_draws_used = n_used, pct_low_expected = pct_low,
     stringsAsFactors = FALSE)

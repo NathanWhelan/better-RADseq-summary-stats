@@ -8,7 +8,8 @@ test_that("diversity_stats() returns the expected structure on a small fixture",
     result <- diversity_stats(fx("small.haps.vcf"), fx("small_popmap.tsv"),
                                g = 4, nboot = 50, outdir = outdir)
   ))
-  expect_named(result, c("per_population", "richness", "autosomal"))
+  expect_named(result, c("per_population", "richness", "autosomal", "estimator_comparison",
+                         "he_difference", "settings"))
   expect_setequal(result$per_population$population, c("popA", "popB"))
   expect_true(all(c("Ho", "He", "Fis", "pct_poly") %in% names(result$per_population)))
   expect_true(all(c("Ar", "privAr", "priv_total") %in% names(result$richness)))
@@ -16,7 +17,7 @@ test_that("diversity_stats() returns the expected structure on a small fixture",
   expect_true(file.exists(file.path(outdir, "diversity_richness.haps.tsv")))
 })
 
-test_that("results are quiet objects: no files without outdir, the report on print()", {
+test_that("results are quiet objects: no files without outdir, tables on print(), the report on summary()", {
   vcf <- normalizePath(fx("small.haps.vcf")); pm <- normalizePath(fx("small_popmap.tsv"))
   wd <- tempfile("nowrite-"); dir.create(wd)
   old <- setwd(wd)
@@ -25,17 +26,22 @@ test_that("results are quiet objects: no files without outdir, the report on pri
   out <- capture.output(res <- suppressMessages(diversity_stats(vcf, pm, g = 4, nboot = 0)))
   expect_length(out, 0)                                   # computing prints nothing
   expect_s3_class(res, "raddiv_diversity")
-  rep <- capture.output(p <- print(res))
-  expect_true(any(grepl("TAKE FROM THIS RUN", rep)))
+  short <- capture.output(p <- print(res))
   expect_identical(p, res)                                # print() returns its input
+  expect_true(any(grepl("Take from this haplotype VCF", short)))
+  expect_lt(length(short), 40)                            # print() stays short
+  full <- capture.output(print(summary(res)))
+  expect_true(any(grepl("TAKE FROM THIS RUN", full)))
+  expect_gt(length(full), length(short))
 
   het <- suppressMessages(het_between_pops(vcf, pm, min_call = 0.5))
   expect_s3_class(het, "raddiv_het")
-  expect_true(any(grepl("Overdispersion check", capture.output(print(het)))))
+  expect_true(any(grepl("pairwise_tests", capture.output(print(het)))))
+  expect_true(any(grepl("Overdispersion check", capture.output(print(summary(het))))))
 
   dif <- suppressMessages(differentiation_stats(vcf, pm, nboot = 0))
   expect_s3_class(dif, "raddiv_differentiation")
-  expect_true(any(grepl("DIFFERENTIATION", capture.output(print(dif)))))
+  expect_true(any(grepl("DIFFERENTIATION", capture.output(print(summary(dif))))))
 
   expect_length(list.files(wd), 0)                        # and nothing was written
 })
@@ -66,31 +72,39 @@ test_that("diversity_stats() rejects an inexact boot value instead of partial-ma
   expect_error(
     diversity_stats(fx("small.haps.vcf"), fx("small_popmap.tsv"),
                      g = 4, nboot = 5, boot = "individual"),
-    "boot must be one of"
+    "must be one of"
   )
 })
 
-test_that("diversity_stats() and het_between_pops() restore the caller's RNG state", {
-  outdir <- tempfile("raddiversity-test-")
-  dir.create(outdir)
-  on.exit(unlink(outdir, recursive = TRUE), add = TRUE)
-
+test_that("with a seed, diversity_stats() and het_between_pops() are reproducible and restore the caller's RNG state", {
   set.seed(999)
   expected <- runif(1)
 
   set.seed(999)
-  invisible(capture.output(suppressMessages(
-    diversity_stats(fx("small.haps.vcf"), fx("small_popmap.tsv"),
-                     g = 4, nboot = 20, outdir = outdir)
-  )))
+  a <- suppressMessages(diversity_stats(fx("small.haps.vcf"), fx("small_popmap.tsv"),
+                                        g = 4, nboot = 20, seed = 1))
   expect_equal(runif(1), expected)
+  b <- suppressMessages(diversity_stats(fx("small.haps.vcf"), fx("small_popmap.tsv"),
+                                        g = 4, nboot = 20, seed = 1))
+  expect_identical(a$per_population, b$per_population)
 
   set.seed(999)
-  invisible(capture.output(suppressMessages(
-    het_between_pops(fx("small.haps.vcf"), fx("small_popmap.tsv"),
-                      min_call = 0.5, outdir = outdir)
-  )))
+  invisible(suppressMessages(het_between_pops(fx("small.haps.vcf"), fx("small_popmap.tsv"),
+                                              min_call = 0.5, seed = 1)))
   expect_equal(runif(1), expected)
+})
+
+test_that("with seed = NULL (the default), set.seed() before the call makes the result reproducible", {
+  run <- function() suppressMessages(diversity_stats(fx("small.haps.vcf"), fx("small_popmap.tsv"),
+                                                     g = 4, nboot = 20))
+  set.seed(5)
+  a <- run()
+  set.seed(5)
+  b <- run()
+  expect_identical(a$per_population, b$per_population)
+  set.seed(6)
+  c <- run()
+  expect_false(identical(a$per_population$He_lo, c$per_population$He_lo))
 })
 
 test_that("diversity_stats() sites= accepts a scalar, a named vector, a data frame, or a sumstats_summary path -- all equivalent when the value is the same for every population", {
@@ -136,11 +150,7 @@ test_that("diversity_stats() sites= as a per-population vector gives each popula
   for (p in c("popA", "popB")) {
     he_marker <- out$per_population$He[out$per_population$population == p]
     sites_p   <- c(popA = 100000, popB = 50000)[[p]]
-    ## he_marker (from per_population) is itself already rounded to 4 decimal
-    ## places, so a loose relative tolerance absorbs that rounding rather than
-    ## re-deriving diversity_stats()'s full-precision internal value here.
-    expect_equal(aut$He_autosomal[aut$population == p],
-                 signif(he_marker * n_rec / sites_p, 4), tolerance = 1e-3)
+    expect_equal(aut$He_autosomal[aut$population == p], he_marker * n_rec / sites_p)
   }
   ## And the two populations' own values are NOT equal to each other (unlike
   ## the equal-sites case above) -- confirms the per-population denominator
@@ -191,6 +201,58 @@ test_that("diversity_stats() ignores sites= entirely (autosomal NULL) on a haplo
   expect_null(out$autosomal)
 })
 
+test_that("per-site values scale each population by its own variant records (Stacks' -r pruning)", {
+  ## Three populations; population C is blanked at 30% of records, as Stacks'
+  ## -r does with -p below the number of populations. Stacks' `Sites` for C
+  ## then excludes those records, so C's numerator must exclude them too.
+  set.seed(42)
+  L <- 600
+  ids <- paste0("i", 1:30)
+  pops <- list(A = ids[1:10], B = ids[11:20], C = ids[21:30])
+  g <- sim_genotypes(stats::runif(L, 0.05, 0.95), 30)
+  A1 <- g$A1; A2 <- g$A2
+  colnames(A1) <- colnames(A2) <- ids
+  pruned <- sample(L, 0.3 * L)
+  A1[pruned, pops$C] <- NA
+  A2[pruned, pops$C] <- NA
+  H <- sim_H(A1, A2, records_per_locus = 3L)
+  sites <- 5e4 + c(A = L, B = L, C = L - length(pruned))
+
+  res <- diversity_stats(H, pops, g = 16, nboot = 0, sites = sites, verbose = FALSE)
+  counts <- RADdiversity:::.pop_counts(H, pops)
+  typed <- RADdiversity:::.typed_by_pop(H, pops)
+  hets <- RADdiversity:::.het_by_pop(H, pops, seq_len(L))
+  sum_hs <- vapply(1:3, function(k) {
+    hs <- hs_nei_chesser(rowSums((counts[[k]] / rowSums(counts[[k]]))^2),
+                         hets[, k] / typed[, k], typed[, k])
+    sum(hs, na.rm = TRUE)
+  }, numeric(1))
+  expect_equal(res$autosomal$variant_records, c(L, L, L - length(pruned)))
+  expect_equal(res$autosomal$He_autosomal, unname(sum_hs / sites), tolerance = 1e-12)
+})
+
+test_that("per-site values warn when records were removed after reading", {
+  snps <- fx("small.snps.vcf")
+  pm <- fx("small_popmap.tsv")
+  sumstats <- fx("sumstats_summary_small.tsv")
+  H <- read_stacks_vcf(snps, verbose = FALSE)
+  expect_identical(H$n_records_read, nrow(H$A1))
+  H_f <- filter_call_rate(H, min_call = 1, verbose = FALSE)
+  skip_if(nrow(H_f$A1) == nrow(H$A1), "fixture has no incomplete record to filter")
+  expect_identical(H_f$n_records_read, nrow(H$A1))
+  expect_warning(diversity_stats(H_f, pm, g = 4, nboot = 0, sites = 1e5, verbose = FALSE),
+                 "removed after reading")
+  ## With the sumstats file, its unfiltered Variant_Sites is used, and the
+  ## mismatch with the VCF is reported.
+  expect_warning(res <- diversity_stats(H_f, pm, g = 4, nboot = 0, sites = sumstats,
+                                        verbose = FALSE),
+                 "Variant_Sites")
+  expect_equal(res$autosomal$variant_records,
+               read_sumstats_summary(sumstats)$all_positions$variant_sites)
+  ## The unfiltered VCF with its own sumstats file: no warning.
+  expect_no_warning(diversity_stats(H, pm, g = 4, nboot = 0, sites = sumstats, verbose = FALSE))
+})
+
 test_that("het_between_pops() returns the expected structure on a small fixture", {
   outdir <- tempfile("raddiversity-test-")
   dir.create(outdir)
@@ -201,7 +263,9 @@ test_that("het_between_pops() returns the expected structure on a small fixture"
                         min_call = 0.5, outdir = outdir)
     )
   ))
-  expect_named(result, c("individual_heterozygosity", "pairwise_tests", "pairwise_F_tests"))
+  expect_named(result, c("individual_heterozygosity", "population_summary", "pairwise_tests",
+                         "pairwise_F_tests", "overdispersion", "g2", "missingness_confound",
+                         "settings"))
   expect_equal(nrow(result$individual_heterozygosity), 7L)
   expect_true(all(c("p_welch", "p_wilcox", "hedges_g") %in% names(result$pairwise_tests)))
   expect_true(file.exists(file.path(outdir, "individual_heterozygosity.haps.tsv")))

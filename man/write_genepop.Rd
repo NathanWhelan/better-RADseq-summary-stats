@@ -4,17 +4,23 @@
 \alias{write_genepop}
 \title{Write a (filtered) H as a Genepop input file}
 \usage{
-write_genepop(H, path, pops, title = "RADdiversity export", verbose = TRUE)
+write_genepop(
+  H,
+  path,
+  popmap = NULL,
+  title = "RADdiversity export",
+  verbose = TRUE
+)
 }
 \arguments{
-\item{H}{A list as returned by \code{\link[=read_stacks_vcf]{read_stacks_vcf()}}.}
+\item{H}{The object returned by \code{\link[=read_stacks_vcf]{read_stacks_vcf()}} (optionally filtered).
+It must still contain \verb{$fields}, the original VCF columns.}
 
-\item{path}{Output file path.}
+\item{path}{Output file path. A name ending in \code{.gz} writes a
+gzip-compressed file.}
 
-\item{pops}{A named list of sample-ID vectors (from \code{\link[=read_popmap]{read_popmap()}}).
-Required -- Genepop files are always organized into population blocks,
-so unlike \code{\link[=write_structure]{write_structure()}}/\code{\link[=write_plink]{write_plink()}} there's no sensible
-single-population default.}
+\item{popmap}{A popmap file path or the list returned by \code{\link[=read_popmap]{read_popmap()}}.
+Required: Genepop files are organized by population.}
 
 \item{title}{Text for the file's first line. Default
 \code{"RADdiversity export"}.}
@@ -25,23 +31,16 @@ single-population default.}
 \code{path}, invisibly.
 }
 \description{
-Writes the standard Genepop text layout: a title line, one locus-name
-line per locus, then each population introduced by a \code{POP} line followed
-by one line per individual. Confirmed against the official Genepop
-manual, including its missing-data code (all-zero allele codes, e.g.
-\code{0000}) and comma-after-sample-ID convention.
+Writes the Genepop text layout: a title line, one locus-name line per
+record, then for each population a \code{POP} line followed by one line per
+individual (\verb{name ,} then its genotypes). Missing genotypes are all zeros
+(e.g. \code{0000}), as in the Genepop manual.
 }
 \examples{
-# Column (sample) names on A1/A2 matter here -- write_genepop() looks
-# up each population's samples by name, exactly as read_stacks_vcf()'s
-# real output always allows.
-H <- list(
-  A1 = matrix(c(1L, 2L), nrow = 1, dimnames = list(NULL, c("a1", "a2"))),
-  A2 = matrix(c(1L, 2L), nrow = 1, dimnames = list(NULL, c("a1", "a2"))),
-  locus = "locus_1", n_alleles = 2L, samples = c("a1", "a2")
-)
-pops <- list(popA = "a1", popB = "a2")
+H <- read_stacks_vcf(system.file("extdata", "small.haps.vcf",
+                                 package = "RADdiversity"), verbose = FALSE)
+popmap <- system.file("extdata", "small_popmap.tsv", package = "RADdiversity")
 out <- tempfile()
-write_genepop(H, out, pops = pops, verbose = FALSE)
-cat(readLines(out), sep = "\n")
+write_genepop(H, out, popmap = popmap)
+readLines(out)[1:3]
 }

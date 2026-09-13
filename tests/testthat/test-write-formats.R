@@ -110,13 +110,15 @@ test_that("write_structure() emits a placeholder population column when pops is 
 ## write_genepop()
 ## ---------------------------------------------------------------------------
 
-test_that("write_genepop() requires pops and lays out POP blocks correctly", {
+test_that("write_genepop() requires popmap and lays out POP blocks correctly", {
   H <- make_H(A1 = rbind(c(1L, 2L)), A2 = rbind(c(1L, 2L)), samples = c("a1", "b1"))
-  expect_error(write_genepop(H, tempfile(), pops = NULL), "needs `pops`")
+  expect_error(write_genepop(H, tempfile()), "needs `popmap`")          # not given at all
+  expect_error(write_genepop(H, tempfile(), popmap = NULL), "needs `popmap`")
+  expect_error(write_genepop(H, tempfile(), popmap = list(popA = "a1")), "not in `popmap`")
 
   pops <- list(popA = "a1", popB = "b1")
   out <- tempfile()
-  write_genepop(H, out, pops = pops, verbose = FALSE)
+  write_genepop(H, out, popmap = pops, verbose = FALSE)
   lines <- readLines(out)
   expect_equal(sum(lines == "POP"), 2L)          # one per population
   expect_true(any(grepl("^a1 ,", lines)))
@@ -127,7 +129,7 @@ test_that("write_genepop() genotype codes decode back to the same (sorted) allel
   H <- make_H(A1 = rbind(c(1L, 3L)), A2 = rbind(c(3L, 3L)), n_alleles = 3L, samples = c("a1", "b1"))
   pops <- list(popA = "a1", popB = "b1")
   out <- tempfile()
-  write_genepop(H, out, pops = pops, verbose = FALSE)
+  write_genepop(H, out, popmap = pops, verbose = FALSE)
   lines <- readLines(out)
   a1_line <- lines[grepl("^a1 ,", lines)]
   geno <- trimws(strsplit(a1_line, ",")[[1]][2])
@@ -138,7 +140,7 @@ test_that("write_genepop() writes the all-zero code for a missing genotype", {
   H <- make_H(A1 = rbind(c(NA_integer_, 1L)), A2 = rbind(c(NA_integer_, 1L)), samples = c("a1", "b1"))
   pops <- list(popA = "a1", popB = "b1")
   out <- tempfile()
-  write_genepop(H, out, pops = pops, verbose = FALSE)
+  write_genepop(H, out, popmap = pops, verbose = FALSE)
   a1_line <- readLines(out)[grepl("^a1 ,", readLines(out))]
   expect_equal(trimws(strsplit(a1_line, ",")[[1]][2]), "0000")
 })
@@ -147,33 +149,22 @@ test_that("write_genepop() writes the all-zero code for a missing genotype", {
 ## write_fstat()
 ## ---------------------------------------------------------------------------
 
-test_that("write_fstat() requires pops and its header line matches the data", {
+test_that("write_fstat() requires popmap and its header line matches the data", {
   H <- make_H(A1 = rbind(c(1L, 2L), c(1L, 1L)), A2 = rbind(c(1L, 2L), c(1L, 1L)), samples = c("a1", "b1"))
-  expect_error(write_fstat(H, tempfile(), pops = NULL), "needs `pops`")
+  expect_error(write_fstat(H, tempfile()), "needs `popmap`")
 
   pops <- list(popA = "a1", popB = "b1")
   out <- tempfile()
-  write_fstat(H, out, pops = pops, verbose = FALSE)
+  write_fstat(H, out, popmap = pops, verbose = FALSE)
   header <- as.integer(strsplit(readLines(out)[1], " ")[[1]])
   expect_equal(header[1:2], c(2L, 2L))  # 2 populations, 2 loci
 })
 
-test_that("write_fstat() falls back to the internal writer when hierfstat is unavailable", {
+test_that("write_fstat() writes the same file whether or not hierfstat is installed", {
   H <- make_H(A1 = rbind(c(1L, 2L), c(1L, 1L)), A2 = rbind(c(1L, 2L), c(1L, 1L)), samples = c("a1", "b1"))
   pops <- list(popA = "a1", popB = "b1")
-
-  ## Force the fallback path by making the internal .hierfstat_available()
-  ## check report FALSE, just for the duration of this one call (see its
-  ## own comment in R/write_formats.R for why this indirection exists).
-  ## The fallback uses a different (but equally valid) digit-width encoding
-  ## than hierfstat::write.fstat() does, so this checks the fallback's own
-  ## structure rather than expecting byte-identical output between the two.
   out <- tempfile()
-  testthat::with_mocked_bindings(
-    .hierfstat_available = function() FALSE,
-    write_fstat(H, out, pops = pops, verbose = FALSE),
-    .package = "RADdiversity"
-  )
+  write_fstat(H, out, popmap = pops, verbose = FALSE)
   lines <- readLines(out)
   header <- as.integer(strsplit(lines[1], " ")[[1]])
   expect_equal(header, c(2L, 2L, 2L, 2L))  # 2 pops, 2 loci, max 2 alleles seen, 2-digit codes

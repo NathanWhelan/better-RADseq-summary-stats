@@ -4,28 +4,30 @@
 \alias{read_popmap}
 \title{Read a Stacks-style popmap}
 \usage{
-read_popmap(path, samples, verbose = TRUE)
+read_popmap(path, samples = NULL, verbose = TRUE)
 }
 \arguments{
-\item{path}{Path to the popmap TSV.}
+\item{path}{Path to the popmap file.}
 
-\item{samples}{Character vector of sample IDs to keep (typically the VCF's
-sample columns).}
+\item{samples}{Optional character vector of sample IDs to keep (typically
+\code{H$samples}, the VCF's sample columns). Samples not in it are dropped,
+and so is a population left with no samples. Default \code{NULL}: keep every
+sample in the file.}
 
-\item{verbose}{Print progress/summary messages. Default \code{TRUE}.}
+\item{verbose}{Print a short summary. Default \code{TRUE}.}
 }
 \value{
-A named list of character vectors, one per population, each
-holding that population's sample IDs.
+A named list of character vectors, one per population (in the
+order populations first appear in the file), each holding that
+population's sample IDs.
 }
 \description{
-Parses a two-column, no-header popmap TSV (\verb{sample_id <TAB> population})
-and splits sample IDs by population, restricted to samples present in
-\code{samples}.
+Reads a two-column, no-header, tab-separated popmap (\verb{sample_id <TAB> population}) into a list of sample IDs per population. Every function that
+takes a \code{popmap} argument accepts either the file path or this list.
 }
 \examples{
-H <- read_stacks_vcf(system.file("extdata", "small.haps.vcf",
-                                 package = "RADdiversity"), verbose = FALSE)
-read_popmap(system.file("extdata", "small_popmap.tsv", package = "RADdiversity"),
-            H$samples)
+popmap <- system.file("extdata", "small_popmap.tsv", package = "RADdiversity")
+pops <- read_popmap(popmap)
+pops
+lengths(pops)    # individuals per population
 }

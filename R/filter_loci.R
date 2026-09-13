@@ -2,681 +2,646 @@
 #
 #  R/filter_loci.R -- general-purpose locus and genotype filters.
 #
-#  Every function here takes `H`, the list returned by read_stacks_vcf() (see
-#  R/vcf_io.R), and returns a filtered version of it: same shape, same
-#  elements (A1, A2, locus, locus_raw, alleles, n_alleles, samples, fields),
-#  just fewer rows (loci) and/or some genotype cells set to missing. That
-#  means these filters CHAIN: you can run several in a row, in any order,
-#  e.g.
+#  Every filter takes `H`, the object returned by read_stacks_vcf() (see
+#  R/vcf_io.R), and returns the same kind of object with fewer records
+#  and/or some genotypes set to missing. So filters CHAIN, in any order:
 #
 #    H <- read_stacks_vcf("populations.snps.vcf")
 #    H <- filter_call_rate(H, min_call = 0.8)
 #    H <- filter_maf(H, min_maf = 0.05)
-#    H <- filter_low_conf_alt(H, min_alt_reads = 2)$H
+#    H <- filter_low_conf_alt(H, min_alt_reads = 2)
 #
-#  and the result can be handed straight to diversity_stats()/
-#  het_between_pops() in place of a file path (see .resolve_H() in
-#  R/vcf_io.R and the `stem` argument of diversity_stats()).
+#  (or, with R's pipe, H |> filter_call_rate(0.8) |> filter_maf(0.05)), and
+#  the result goes straight into any analysis function in place of a path.
 #
-#  These are DIFFERENT from, and do not touch, the filtering logic already
-#  built into diversity_stats() (the min_n/complete_case missing-data rule)
-#  or het_between_pops() (the pooled min_call rule). Those two are each
-#  tuned to one specific statistical need and are documented at length in
-#  their own files -- the functions below are general-purpose, reusable
-#  building blocks for cleaning up a dataset BEFORE analysis, export, or
-#  both.
+#  These filters are separate from the record rules built into
+#  diversity_stats() (min_n / complete_case) and het_between_pops()
+#  (min_call), which are documented with those functions. The filters here
+#  clean a dataset BEFORE analysis or export.
 #
-#  A NOTE FOR READERS NEW TO R: throughout this file, `NA` is R's way of
-#  writing "no data here" (a missing value), and a "logical" vector is just
-#  a vector of TRUE/FALSE (yes/no) values. `H$A1` and `H$A2` are matrices --
-#  tables of numbers -- with one row per RAD locus and one column per
-#  sample; `H$A1[j, i]` is individual i's FIRST allele at locus j and
-#  `H$A2[j, i]` its SECOND allele, both stored as small integers (1 = the
-#  REF allele, 2 = the first ALT allele, and so on), or `NA` if that
-#  individual wasn't genotyped there.
+#  A NOTE FOR READERS NEW TO R: `NA` is R's code for a missing value, and a
+#  "logical" vector is a vector of TRUE/FALSE values. `H$A1` and `H$A2` are
+#  matrices with one row per VCF record and one column per sample;
+#  `H$A1[j, i]` is individual i's FIRST allele at record j and `H$A2[j, i]`
+#  its SECOND allele, stored as small integers (1 = REF, 2 = first ALT, ...),
+#  or NA if the individual was not genotyped there.
+#
+#  Checked by tests/testthat/test-filter-loci.R.
 #
 ###############################################################################
 
-## Not exported. Every filter below ends by calling this to drop some rows
-## (loci) from H and keep the rest. Written once here so every filter drops
-## rows the same, correct way instead of repeating (and possibly
-## mis-copying) the same seven lines of subsetting code.
-##
-## `keep` can be:
-##   - a TRUE/FALSE (logical) vector, one value per locus, saying whether to
-##     keep that locus, or
-##   - a vector of row numbers to keep (e.g. c(1, 3, 4)).
-## Either way, every piece of H that has "one entry per locus" is subset
-## together, so they all stay lined up with each other afterwards. `samples`
-## isn't touched here, since subsetting loci never changes which individuals
-## are in the dataset.
+## Not exported. Every filter that removes records ends with this. It keeps
+## the records `keep` (a TRUE/FALSE vector with one value per record, or a
+## vector of record numbers) in every per-record element of H, so they all
+## stay lined up. `samples` is untouched: removing records never removes
+## individuals.
 .subset_H <- function(H, keep) {
   n_rec <- nrow(H$A1)
   if (is.logical(keep)) {
     if (length(keep) != n_rec || anyNA(keep))
       stop(".subset_H(): `keep` must be a TRUE/FALSE vector with exactly ",
-           n_rec, " entries (one per locus in H) and no missing values.")
+           n_rec, " entries (one per record in H) and no missing values.", call. = FALSE)
   } else {
     keep <- as.integer(keep)
     if (anyNA(keep) || any(keep < 1L | keep > n_rec))
-      stop(".subset_H(): `keep` row numbers must all be between 1 and ", n_rec, ".")
+      stop(".subset_H(): `keep` record numbers must all be between 1 and ", n_rec, ".",
+           call. = FALSE)
   }
-  ## `A1[keep, , drop = FALSE]` keeps only the rows named in `keep`, for every
-  ## column (sample); `drop = FALSE` stops R from silently turning the result
-  ## into a plain vector if only one locus (or one sample) is left.
+  ## drop = FALSE keeps a matrix a matrix even when one record is left.
   H$A1        <- H$A1[keep, , drop = FALSE]
   H$A2        <- H$A2[keep, , drop = FALSE]
   H$locus     <- H$locus[keep]
   H$locus_raw <- H$locus_raw[keep]
   H$alleles   <- H$alleles[keep]
   H$n_alleles <- H$n_alleles[keep]
-  ## `fields` (the raw VCF text) isn't always present -- e.g. a small H built
-  ## by hand for testing might skip it -- so only subset it if it's there.
+  ## `fields` (the raw VCF text) is absent from a hand-built H.
   if (!is.null(H$fields)) H$fields <- H$fields[keep, , drop = FALSE]
   H
 }
 
-#' Per-locus allele-frequency statistics
+## Not exported. The "N of M records kept (x%)" message every filter prints.
+.report_kept <- function(verbose, what, kept, n_rec) {
+  .inform(verbose, sprintf("%s: %s of %s records kept (%.1f%%)", what, .big(sum(kept)),
+                           .big(n_rec), 100 * mean(kept)))
+}
+
+#' Per-record allele-frequency statistics
 #'
-#' Computes, for every locus in `H`, how many allele copies were actually
-#' genotyped, which allele was the most common ("major") one, the minor
-#' allele frequency, and the minor allele count. This is the shared
-#' groundwork behind [filter_maf()] and [filter_mac()] -- call it yourself
-#' first if you want to look at the numbers before deciding on a threshold
-#' (e.g. `hist(locus_allele_stats(H)$maf)`), or pass its result into
-#' `filter_maf()`/`filter_mac()` via their `stats` argument to avoid
-#' recomputing it twice when you're going to apply both filters.
+#' For every record in `H`: how many allele copies were genotyped, the
+#' frequency of the most common ("major") allele, the minor allele frequency
+#' and the minor allele count. This is what [filter_maf()] and [filter_mac()]
+#' filter on; look at it before choosing a threshold (for example
+#' `hist(locus_allele_stats(H)$maf)`).
 #'
-#' How this works, step by step: for every locus, every called allele copy
-#' (from both `H$A1` and `H$A2`, ignoring anything missing) is counted up by
-#' allele number. The allele with the highest count is the "major" allele;
-#' everything else, added together, is the "minor" share. This is the usual
-#' definition of minor allele frequency (MAF) when a locus has exactly two
-#' possible alleles, and it generalizes sensibly to loci with more than two
-#' (haplotype VCFs can have several alleles per locus): MAF there means "the
-#' combined frequency of every allele except the single most common one".
+#' Every genotyped allele copy is counted by allele. The most common allele is
+#' the "major" allele; all others together are the "minor" share. At a
+#' biallelic record this is the usual minor allele frequency (MAF); at a
+#' multi-allelic (haplotype) record it is the combined frequency of every
+#' allele except the most common one.
 #'
-#' @param H A list as returned by [read_stacks_vcf()] (or by another filter in
-#'   this package, since they all return the same shape).
-#' @return A data frame with one row per locus, in the same order as `H$A1`,
-#'   and columns:
+#' @param H The object returned by [read_stacks_vcf()] (optionally filtered).
+#' @return A data frame with one row per record, in the order of `H`:
 #'   \describe{
-#'     \item{locus, locus_raw, n_alleles}{Copied straight from `H`, for
-#'       convenience.}
-#'     \item{n_observed_alleles}{How many DIFFERENT allele numbers were
-#'       actually seen in the genotypes at this locus. Can be smaller than
-#'       `n_alleles` if the VCF lists an ALT allele that nobody happened to
-#'       carry.}
-#'     \item{n_called}{Total number of allele copies genotyped at this
-#'       locus (each diploid individual contributes up to 2).}
-#'     \item{major_af}{Frequency of the single most common allele.}
+#'     \item{locus, locus_raw, n_alleles}{Copied from `H`.}
+#'     \item{n_observed_alleles}{How many different alleles were actually
+#'       seen. Can be smaller than `n_alleles` when the VCF lists an ALT
+#'       allele that nobody carries.}
+#'     \item{n_called}{Allele copies genotyped (2 per genotyped individual).}
+#'     \item{major_af}{Frequency of the most common allele.}
 #'     \item{maf}{Minor allele frequency, `1 - major_af`.}
-#'     \item{mac}{Minor allele count: how many allele copies were NOT the
-#'       major allele.}
+#'     \item{mac}{Minor allele count: copies that are not the major allele.}
 #'   }
-#'   A locus with zero genotyped individuals gets `NA` (not `0`) for
-#'   `major_af`/`maf`/`mac`, since "zero data" and "definitely monomorphic"
-#'   are different claims and must not be confused.
+#'   A record with no genotyped individual gets `NA` (not `0`) for
+#'   `major_af`, `maf` and `mac`: "no data" is not "monomorphic".
 #' @examples
-#' # A tiny made-up dataset: 2 loci, 3 samples, alleles coded 1 (REF) and
-#' # 2 (ALT). read_stacks_vcf() builds this same shape from a real VCF file.
-#' # Each row of A1/A2 is one locus's alleles across all 3 samples.
-#' H <- list(
-#'   A1 = rbind(locus_1 = c(1, 1, 2), locus_2 = c(1, 2, NA)),
-#'   A2 = rbind(locus_1 = c(1, 1, 2), locus_2 = c(2, 2, NA)),
-#'   locus = c("locus_1", "locus_2"), locus_raw = c("locus_1", "locus_2"),
-#'   n_alleles = c(2L, 2L), samples = c("ind1", "ind2", "ind3")
-#' )
-#' locus_allele_stats(H)  # locus_2 is missing in ind3, so n_called = 4 there
+#' H <- read_stacks_vcf(system.file("extdata", "small.snps.vcf",
+#'                                  package = "RADdiversity"), verbose = FALSE)
+#' allele_stats <- locus_allele_stats(H)
+#' head(allele_stats)
+#' summary(allele_stats$maf)
 #' @export
 locus_allele_stats <- function(H) {
-  A1 <- H$A1; A2 <- H$A2
-  n_rec  <- nrow(A1)
-  n_samp <- ncol(A1)
-  mx     <- max(H$n_alleles)  # the most alleles any single locus has
+  H <- .resolve_H(H, verbose = FALSE)
+  n_rec <- nrow(H$A1)
+  ## tab[j, a] = copies of allele a at record j (one tabulate() call; see
+  ## .allele_counts() in R/vcf_io.R).
+  tab <- .allele_counts(H$A1, H$A2, k = max(1L, H$n_alleles))
 
-  ## Line up every genotyped allele copy (from A1 and from A2) next to the
-  ## locus (row) it belongs to, so we can count them all in one pass instead
-  ## of looping over loci one at a time.
-  ##   c(A1, A2)          -- "unrolls" both matrices into one long list of
-  ##                         numbers, column by column.
-  ##   rep(rep(seq_len(n_rec), n_samp), 2)
-  ##                      -- builds a matching list saying which locus (row
-  ##                         number) each of those numbers came from.
-  codes <- c(A1, A2)
-  rows  <- rep(rep(seq_len(n_rec), n_samp), 2L)
-  ok    <- !is.na(codes)  # drop the "no data here" entries before counting
-
-  ## tabulate() is a fast base-R counting tool: give it a list of "bin"
-  ## numbers and it tells you how many times each bin number showed up. By
-  ## giving each (locus, allele) combination its own bin number, one call to
-  ## tabulate() counts every allele at every locus at once.
-  bin <- (codes[ok] - 1L) * n_rec + rows[ok]
-  tab <- tabulate(bin, nbins = n_rec * mx)
-  dim(tab) <- c(n_rec, mx)  # tab[j, a] = how many times allele `a` was seen at locus j
-
-  n_called           <- rowSums(tab)
+  n_called <- rowSums(tab)
   n_observed_alleles <- rowSums(tab > 0L)
-
-  ## The "major" allele count at each locus is just the largest count in
-  ## that row of `tab`. pmax() compares two vectors position-by-position and
-  ## keeps whichever value is bigger at each position; running it once per
-  ## allele column finds the row-wise maximum without needing apply().
-  major_count <- tab[, 1L]
-  if (mx > 1L) for (a in 2:mx) major_count <- pmax(major_count, tab[, a])
-
+  ## The largest count in each row: max.col() finds its column.
+  major_count <- if (n_rec) tab[cbind(seq_len(n_rec), max.col(tab, ties.method = "first"))]
+                 else integer(0)
   major_af <- major_count / n_called
-  mac      <- n_called - major_count
-  maf      <- mac / n_called
+  mac <- n_called - major_count
+  maf <- mac / n_called
 
-  ## A locus with n_called == 0 (nobody genotyped) divides zero by zero
-  ## above, giving NaN ("not a number") -- replace that with a proper NA so
-  ## it reads as "unknown", and make sure `mac` becomes NA too (not the 0 it
-  ## would otherwise compute to) so nothing downstream mistakes "no data"
-  ## for "definitely monomorphic".
+  ## A record with no genotyped individual would give 0/0 = NaN here. Mark it
+  ## as NA, and its minor allele count as NA rather than 0.
   no_data <- n_called == 0L
   major_af[no_data] <- NA_real_
-  maf[no_data]      <- NA_real_
-  mac[no_data]       <- NA_real_
+  maf[no_data] <- NA_real_
+  mac[no_data] <- NA_integer_
 
-  data.frame(
-    locus = H$locus, locus_raw = H$locus_raw, n_alleles = H$n_alleles,
-    n_observed_alleles = n_observed_alleles, n_called = n_called,
-    major_af = major_af, maf = maf, mac = as.integer(round(mac)),
-    row.names = NULL
-  )
+  data.frame(locus = H$locus, locus_raw = H$locus_raw, n_alleles = H$n_alleles,
+             n_observed_alleles = as.integer(n_observed_alleles),
+             n_called = as.integer(n_called), major_af = major_af, maf = maf,
+             mac = as.integer(mac), row.names = NULL)
 }
 
-## Shared by filter_maf() and filter_mac(): make sure a user-supplied `stats`
-## data frame actually corresponds to this exact H (same loci, same order),
-## and compute it fresh if none was supplied.
-.check_or_make_stats <- function(H, stats) {
-  if (is.null(stats)) return(locus_allele_stats(H))
-  if (nrow(stats) != nrow(H$A1) || !identical(stats$locus, H$locus))
-    stop("`stats` does not line up with `H` (different number of loci, or ",
-         "the loci are in a different order). Pass the `stats` returned by ",
-         "locus_allele_stats(H) computed on this exact H, or leave `stats` ",
-         "at its default (NULL) to have it computed automatically.")
-  stats
+## Not exported. Used by filter_maf() and filter_mac(): checks that a
+## user-supplied `allele_stats` belongs to this exact H (same records, same
+## order), or computes it when not supplied.
+.check_or_make_allele_stats <- function(H, allele_stats) {
+  if (is.null(allele_stats)) return(locus_allele_stats(H))
+  if (!is.data.frame(allele_stats) || nrow(allele_stats) != nrow(H$A1) ||
+      !identical(allele_stats$locus, H$locus))
+    stop("`allele_stats` does not line up with `H` (different number of records, or ",
+         "the records are in a different order). Pass locus_allele_stats(H) computed ",
+         "on this exact H, or leave `allele_stats` as NULL to compute it automatically.",
+         call. = FALSE)
+  allele_stats
 }
 
-#' Filter loci by minor allele frequency
+#' Filter records by minor allele frequency
 #'
-#' Keeps only loci whose minor allele frequency (MAF) is at least `min_maf`.
-#' Rare variants are the ones most likely to be sequencing/genotyping
-#' errors rather than real biological variation, so a MAF filter is one of
-#' the most common first QC steps for SNP data.
+#' Keeps only records whose minor allele frequency (MAF) is at least
+#' `min_maf`. Rare variants are the ones most likely to be sequencing or
+#' genotyping errors, so a MAF filter is a common first quality-control step
+#' for SNP data.
 #'
-#' @param H A list as returned by [read_stacks_vcf()].
-#' @param min_maf Minimum minor allele frequency a locus must have to be
-#'   kept (a number between 0 and 1, e.g. `0.05` for 5%).
-#' @param stats Optionally, the data frame already returned by
-#'   [locus_allele_stats()] for this exact `H` -- pass it in to avoid
-#'   recomputing it if you're also calling [filter_mac()] on the same
-#'   dataset. Left as `NULL` (the default), it's computed automatically.
-#' @param verbose Print how many loci were kept. Default `TRUE`.
-#' @return `H`, with only the loci that passed the filter kept (a locus with
-#'   no genotyped individuals at all has an undefined MAF and is always
-#'   dropped, since it can't be shown to clear the threshold).
+#' @param H The object returned by [read_stacks_vcf()] (optionally filtered).
+#' @param min_maf Minimum minor allele frequency to keep a record, a number
+#'   from 0 to 1 (e.g. `0.05` for 5%).
+#' @param allele_stats Optional: [locus_allele_stats()] already computed for
+#'   this `H`, to save computing it again when you also run [filter_mac()].
+#'   Default `NULL`: computed automatically.
+#' @param verbose Print how many records were kept. Default `TRUE`.
+#' @return `H` with only the records that pass. A record with no genotyped
+#'   individual has no MAF and is always dropped.
 #' @examples
-#' # Each row of A1/A2 is one locus's alleles across 3 samples; locus_1 is
-#' # homozygous REF (allele 1) in everyone, locus_2 has 2 REF and 4 ALT
-#' # copies (MAF = 2/6 = 0.33):
-#' H <- list(
-#'   A1 = rbind(locus_1 = c(1, 1, 1), locus_2 = c(1, 2, 2)),
-#'   A2 = rbind(locus_1 = c(1, 1, 1), locus_2 = c(1, 2, 2)),
-#'   locus = c("locus_1", "locus_2"), locus_raw = c("locus_1", "locus_2"),
-#'   alleles = list(c("A", "C"), c("A", "C")), n_alleles = c(2L, 2L),
-#'   samples = c("ind1", "ind2", "ind3")
-#' )
-#' # only locus_2 clears a 20% MAF threshold:
-#' filter_maf(H, min_maf = 0.2, verbose = FALSE)$locus
+#' H <- read_stacks_vcf(system.file("extdata", "small.snps.vcf",
+#'                                  package = "RADdiversity"), verbose = FALSE)
+#' H_common <- filter_maf(H, min_maf = 0.1)
+#' H_common
 #' @export
-filter_maf <- function(H, min_maf, stats = NULL, verbose = TRUE) {
-  stats <- .check_or_make_stats(H, stats)
-  n_rec <- nrow(stats)
-  ## `!is.na(...)` excludes loci with no data at all; `- 1e-9` guards against
-  ## a locus landing exactly on the threshold but reading as just barely
-  ## below it purely due to floating-point rounding.
-  keep <- !is.na(stats$maf) & stats$maf >= min_maf - 1e-9
-  if (verbose)
-    message(sprintf(
-      "MAF filter (keep loci with minor allele frequency >= %.4g): %s of %s loci kept (%.1f%%)",
-      min_maf, format(sum(keep), big.mark = ","), format(n_rec, big.mark = ","), 100 * mean(keep)))
-  if (sum(keep) < 0.05 * n_rec && verbose)
-    message("  WARNING: fewer than 5% of loci passed this filter. Consider a lower min_maf.")
-  if (!sum(keep))
-    stop("No locus has a minor allele frequency >= ", min_maf, ". Lower min_maf, ",
-         "or run locus_allele_stats(H) yourself to see the actual distribution of values.")
+filter_maf <- function(H, min_maf, allele_stats = NULL, verbose = TRUE) {
+  H <- .resolve_H(H, verbose = FALSE)
+  .check_number(min_maf, "min_maf", min = 0, max = 1)
+  .check_flag(verbose, "verbose")
+  allele_stats <- .check_or_make_allele_stats(H, allele_stats)
+  n_rec <- nrow(allele_stats)
+  keep <- !is.na(allele_stats$maf) & allele_stats$maf >= min_maf - .threshold_tol
+  .report_kept(verbose, sprintf("MAF filter (minor allele frequency >= %.4g)", min_maf), keep, n_rec)
+  if (sum(keep) < 0.05 * n_rec)
+    .inform(verbose, "  WARNING: fewer than 5% of records passed this filter. Consider a lower min_maf.")
+  if (!any(keep))
+    stop("No record has a minor allele frequency >= ", min_maf, ". Lower min_maf, ",
+         "or look at locus_allele_stats(H)$maf to see the actual values.", call. = FALSE)
   .subset_H(H, keep)
 }
 
-#' Filter loci by minor allele count
+#' Filter records by minor allele count
 #'
-#' Keeps only loci with at least `min_mac` copies of the minor allele
-#' (counting across every genotyped individual). This is the count-based
-#' cousin of [filter_maf()] -- useful because a fixed count threshold (e.g.
-#' "at least 3 copies") behaves more predictably than a frequency threshold
-#' when sample sizes are small or uneven, where a single individual can
-#' swing the frequency a lot.
+#' Keeps only records with at least `min_mac` copies of the minor allele,
+#' counted over every genotyped individual. The count-based version of
+#' [filter_maf()]: a fixed count (e.g. "at least 3 copies") behaves more
+#' predictably than a frequency when sample sizes are small or uneven.
 #'
-#' @param H A list as returned by [read_stacks_vcf()].
-#' @param min_mac Minimum minor allele count a locus must have to be kept
-#'   (a whole number, e.g. `3`).
-#' @param stats Optionally, a precomputed [locus_allele_stats()] result for
-#'   this `H` (see [filter_maf()] for why you might pass this in).
-#' @param verbose Print how many loci were kept. Default `TRUE`.
-#' @return `H`, with only the loci that passed the filter kept.
+#' @inheritParams filter_maf
+#' @param min_mac Minimum minor allele count to keep a record (e.g. `3`).
+#' @return `H` with only the records that pass.
 #' @examples
-#' # locus_2 has 2 minor (REF) allele copies out of 6; locus_1 has none:
-#' H <- list(
-#'   A1 = rbind(locus_1 = c(1, 1, 1), locus_2 = c(1, 2, 2)),
-#'   A2 = rbind(locus_1 = c(1, 1, 1), locus_2 = c(1, 2, 2)),
-#'   locus = c("locus_1", "locus_2"), locus_raw = c("locus_1", "locus_2"),
-#'   alleles = list(c("A", "C"), c("A", "C")), n_alleles = c(2L, 2L),
-#'   samples = c("ind1", "ind2", "ind3")
-#' )
-#' filter_mac(H, min_mac = 2, verbose = FALSE)$locus  # only locus_2 has >= 2 minor copies
+#' H <- read_stacks_vcf(system.file("extdata", "small.snps.vcf",
+#'                                  package = "RADdiversity"), verbose = FALSE)
+#' filter_mac(H, min_mac = 3)
 #' @export
-filter_mac <- function(H, min_mac, stats = NULL, verbose = TRUE) {
-  stats <- .check_or_make_stats(H, stats)
-  n_rec <- nrow(stats)
-  keep <- !is.na(stats$mac) & stats$mac >= min_mac
-  if (verbose)
-    message(sprintf(
-      "MAC filter (keep loci with minor allele count >= %d): %s of %s loci kept (%.1f%%)",
-      as.integer(min_mac), format(sum(keep), big.mark = ","), format(n_rec, big.mark = ","), 100 * mean(keep)))
-  if (sum(keep) < 0.05 * n_rec && verbose)
-    message("  WARNING: fewer than 5% of loci passed this filter. Consider a lower min_mac.")
-  if (!sum(keep))
-    stop("No locus has a minor allele count >= ", min_mac, ". Lower min_mac, ",
-         "or run locus_allele_stats(H) yourself to see the actual distribution of values.")
+filter_mac <- function(H, min_mac, allele_stats = NULL, verbose = TRUE) {
+  H <- .resolve_H(H, verbose = FALSE)
+  .check_number(min_mac, "min_mac", min = 0)
+  .check_flag(verbose, "verbose")
+  allele_stats <- .check_or_make_allele_stats(H, allele_stats)
+  n_rec <- nrow(allele_stats)
+  keep <- !is.na(allele_stats$mac) & allele_stats$mac >= min_mac
+  .report_kept(verbose, sprintf("MAC filter (minor allele count >= %g)", min_mac), keep, n_rec)
+  if (sum(keep) < 0.05 * n_rec)
+    .inform(verbose, "  WARNING: fewer than 5% of records passed this filter. Consider a lower min_mac.")
+  if (!any(keep))
+    stop("No record has a minor allele count >= ", min_mac, ". Lower min_mac, ",
+         "or look at locus_allele_stats(H)$mac to see the actual values.", call. = FALSE)
   .subset_H(H, keep)
 }
 
-#' Filter loci by genotyping (call) rate
+#' Filter records by genotyping (call) rate
 #'
-#' Keeps only loci that were genotyped often enough. Without `pops`, "often
-#' enough" means across the whole dataset pooled together; with `pops`
-#' (population assignments from [read_popmap()]), it's judged separately in
-#' each population, which matters because a locus can look well-covered
-#' overall while actually being poorly covered in just one population --
-#' see `rule` below.
+#' Keeps only records genotyped in enough individuals. Without `popmap`,
+#' "enough" is judged over all individuals pooled; with `popmap`, it is
+#' judged within each population, because a record can look well covered
+#' overall while being poorly covered in one population (see `rule`).
 #'
-#' This is a standalone, general-purpose version of a call-rate check --
-#' it does not change or replace the call-rate logic already built into
-#' [het_between_pops()] (which is tuned specifically for that function's own
-#' diagnostics) or the `min_n`/`complete_case` logic in [diversity_stats()].
+#' This is independent of the call-rate rule inside [het_between_pops()] and
+#' the `min_n` / `complete_case` rules of [diversity_stats()].
 #'
-#' @param H A list as returned by [read_stacks_vcf()].
-#' @param min_call Minimum fraction of individuals that must be genotyped at
-#'   a locus for it to be kept (a number between 0 and 1, e.g. `0.8` for
-#'   80%).
-#' @param pops Optionally, a named list of sample-ID vectors (the output of
-#'   [read_popmap()]) to judge the call rate separately per population
-#'   instead of pooling everyone together. Default `NULL` (pooled).
-#' @param rule Only used when `pops` is given. `"all"` (the default) keeps a
-#'   locus only if EVERY population individually clears `min_call` there --
-#'   the right choice if you're going to compare populations to each other
-#'   afterwards, since a pooled or "any population" rule can let one
-#'   well-covered population effectively borrow coverage from a poorly-
-#'   covered one. `"any"` keeps a locus if AT LEAST ONE population clears
-#'   it -- appropriate if each population's own results will be used
-#'   independently rather than compared directly.
-#' @param verbose Print how many loci were kept (and, with `pops`, a
-#'   per-population breakdown). Default `TRUE`.
-#' @return `H`, with only the loci that passed the filter kept.
+#' @inheritParams filter_maf
+#' @param min_call Minimum fraction of individuals genotyped to keep a record,
+#'   a number from 0 to 1 (e.g. `0.8` for 80%).
+#' @param popmap Optional: a popmap file path or the list returned by
+#'   [read_popmap()], to judge the call rate within each population. Default
+#'   `NULL`: pooled over all individuals.
+#' @param rule Used only with `popmap`. `"all"` (default) keeps a record only
+#'   if EVERY population clears `min_call` -- the right choice before
+#'   comparing populations, because otherwise a well-covered population can
+#'   carry a poorly covered one. `"any"` keeps a record if AT LEAST ONE
+#'   population clears it -- appropriate when each population will be analyzed
+#'   on its own.
+#' @param verbose Print how many records were kept (and, with `popmap`, a
+#'   breakdown by population). Default `TRUE`.
+#' @return `H` with only the records that pass.
 #' @examples
-#' H <- list(
-#'   A1 = rbind(locus_1 = c(1, 1, 1, NA), locus_2 = c(1, NA, 1, NA)),
-#'   A2 = rbind(locus_1 = c(1, 1, 1, NA), locus_2 = c(2, NA, 1, NA)),
-#'   locus = c("locus_1", "locus_2"), locus_raw = c("locus_1", "locus_2"),
-#'   n_alleles = c(2L, 2L), samples = c("a1", "a2", "a3", "a4")
-#' )
-#' # locus_1 is genotyped in 3 of 4 samples (75%); locus_2 only in 2 of 4 (50%).
-#' filter_call_rate(H, min_call = 0.75, verbose = FALSE)$locus
+#' H <- read_stacks_vcf(system.file("extdata", "small.haps.vcf",
+#'                                  package = "RADdiversity"), verbose = FALSE)
+#' popmap <- system.file("extdata", "small_popmap.tsv", package = "RADdiversity")
+#' filter_call_rate(H, min_call = 0.75)                    # pooled
+#' filter_call_rate(H, min_call = 0.75, popmap = popmap)   # within each population
 #' @export
-filter_call_rate <- function(H, min_call, pops = NULL, rule = "all", verbose = TRUE) {
-  if (!(length(rule) == 1L && rule %in% c("all", "any")))
-    stop("rule must be exactly \"all\" or \"any\" (got: ", paste(rule, collapse = ", "), ").")
+filter_call_rate <- function(H, min_call, popmap = NULL, rule = "all", verbose = TRUE) {
+  H <- .resolve_H(H, verbose = FALSE)
+  .check_number(min_call, "min_call", min = 0, max = 1)
+  .check_choice(rule, "rule", c("all", "any"))
+  .check_flag(verbose, "verbose")
   n_rec <- nrow(H$A1)
 
-  if (is.null(pops)) {
-    ## rowMeans(!is.na(H$A1)) is, for every locus, the fraction of samples
-    ## that have a real (non-missing) genotype there.
-    cr   <- rowMeans(!is.na(H$A1))
-    keep <- cr >= min_call - 1e-9
-    if (verbose)
-      message(sprintf(
-        "Call-rate filter (pooled across all %d samples, threshold %.0f%%): %s of %s loci kept (%.1f%%)",
-        ncol(H$A1), 100 * min_call, format(sum(keep), big.mark = ","),
-        format(n_rec, big.mark = ","), 100 * mean(keep)))
+  if (is.null(popmap)) {
+    ## rowMeans(!is.na(H$A1)): for each record, the fraction of samples with
+    ## a genotype.
+    keep <- rowMeans(!is.na(H$A1)) >= min_call - .threshold_tol
+    .report_kept(verbose, sprintf("Call-rate filter (pooled across %d samples, >= %.0f%%)",
+                                  ncol(H$A1), 100 * min_call), keep, n_rec)
   } else {
-    r <- length(pops)
-    cr_pop <- sweep(.typed_by_pop(H, pops), 2L, lengths(pops), "/")
-    ok_pop <- cr_pop >= min_call - 1e-9
-    ## rowSums(ok_pop) counts how many populations clear the threshold at
-    ## each locus; "all" needs that count to equal every population, "any"
-    ## just needs it to be at least one.
-    keep <- if (rule == "all") rowSums(ok_pop) == r else rowSums(ok_pop) > 0L
-    if (verbose) {
-      message(sprintf(
-        "Call-rate filter (per population, threshold %.0f%%, rule = \"%s\"): %s of %s loci kept (%.1f%%)",
-        100 * min_call, rule, format(sum(keep), big.mark = ","),
-        format(n_rec, big.mark = ","), 100 * mean(keep)))
-      for (p in names(pops))
-        message(sprintf("    %-22s %s of %s loci clear the threshold",
-                        p, format(sum(ok_pop[, p]), big.mark = ","), format(n_rec, big.mark = ",")))
-    }
+    pops <- .resolve_pops(popmap, H$samples, verbose = FALSE)
+    passes <- .population_locus_sets(H, pops, min_call)     # records x populations
+    ## rowSums(passes) = how many populations clear the threshold.
+    keep <- if (rule == "all") rowSums(passes) == length(pops) else rowSums(passes) > 0L
+    .report_kept(verbose, sprintf("Call-rate filter (within each population, >= %.0f%%, rule = \"%s\")",
+                                  100 * min_call, rule), keep, n_rec)
+    for (p in names(pops))
+      .inform(verbose, sprintf("    %-22s %s of %s records clear the threshold",
+                               p, .big(sum(passes[, p])), .big(n_rec)))
   }
-  if (!sum(keep))
-    stop("No locus passed the call-rate filter (min_call = ", min_call, "). Lower min_call, ",
-         "or check for a widespread genotyping problem in this dataset.")
+  if (!any(keep))
+    stop("No record passed the call-rate filter (min_call = ", min_call, "). Lower min_call, ",
+         "or check for a widespread genotyping problem in this dataset.", call. = FALSE)
   .subset_H(H, keep)
 }
 
-#' Filter out loci with excessive heterozygosity
+#' Filter out records with excessive heterozygosity
 #'
-#' Drops loci where an unusually large share of individuals are called
-#' heterozygous. Real heterozygosity has a biological ceiling; a locus far
-#' above it is the classic signature of an undetected paralog (two
-#' similar-looking genomic regions being misread as one locus) or a
-#' collapsed repeat, both of which produce fake "heterozygous" calls that
-#' are really two different genes/copies being confused for two alleles of
-#' the same one.
+#' Drops records where an unusually large share of individuals are
+#' heterozygous. Real heterozygosity has a biological ceiling; a record far
+#' above it is the classic sign of an undetected paralog or collapsed repeat,
+#' where two similar genomic regions are read as one locus and their
+#' differences look like two alleles.
 #'
-#' @param H A list as returned by [read_stacks_vcf()].
-#' @param max_ho Maximum allowed observed heterozygosity at a locus (a
-#'   number between 0 and 1, e.g. `0.5`). A locus above this is dropped.
-#' @param verbose Print how many loci were kept. Default `TRUE`.
-#' @return `H`, with only the loci that passed the filter kept. A locus with
-#'   no genotyped individuals at all is kept (not dropped) by this filter,
-#'   since "no data" is not the same claim as "too much heterozygosity" --
-#'   use [filter_call_rate()] if you also want to remove those.
+#' @inheritParams filter_maf
+#' @param max_ho Maximum observed heterozygosity at a record, a number from 0
+#'   to 1 (e.g. `0.5`). Records above it are dropped.
+#' @return `H` with only the records that pass. A record with no genotyped
+#'   individual is kept ("no data" is not "too heterozygous"); use
+#'   [filter_call_rate()] to remove those.
 #' @examples
-#' H <- list(
-#'   A1 = rbind(locus_1 = c(1, 1, 1, 1), locus_2 = c(1, 2, 1, 2)),
-#'   A2 = rbind(locus_1 = c(1, 1, 1, 1), locus_2 = c(2, 1, 2, 1)),
-#'   locus = c("locus_1", "locus_2"), locus_raw = c("locus_1", "locus_2"),
-#'   n_alleles = c(2L, 2L), samples = c("a1", "a2", "a3", "a4")
-#' )
-#' # locus_2 is heterozygous in all 4 samples (Ho = 1) -- dropped at max_ho = 0.6:
-#' filter_max_het(H, max_ho = 0.6, verbose = FALSE)$locus
+#' H <- read_stacks_vcf(system.file("extdata", "small.haps.vcf",
+#'                                  package = "RADdiversity"), verbose = FALSE)
+#' filter_max_het(H, max_ho = 0.7)
 #' @export
 filter_max_het <- function(H, max_ho, verbose = TRUE) {
-  ## For each locus, the fraction of genotyped individuals where the two
-  ## alleles differ (A1 != A2) is the observed heterozygosity, Ho.
-  ## na.rm = TRUE skips missing genotypes; a locus with NO genotyped
-  ## individuals at all then comes out as NaN ("not a number", from 0/0),
-  ## which !is.finite() below recognizes as "no data" rather than "high Ho".
-  ho   <- rowMeans(H$A1 != H$A2, na.rm = TRUE)
-  keep <- !is.finite(ho) | ho <= max_ho + 1e-9
-  n_rec <- length(keep)
-  if (verbose)
-    message(sprintf(
-      "Excess-heterozygosity filter (drop loci with Ho > %.3f): %s of %s loci kept (%.1f%%)",
-      max_ho, format(sum(keep), big.mark = ","), format(n_rec, big.mark = ","), 100 * mean(keep)))
-  if (!sum(keep))
-    stop("Every locus in this dataset exceeds max_ho = ", max_ho, ". Raise max_ho, ",
-         "or double-check that A1/A2 were parsed correctly.")
+  H <- .resolve_H(H, verbose = FALSE)
+  .check_number(max_ho, "max_ho", min = 0, max = 1)
+  .check_flag(verbose, "verbose")
+  ## Observed heterozygosity per record: the fraction of genotyped individuals
+  ## whose two alleles differ. With nobody genotyped this is 0/0 = NaN, which
+  ## !is.finite() below treats as "no data".
+  ho <- rowMeans(H$A1 != H$A2, na.rm = TRUE)
+  keep <- !is.finite(ho) | ho <= max_ho + .threshold_tol
+  .report_kept(verbose, sprintf("Excess-heterozygosity filter (Ho <= %.3f)", max_ho),
+               keep, length(keep))
+  if (!any(keep))
+    stop("Every record exceeds max_ho = ", max_ho, ". Raise max_ho, ",
+         "or check that the genotypes were read correctly.", call. = FALSE)
   .subset_H(H, keep)
 }
 
 #' Thin a SNP dataset to one record per RAD locus
 #'
-#' Some analyses assume every locus is inherited independently of every
-#' other one. Several SNPs sharing the same RAD tag do NOT meet that
-#' assumption -- they're physically linked, so treating them as independent
-#' overstates how much information the dataset really contains. This
-#' function keeps exactly one record per RAD tag (`H$locus_raw` group),
-#' dropping the rest, so that every remaining locus is a genuinely
-#' independent RAD tag.
+#' Some analyses assume every locus is inherited independently. SNPs on the
+#' same RAD tag are physically linked, so treating them as independent
+#' overstates how much information the data hold. This keeps exactly one
+#' record per RAD locus (`H$locus_raw` group).
 #'
-#' @param H A list as returned by [read_stacks_vcf()].
-#' @param method `"first"` (the default) keeps the first record seen for
-#'   each RAD tag, giving the same result every time. `"random"` picks one
-#'   record per RAD tag at random.
-#' @param seed Only used when `method = "random"`. An integer to make the
-#'   random choice reproducible. Left `NULL` (the default), the choice
-#'   depends on R's current random-number state, same as calling
-#'   `sample()` yourself without first calling `set.seed()`. Either way,
-#'   your own R session's random-number state is left exactly as it was
-#'   before this function was called (see `?set.seed` if you're not
-#'   familiar with this) -- calling this function will never change what
-#'   random numbers you get afterwards in your own code.
-#' @param verbose Print how many records were kept. Default `TRUE`.
-#' @return `H`, thinned to one record per RAD locus, with the kept records
-#'   left in their original order.
+#' @inheritParams filter_maf
+#' @param method `"first"` (default) keeps the first record of each RAD locus,
+#'   the same every time. `"random"` picks one record per RAD locus at random.
+#' @param seed Used only when `method = "random"`. Default `NULL`: use R's
+#'   current random-number stream (call `set.seed()` first for a reproducible
+#'   choice). A number makes the choice reproducible on its own and leaves your
+#'   session's random-number stream as it was.
+#' @return `H` with one record per RAD locus, in the original order.
 #' @examples
-#' # Two SNPs on locus_1's RAD tag, one SNP alone on locus_2's:
-#' H <- list(
-#'   A1 = matrix(1L, nrow = 3, ncol = 2), A2 = matrix(1L, nrow = 3, ncol = 2),
-#'   locus = c("locus_1_a", "locus_1_b", "locus_2"),
-#'   locus_raw = c("locus_1", "locus_1", "locus_2"),
-#'   n_alleles = c(2L, 2L, 2L), samples = c("a1", "a2")
-#' )
-#' filter_thin_one_snp(H, verbose = FALSE)$locus  # keeps "locus_1_a" and "locus_2"
+#' H <- read_stacks_vcf(system.file("extdata", "small.snps.vcf",
+#'                                  package = "RADdiversity"), verbose = FALSE)
+#' filter_thin_one_snp(H)
 #' @export
 filter_thin_one_snp <- function(H, method = "first", seed = NULL, verbose = TRUE) {
-  if (!(length(method) == 1L && method %in% c("first", "random")))
-    stop("method must be exactly \"first\" or \"random\" (got: ", paste(method, collapse = ", "), ").")
+  H <- .resolve_H(H, verbose = FALSE)
+  .check_choice(method, "method", c("first", "random"))
+  .check_seed(seed)
+  .check_flag(verbose, "verbose")
   n_rec <- nrow(H$A1)
-  n_loc <- length(unique(H$locus_raw))
-  if (n_loc == n_rec) {
-    if (verbose)
-      message("Every record already belongs to its own RAD locus (locus_raw has no ",
-              "repeats) -- there is nothing to thin.")
+  if (length(unique(H$locus_raw)) == n_rec) {
+    .inform(verbose, "Every record already belongs to its own RAD locus (locus_raw has no ",
+            "repeats) -- there is nothing to thin.")
     return(H)
   }
 
-  ## split() sorts the row numbers 1:n_rec into one group per distinct
-  ## locus_raw value, in the order those values first appear.
-  groups <- split(seq_len(n_rec), factor(H$locus_raw, levels = unique(H$locus_raw)))
-
+  ## The record numbers of each RAD locus, in order of first appearance.
+  records_of_locus <- split(seq_len(n_rec), factor(H$locus_raw, levels = unique(H$locus_raw)))
   if (method == "first") {
-    keep <- vapply(groups, function(i) i[1L], integer(1))
+    keep <- vapply(records_of_locus, function(i) i[1L], integer(1))
   } else {
-    restore_rng <- .save_rng_state()
-    on.exit(restore_rng(), add = TRUE)
-    if (!is.null(seed)) set.seed(seed)
-    ## sample.int(length(i), 1) draws one random POSITION out of `length(i)`
-    ## and returns i AT that position. This is deliberately not
-    ## `sample(i, 1)`: R's everyday sample() function has a surprising
-    ## special case where, if you give it a single number x (not a vector),
-    ## it treats that as shorthand for "pick randomly from 1:x" instead of
-    ## "there's only one option, x, so return it". Many RAD loci have only
-    ## ONE record on this dataset (a locus_raw group of size 1), so getting
-    ## this right is not just a style choice -- sample.int() avoids that trap.
-    keep <- vapply(groups, function(i) i[sample.int(length(i), 1L)], integer(1))
+    if (!is.null(seed)) {
+      restore_rng <- .save_rng_state()
+      on.exit(restore_rng(), add = TRUE)
+      set.seed(seed)
+    }
+    ## i[sample.int(length(i), 1)], not sample(i, 1): given a single number x,
+    ## sample(x, 1) draws from 1:x instead of returning x, which would be
+    ## wrong for every RAD locus with only one record.
+    keep <- vapply(records_of_locus, function(i) i[sample.int(length(i), 1L)], integer(1))
   }
-  keep <- sort(keep)  # put the kept records back into their original file order
+  keep <- sort(keep)
 
-  if (verbose)
-    message(sprintf(
-      "One-SNP-per-locus thinning (method = \"%s\"): %s records -> %s RAD loci (%.1f%% of records kept)",
-      method, format(n_rec, big.mark = ","), format(length(keep), big.mark = ","), 100 * length(keep) / n_rec))
+  .inform(verbose, sprintf(
+    "One-record-per-locus thinning (method = \"%s\"): %s records -> %s RAD loci (%.1f%% of records kept)",
+    method, .big(n_rec), .big(length(keep)), 100 * length(keep) / n_rec))
   .subset_H(H, keep)
 }
 
 ###############################################################################
 #
-#  Porting filter_low_conf_alt.py: flagging genotype calls whose ALT allele
-#  is backed by very few sequencing reads.
+#  Genotype depth: set calls backed by too few (or too many) reads to missing.
 #
-#  A genotype call like "0/1" (heterozygous) or "1/1" (homozygous ALT) means
-#  Stacks decided this individual carries at least one copy of a non-
-#  reference allele. But if only 1 or 2 reads out of many actually showed
-#  that ALT allele, the call could easily be a sequencing error rather than
-#  a real allele -- especially for a rare variant. The functions below
-#  identify exactly those low-confidence ALT calls (using the AD field --
-#  "allele depth", i.e. how many reads supported each allele -- from the
-#  original VCF) so they can be masked out (treated as missing) or used to
-#  drop the whole locus if too many of its individuals look unreliable.
+#  The rule looks only at a call's read depth, never at the genotype itself,
+#  so heterozygous and homozygous calls at the same depth are treated the
+#  same. That matters: a filter that removes some genotypes more readily than
+#  others changes Ho, He and FIS, not just the amount of missing data.
 #
 ###############################################################################
 
-## Not exported. Shared by filter_low_conf_alt() and low_conf_alt_sensitivity()
-## so the (somewhat fiddly) work of pulling AD/DP back out of the raw VCF
-## text is only written once.
-##
-## Returns one row per genotype call that has at least one ALT allele and is
-## fully called (no missing alleles) -- i.e. every candidate that COULD be
-## flagged, whether or not it actually gets flagged. Columns:
-##   record        row number in H (which locus)
-##   sample        column number in H (which individual)
-##   GT             the genotype text, e.g. "0/1"
-##   AD_ref, AD_alt reads supporting the REF allele, and reads supporting
-##                  whichever ALT allele(s) this genotype carries
-##   DP             total read depth Stacks used for this call
-##   alt_fraction   AD_alt / DP
-##   usable         TRUE if AD (and so AD_alt) could actually be read from
-##                  the file. Some VCF rows legitimately drop trailing
-##                  FORMAT fields when they're not needed (this is allowed by
-##                  the VCF file format spec) -- such a call still clearly
-##                  has an ALT allele, it just can't be checked for
-##                  low-confidence support, so it is never flagged.
-.parse_alt_ad <- function(H) {
-  A1 <- H$A1; A2 <- H$A2
-  n_rec <- nrow(A1)
-
-  ## A cell "has an ALT allele" if both alleles are called (not missing) and
-  ## at least one of them is bigger than 1 (allele 1 is always REF).
-  alt_cell <- !is.na(A1) & !is.na(A2) & (A1 > 1L | A2 > 1L)
-  idx <- which(alt_cell)  # a single "linear" index per flagged cell, R's usual
-                          # way of numbering matrix cells column-by-column
-  empty <- data.frame(record = integer(), sample = integer(), GT = character(),
-                       AD_ref = integer(), AD_alt = integer(), DP = integer(),
-                       alt_fraction = double(), usable = logical())
-  if (!length(idx)) return(empty)
-
-  ## Turn each linear index back into a (row, column) = (record, sample) pair.
-  rec_i  <- ((idx - 1L) %% n_rec) + 1L
-  samp_i <- ((idx - 1L) %/% n_rec) + 1L
-
-  ## FORMAT (e.g. "GT:AD:DP") tells us WHERE in each sample's colon-separated
-  ## genotype text the AD and DP values sit -- and that position is not
-  ## always the same in every VCF. Stacks almost always uses one constant
-  ## FORMAT for the whole file, so instead of re-parsing it for every single
-  ## flagged cell, we parse each *distinct* FORMAT string once and then look
-  ## up the right answer for each record from that small table.
-  fmt_all   <- H$fields[, "FORMAT"]
-  fmt_u     <- unique(fmt_all)
-  fmt_split <- strsplit(fmt_u, ":", fixed = TRUE)
-  find_pos  <- function(tag) vapply(fmt_split, function(f) {
-    p <- which(f == tag); if (length(p)) p[1] else NA_integer_
-  }, integer(1))
-  ad_pos_u <- find_pos("AD")
-  dp_pos_u <- find_pos("DP")
-  fmt_map  <- match(fmt_all, fmt_u)     # for each record, which row of *_u applies
-  ad_pos   <- ad_pos_u[fmt_map[rec_i]]  # for each FLAGGED CELL, its record's AD position
-  dp_pos   <- dp_pos_u[fmt_map[rec_i]]
-
-  ## Pull out the raw genotype text ("0/1:20:5,15:20:99" or similar) for
-  ## each flagged cell, by record and by SAMPLE NAME (not a fixed column
-  ## number), so this keeps working even if H$fields' column order ever
-  ## differs from the usual layout.
-  samp_col <- match(H$samples, colnames(H$fields))
-  raw   <- H$fields[cbind(rec_i, samp_col[samp_i])]
-  parts <- strsplit(raw, ":", fixed = TRUE)
-
-  n <- length(idx)
-  gt_str <- vapply(parts, `[`, character(1), 1L)  # GT is always the first subfield
-
-  usable <- !is.na(ad_pos) & lengths(parts) >= ad_pos
-  ad_str <- rep(NA_character_, n)
-  ad_str[usable] <- vapply(which(usable), function(k) parts[[k]][ad_pos[k]], character(1))
-  ## "." or a blank means the AD value itself is missing even though there
-  ## was room for it -- also not usable.
-  usable <- usable & !is.na(ad_str) & ad_str != "." & nzchar(ad_str)
-
-  AD_ref <- rep(NA_integer_, n)
-  AD_alt <- rep(NA_integer_, n)
-  DP     <- rep(NA_integer_, n)
-  a1 <- A1[idx]; a2 <- A2[idx]
-
-  for (k in which(usable)) {
-    ## AD is a comma-separated list, one count per possible allele in REF,ALT
-    ## order (so ad[1] = REF reads, ad[2] = reads for the first ALT allele,
-    ## and so on). A "." inside that list means "0 reads", per the VCF spec.
-    ad_txt <- strsplit(ad_str[k], ",", fixed = TRUE)[[1]]
-    ad <- suppressWarnings(as.integer(ifelse(ad_txt == ".", "0", ad_txt)))
-
-    ## Add up AD for every DISTINCT ALT allele actually present in this
-    ## genotype. "Distinct" matters for a homozygous ALT call like 1/1:
-    ## both copies are the SAME allele, so its read support must only be
-    ## counted once, not doubled.
-    alts_here <- unique(c(a1[k], a2[k]))
-    alts_here <- alts_here[alts_here > 1L]
-    AD_alt[k] <- sum(vapply(alts_here, function(a) if (a <= length(ad)) ad[a] else 0L, integer(1)))
-    AD_ref[k] <- if (length(ad) >= 1L) ad[1L] else 0L
-
-    ## DP (total read depth) is usually given directly; if it's missing or
-    ## ".", fall back to adding up the AD values instead.
-    dp_val <- NA_integer_
-    if (!is.na(dp_pos[k]) && length(parts[[k]]) >= dp_pos[k]) {
-      s <- parts[[k]][dp_pos[k]]
-      if (!is.na(s) && s != "." && nzchar(s)) dp_val <- suppressWarnings(as.integer(s))
-    }
-    DP[k] <- if (is.na(dp_val)) sum(ad) else dp_val
+## Not exported. One subfield of every genotype cell of H, as text: `tag` is
+## a FORMAT name such as "DP". Returns a records x samples character matrix,
+## NA where the record's FORMAT lacks the tag or the cell is too short (the
+## VCF specification lets trailing subfields be dropped) or holds ".".
+.genotype_subfield <- function(H, tag) {
+  sample_column <- match(H$samples, colnames(H$fields))
+  cells <- H$fields[, sample_column, drop = FALSE]
+  out <- matrix(NA_character_, nrow(cells), ncol(cells))
+  formats <- H$fields[, "FORMAT"]
+  for (f in unique(formats)) {
+    k <- match(tag, strsplit(f, ":", fixed = TRUE)[[1]])
+    if (is.na(k)) next
+    rows <- which(formats == f)
+    block <- cells[rows, , drop = FALSE]
+    ## The k-th colon-separated field: skip k - 1 fields and their colons.
+    pattern <- paste0("^(?:[^:]*:){", k - 1L, "}([^:]*)")
+    has_field <- grepl(pattern, block, perl = TRUE)
+    value <- rep(NA_character_, length(block))
+    value[has_field] <- sub(paste0(pattern, ".*$"), "\\1", block[has_field], perl = TRUE)
+    out[rows, ] <- value
   }
-
-  data.frame(
-    record = rec_i, sample = samp_i, GT = gt_str,
-    AD_ref = AD_ref, AD_alt = AD_alt, DP = DP,
-    alt_fraction = ifelse(!is.na(DP) & DP > 0L, AD_alt / DP, NA_real_),
-    usable = usable
-  )
+  out[out %in% c(".", "")] <- NA_character_
+  out
 }
 
-#' Flag and remove low-confidence ALT genotype calls
+## Not exported. Read depth of every genotype call of H: the DP subfield, or
+## the sum of AD where DP is absent. A records x samples numeric matrix, NA
+## where neither can be read.
+.genotype_depth <- function(H) {
+  if (is.null(H$fields))
+    stop("This needs the raw VCF columns (H$fields) to read genotype depths, but this H ",
+         "has none -- for example because it was built by hand. Read the data with ",
+         "read_stacks_vcf() instead.", call. = FALSE)
+  depth <- suppressWarnings(matrix(as.numeric(.genotype_subfield(H, "DP")), nrow(H$A1)))
+  no_dp <- which(is.na(depth))
+  if (length(no_dp)) {
+    ad <- .genotype_subfield(H, "AD")[no_dp]
+    has_ad <- !is.na(ad)
+    depth[no_dp[has_ad]] <- vapply(strsplit(ad[has_ad], ",", fixed = TRUE), function(counts)
+      sum(suppressWarnings(as.numeric(counts)), na.rm = TRUE), numeric(1))
+  }
+  depth
+}
+
+#' Set genotypes with too few or too many reads to missing
 #'
-#' Ports the standalone `filter_low_conf_alt.py` script's logic natively
-#' into R. A genotype call carrying an ALT allele (e.g. `0/1`, `1/1`) is
-#' flagged if the number of sequencing reads supporting that ALT allele is
-#' `<= min_alt_reads` -- i.e. Stacks called an alternate allele on the
-#' strength of very little read evidence, which is exactly the profile of a
-#' sequencing-error false positive. You then choose what to do with flagged
-#' calls: `mode = "mask"` blanks out just those individual genotype calls
-#' (leaving the rest of that locus, and every other individual, untouched);
-#' `mode = "drop"` instead removes whole loci where too large a share of
-#' their ALT-containing calls were flagged.
+#' Masks (sets to missing) every genotype call whose read depth is below
+#' `min_dp` or above `max_dp`, whatever the genotype. Depth is the call's
+#' `DP` value, or the sum of its `AD` (allele depths) where `DP` is absent.
 #'
-#' @param H A list as returned by [read_stacks_vcf()].
-#' @param min_alt_reads A genotype call with this many or fewer reads
-#'   supporting its ALT allele(s) is flagged. Default `2`. See
-#'   [low_conf_alt_sensitivity()] for a table to help pick this value.
-#' @param mode `"mask"` (the default) sets only the flagged genotype calls
-#'   to missing. `"drop"` removes whole loci instead (see `drop_frac`).
-#'   Unlike the original Python script, this function can only apply ONE of
-#'   these per call (it returns a single `H`, not two separate files) -- if
-#'   you want both views, call this function twice on the SAME starting
-#'   `H`, once with each `mode`, and keep the two results separately.
-#'   Calling `mode = "drop"` on an `H` you already ran through
-#'   `mode = "mask"` will not reproduce that: the flagged calls are already
-#'   gone by then, so there is nothing left for a second pass to drop.
-#' @param drop_frac Only used when `mode = "drop"`. A locus is dropped if
-#'   the fraction of its ALT-containing calls that were flagged is greater
-#'   than this (default `0`, meaning "drop a locus if even one of its calls
-#'   is flagged"). A locus with no ALT-containing calls at all is never
-#'   dropped by this rule.
-#' @param calls Optionally, a precomputed result from the internal
-#'   `.parse_alt_ad()` helper, to avoid re-parsing the same data if you're
-#'   also calling [low_conf_alt_sensitivity()] on this `H`. Left `NULL`
-#'   (the default), it's computed automatically.
-#' @param verbose Print flagging counts. Default `TRUE`.
-#' @return A list with three elements:
-#'   \describe{
-#'     \item{H}{The filtered/masked `H`.}
-#'     \item{flagged_calls}{One row per flagged genotype call: `locus,
-#'       sample, GT, AD_ref, AD_alt, DP, alt_fraction`.}
-#'     \item{locus_summary}{One row per ORIGINAL locus, in original order:
-#'       `locus, n_alt_calls, n_flagged, flagged_fraction, kept` -- `kept`
-#'       records whether that locus survived (always `TRUE` under
-#'       `mode = "mask"`, since masking never removes a locus).}
-#'   }
+#' Low depth is where heterozygotes are mistaken for homozygotes: with `d`
+#' reads, a true heterozygote shows only one allele with probability
+#' `2^(1 - d)` (25% at 3 reads, 3% at 6). Very high depth, far above the
+#' typical depth in the dataset, is a sign of a collapsed paralog or repeat.
+#'
+#' Because the rule ignores the genotype, heterozygous and homozygous calls at
+#' the same depth are masked alike, and the message reports the share of each
+#' that was masked. Prefer this to [filter_low_conf_alt()] before computing
+#' diversity statistics: that function masks only calls carrying an ALT
+#' allele, which removes heterozygotes preferentially and biases Ho down and
+#' FIS up.
+#'
+#' Stacks' `populations --min-gt-depth` (Stacks 2.67 and later) applies the
+#' same minimum-depth rule when the VCF is written. The haplotype VCF
+#' (`populations.haps.vcf`) holds genotypes only, without depths, so this
+#' filter needs the SNP VCF.
+#'
+#' @inheritParams filter_maf
+#' @param H The object returned by [read_stacks_vcf()] (optionally filtered).
+#'   It must still contain `$fields`, the raw VCF columns, which hold the
+#'   depths.
+#' @param min_dp Calls with fewer reads than this are masked (e.g. `6`).
+#' @param max_dp Calls with more reads than this are masked. Default `Inf`:
+#'   no upper limit.
+#' @return `H`, with the masked calls set to missing. Calls whose depth cannot
+#'   be read are left as they are (the message counts them).
 #' @examples
-#' # A tiny hand-built VCF: locus_1's second sample has an ALT call backed
-#' # by only 1 read.
+#' vcf_lines <- c(
+#'   "##fileformat=VCFv4.2",
+#'   "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tind1\tind2\tind3",
+#'   "un\t1\tlocus_1\tA\tC\t.\tPASS\t.\tGT:DP:AD\t0/0:3:3,0\t0/1:12:6,6\t1/1:40:0,40"
+#' )
+#' vcf_file <- tempfile(fileext = ".vcf")
+#' writeLines(vcf_lines, vcf_file)
+#' H <- read_stacks_vcf(vcf_file, verbose = FALSE)
+#' H_depth <- filter_genotype_depth(H, min_dp = 6, max_dp = 30)
+#' H_depth$A1          # ind1 (3 reads) and ind3 (40 reads) are now missing
+#' @export
+filter_genotype_depth <- function(H, min_dp, max_dp = Inf, verbose = TRUE) {
+  H <- .resolve_H(H, verbose = FALSE)
+  .check_number(min_dp, "min_dp", min = 0)
+  .check_number(max_dp, "max_dp", min = 0)
+  if (max_dp < min_dp)
+    stop("`max_dp` (", max_dp, ") must be at least `min_dp` (", min_dp, ").", call. = FALSE)
+  .check_flag(verbose, "verbose")
+  depth <- .genotype_depth(H)
+  typed <- !is.na(H$A1)
+  known <- typed & !is.na(depth)
+  if (any(typed) && !any(known))
+    stop("No genotype call in H has a readable depth (DP or AD). A Stacks haplotype VCF ",
+         "holds genotypes only; filter populations.snps.vcf instead.", call. = FALSE)
+  masked <- known & (depth < min_dp | depth > max_dp)
+  heterozygous <- typed & H$A1 != H$A2
+  share <- function(of) if (any(of)) 100 * sum(masked & of) / sum(of) else NA_real_
+  .inform(verbose, sprintf(
+    "Genotype-depth filter (%g <= reads <= %g): %s of %s calls masked (%.1f%% of heterozygous, %.1f%% of homozygous calls)",
+    min_dp, max_dp, .big(sum(masked)), .big(sum(typed)), share(heterozygous), share(typed & !heterozygous)))
+  if (any(typed & !known))
+    .inform(verbose, sprintf("  %s calls have no readable depth and were kept.", .big(sum(typed & !known))))
+  H$A1[masked] <- NA_integer_
+  H$A2[masked] <- NA_integer_
+  H
+}
+
+###############################################################################
+#
+#  Low-confidence ALT calls: genotype calls whose ALT allele is supported by
+#  very few sequencing reads.
+#
+#  A call such as "0/1" or "1/1" means the genotyper decided the individual
+#  carries a non-reference allele. If only 1 or 2 reads showed that allele,
+#  the call may be a sequencing error. The functions below find such calls
+#  from the AD ("allele depth": reads supporting each allele) field of the
+#  original VCF, so they can be set to missing, or used to drop records
+#  where too many calls look unreliable.
+#
+###############################################################################
+
+## Not exported. Shared by filter_low_conf_alt(), low_conf_alt_calls() and
+## low_conf_alt_sensitivity(): reads AD and DP back out of the raw VCF text.
+## Returns one row per genotype call that is fully called and carries at
+## least one ALT allele -- every call that COULD be flagged:
+##   record, sample   row and column of the call in H
+##   GT               the genotype text, e.g. "0/1"
+##   AD_ref, AD_alt   reads supporting REF, and the ALT allele(s) of the call
+##   DP               read depth (sum of AD when DP is absent)
+##   alt_fraction     AD_alt / DP
+##   usable           TRUE if AD could be read. The VCF specification allows
+##                    trailing FORMAT fields to be dropped, so a call can have
+##                    no AD; such a call is never flagged.
+.parse_alt_ad <- function(H) {
+  if (is.null(H$fields))
+    stop("This needs the raw VCF columns (H$fields) to read the AD (allele depth) field, ",
+         "but this H has none -- for example because it was built by hand. Read the ",
+         "data with read_stacks_vcf() instead.", call. = FALSE)
+  A1 <- H$A1
+  A2 <- H$A2
+  n_rec <- nrow(A1)
+
+  ## A call "has an ALT allele" if both alleles are called and at least one is
+  ## above 1 (allele 1 is REF).
+  cell <- which(!is.na(A1) & !is.na(A2) & (A1 > 1L | A2 > 1L))
+  if (!length(cell))
+    return(data.frame(record = integer(), sample = integer(), GT = character(),
+                      AD_ref = integer(), AD_alt = integer(), DP = integer(),
+                      alt_fraction = double(), usable = logical()))
+  ## Matrix cells are numbered down each column; turn the numbers back into
+  ## (record, sample) pairs.
+  record <- ((cell - 1L) %% n_rec) + 1L
+  sample <- ((cell - 1L) %/% n_rec) + 1L
+
+  ## FORMAT (e.g. "GT:AD:DP") says where AD and DP sit in each genotype's text.
+  ## Parse each distinct FORMAT once, then look up each call's record.
+  formats <- unique(H$fields[, "FORMAT"])
+  format_parts <- strsplit(formats, ":", fixed = TRUE)
+  position_of <- function(tag) vapply(format_parts, function(f) {
+    at <- which(f == tag)
+    if (length(at)) at[1] else NA_integer_
+  }, integer(1))
+  format_of_call <- match(H$fields[record, "FORMAT"], formats)
+  ad_position <- position_of("AD")[format_of_call]
+  dp_position <- position_of("DP")[format_of_call]
+
+  ## The raw genotype text of each call, found by sample NAME.
+  sample_column <- match(H$samples, colnames(H$fields))
+  parts <- strsplit(H$fields[cbind(record, sample_column[sample])], ":", fixed = TRUE)
+  n_calls <- length(cell)
+  gt_text <- vapply(parts, `[`, character(1), 1L)          # GT is always first
+
+  subfield <- function(position) {
+    out <- rep(NA_character_, n_calls)
+    present <- !is.na(position) & lengths(parts) >= position
+    out[present] <- vapply(which(present), function(k) parts[[k]][position[k]], character(1))
+    out[out %in% c(".", "")] <- NA_character_
+    out
+  }
+  ad_text <- subfield(ad_position)
+  dp_text <- subfield(dp_position)
+  usable <- !is.na(ad_text)
+
+  AD_ref <- AD_alt <- DP <- rep(NA_integer_, n_calls)
+  allele_1 <- A1[cell]
+  allele_2 <- A2[cell]
+  for (k in which(usable)) {
+    ## AD is one read count per allele, in REF,ALT order; "." inside it means 0.
+    ad <- suppressWarnings(as.integer(strsplit(ad_text[k], ",", fixed = TRUE)[[1]]))
+    ad[is.na(ad)] <- 0L
+    ## Reads for each DISTINCT ALT allele in the call: a 1/1 homozygote has
+    ## one ALT allele, whose reads are counted once, not twice.
+    alts <- unique(c(allele_1[k], allele_2[k]))
+    alts <- alts[alts > 1L]
+    AD_alt[k] <- sum(ad[alts[alts <= length(ad)]])
+    AD_ref[k] <- if (length(ad)) ad[1L] else 0L
+    dp <- suppressWarnings(as.integer(dp_text[k]))
+    DP[k] <- if (is.na(dp)) sum(ad) else dp
+  }
+
+  data.frame(record = record, sample = sample, GT = gt_text,
+             AD_ref = AD_ref, AD_alt = AD_alt, DP = DP,
+             alt_fraction = ifelse(!is.na(DP) & DP > 0L, AD_alt / DP, NA_real_),
+             usable = usable)
+}
+
+## Not exported. Per record: ALT-containing calls, flagged calls, and the
+## flagged fraction, from the .parse_alt_ad() table.
+.flag_summary <- function(H, calls, min_alt_reads) {
+  n_rec <- nrow(H$A1)
+  flagged <- calls$usable & calls$AD_alt <= min_alt_reads
+  n_alt_calls <- tabulate(calls$record, nbins = n_rec)
+  n_flagged <- tabulate(calls$record[flagged], nbins = n_rec)
+  list(flagged = flagged,
+       per_record = data.frame(locus = H$locus, n_alt_calls = n_alt_calls, n_flagged = n_flagged,
+                               flagged_fraction = ifelse(n_alt_calls > 0L, n_flagged / n_alt_calls, 0),
+                               row.names = NULL))
+}
+
+#' Remove low-confidence ALT genotype calls
+#'
+#' A genotype call carrying an ALT allele (e.g. `0/1`, `1/1`) is flagged when
+#' the reads supporting that ALT allele number `min_alt_reads` or fewer: the
+#' genotyper called an alternate allele on very little evidence, which is the
+#' profile of a sequencing error. `mode = "mask"` sets just the flagged calls
+#' to missing; `mode = "drop"` removes whole records where too large a share of
+#' the ALT-containing calls were flagged. Use [low_conf_alt_calls()] to see
+#' which calls are flagged, and [low_conf_alt_sensitivity()] to choose
+#' `min_alt_reads`.
+#'
+#' **Not before diversity statistics.** Only calls that carry an ALT allele
+#' can be flagged; a REF homozygote on equally few reads never is. Masking
+#' therefore removes heterozygotes more readily than homozygotes, which biases
+#' Ho and allele frequencies down and FIS up, most in low-coverage libraries.
+#' A true heterozygote read 6 times shows 2 or fewer ALT reads 34% of the
+#' time (15% at 8 reads, 5.5% at 10), before the genotype caller's own
+#' threshold. Before [diversity_stats()], [het_between_pops()] or
+#' [individual_inbreeding()], use [filter_genotype_depth()], which masks by
+#' depth whatever the genotype. The message reports the share of heterozygous
+#' calls masked, so the imbalance can be seen.
+#'
+#' @param H The object returned by [read_stacks_vcf()] (optionally filtered).
+#'   It must still contain `$fields`, the raw VCF columns, which hold the AD
+#'   (allele depth) values.
+#' @param min_alt_reads A call with this many or fewer reads supporting its
+#'   ALT allele(s) is flagged. Default `2`.
+#' @param mode `"mask"` (default): set only the flagged calls to missing.
+#'   `"drop"`: remove whole records instead (see `drop_frac`). To compare both,
+#'   run the function twice on the same starting `H`: after masking, the
+#'   flagged calls are gone, so a second, dropping pass finds nothing to drop.
+#' @param drop_frac Used only with `mode = "drop"`. A record is removed when
+#'   the fraction of its ALT-containing calls that were flagged is greater
+#'   than this. Default `0`: remove a record if any call is flagged. A record
+#'   with no ALT-containing call is never removed.
+#' @param verbose Print how many calls were flagged. Default `TRUE`.
+#' @return `H`, with flagged calls set to missing (`mode = "mask"`) or
+#'   records removed (`mode = "drop"`).
+#' @examples
+#' # A tiny VCF: ind2's ALT call at locus_1 is supported by only 1 read.
 #' vcf_lines <- c(
 #'   "##fileformat=VCFv4.2",
 #'   "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tind1\tind2",
@@ -685,112 +650,110 @@ filter_thin_one_snp <- function(H, method = "first", seed = NULL, verbose = TRUE
 #' vcf_file <- tempfile(fileext = ".vcf")
 #' writeLines(vcf_lines, vcf_file)
 #' H <- read_stacks_vcf(vcf_file, verbose = FALSE)
-#' res <- filter_low_conf_alt(H, min_alt_reads = 2, verbose = FALSE)
-#' res$flagged_calls  # ind2's call at locus_1 is flagged (1 <= 2 ALT reads)
+#' low_conf_alt_calls(H, min_alt_reads = 2)$flagged_calls
+#' H_masked <- filter_low_conf_alt(H, min_alt_reads = 2)
+#' H_masked$A1          # ind2's genotype is now missing
 #' @export
-filter_low_conf_alt <- function(H, min_alt_reads = 2, mode = "mask",
-                                 drop_frac = 0, calls = NULL, verbose = TRUE) {
-  if (!(length(mode) == 1L && mode %in% c("mask", "drop")))
-    stop("mode must be exactly \"mask\" or \"drop\" (got: ", paste(mode, collapse = ", "), ").")
-  if (is.null(calls)) calls <- .parse_alt_ad(H)
-
-  flagged <- calls$usable & calls$AD_alt <= min_alt_reads
+filter_low_conf_alt <- function(H, min_alt_reads = 2, mode = "mask", drop_frac = 0,
+                                verbose = TRUE) {
+  H <- .resolve_H(H, verbose = FALSE)
+  .check_number(min_alt_reads, "min_alt_reads", min = 0)
+  .check_choice(mode, "mode", c("mask", "drop"))
+  .check_number(drop_frac, "drop_frac", min = 0, max = 1)
+  .check_flag(verbose, "verbose")
+  calls <- .parse_alt_ad(H)
+  flags <- .flag_summary(H, calls, min_alt_reads)
   n_rec <- nrow(H$A1)
-
-  ## tabulate() again: counting, per LOCUS, how many ALT-containing calls it
-  ## has in total, and how many of those got flagged. nbins = n_rec makes
-  ## sure every locus gets an entry (even 0) rather than only the ones that
-  ## happen to appear in `calls`.
-  n_alt_calls <- tabulate(calls$record, nbins = n_rec)
-  n_flagged   <- tabulate(calls$record[flagged], nbins = n_rec)
-  flagged_fraction <- ifelse(n_alt_calls > 0L, n_flagged / n_alt_calls, 0)
-
-  if (verbose)
-    message(sprintf(
-      "Low-confidence ALT filter (AD_alt <= %d): %s of %s ALT-containing calls flagged, ",
-      min_alt_reads, format(sum(flagged), big.mark = ","), format(nrow(calls), big.mark = ",")),
-      sprintf("affecting %s of %s loci", format(sum(n_flagged > 0L), big.mark = ","),
-              format(n_rec, big.mark = ",")))
-
-  ## Build the two summary tables from the ORIGINAL H (before any masking or
-  ## dropping happens below), so they always describe what was found, even
-  ## for a locus that's about to be removed.
-  flagged_calls <- data.frame(
-    locus = H$locus[calls$record[flagged]], sample = H$samples[calls$sample[flagged]],
-    GT = calls$GT[flagged], AD_ref = calls$AD_ref[flagged], AD_alt = calls$AD_alt[flagged],
-    DP = calls$DP[flagged], alt_fraction = calls$alt_fraction[flagged], row.names = NULL
-  )
+  .inform(verbose, sprintf(
+    "Low-confidence ALT filter (AD_alt <= %g): %s of %s ALT-containing calls flagged, ",
+    min_alt_reads, .big(sum(flags$flagged)), .big(nrow(calls))),
+    sprintf("in %s of %s records", .big(sum(flags$per_record$n_flagged > 0L)), .big(n_rec)))
 
   if (mode == "mask") {
-    ## Blank out (set to NA, R's "no data" value) just the flagged cells --
-    ## cbind(rows, columns) here builds exactly the (locus, sample) address
-    ## of each flagged call, so only those cells change.
-    if (any(flagged)) {
-      addr <- cbind(calls$record[flagged], calls$sample[flagged])
-      H$A1[addr] <- NA
-      H$A2[addr] <- NA
+    ## Masking is one-sided (see @details), so say how unevenly it falls.
+    typed <- !is.na(H$A1)
+    n_het <- sum(typed & H$A1 != H$A2)
+    cell <- cbind(calls$record, calls$sample)
+    het_flagged <- sum(flags$flagged & H$A1[cell] != H$A2[cell])
+    if (n_het > 0)
+      .inform(verbose, sprintf(
+        "  %.1f%% of heterozygous calls masked; REF-homozygous calls are never masked, so this lowers Ho (see ?filter_low_conf_alt).",
+        100 * het_flagged / n_het))
+    ## cbind(record, sample) addresses exactly the flagged cells.
+    if (any(flags$flagged)) {
+      address <- cbind(calls$record[flags$flagged], calls$sample[flags$flagged])
+      H$A1[address] <- NA_integer_
+      H$A2[address] <- NA_integer_
     }
-    kept <- rep(TRUE, n_rec)
-    locus_summary <- data.frame(
-      locus = H$locus, n_alt_calls = n_alt_calls, n_flagged = n_flagged,
-      flagged_fraction = round(flagged_fraction, 4), kept = kept, row.names = NULL
-    )
-  } else {
-    ## drop mode: a locus survives if the SHARE of its calls that were
-    ## flagged is not more than drop_frac (a locus with 0 ALT calls always
-    ## has flagged_fraction 0 already, so it's always kept by this rule).
-    kept <- flagged_fraction <= drop_frac + 1e-9
-    locus_summary <- data.frame(
-      locus = H$locus, n_alt_calls = n_alt_calls, n_flagged = n_flagged,
-      flagged_fraction = round(flagged_fraction, 4), kept = kept, row.names = NULL
-    )
-    if (verbose)
-      message(sprintf("  drop_frac = %.3g: %s of %s loci kept", drop_frac,
-                      format(sum(kept), big.mark = ","), format(n_rec, big.mark = ",")))
-    if (!sum(kept))
-      stop("Every locus would be dropped at drop_frac = ", drop_frac, ". Raise drop_frac, ",
-           "or lower min_alt_reads so fewer calls are flagged in the first place.")
-    H <- .subset_H(H, kept)
+    return(H)
   }
+  keep <- flags$per_record$flagged_fraction <= drop_frac + .threshold_tol
+  .inform(verbose, sprintf("  drop_frac = %.3g: %s of %s records kept", drop_frac,
+                           .big(sum(keep)), .big(n_rec)))
+  if (!any(keep))
+    stop("Every record would be dropped at drop_frac = ", drop_frac, ". Raise drop_frac, ",
+         "or lower min_alt_reads so fewer calls are flagged.", call. = FALSE)
+  .subset_H(H, keep)
+}
 
-  list(H = H, flagged_calls = flagged_calls, locus_summary = locus_summary)
+#' List low-confidence ALT genotype calls
+#'
+#' The calls [filter_low_conf_alt()] would flag, and a per-record summary, so
+#' they can be inspected before (or instead of) filtering.
+#'
+#' @inheritParams filter_low_conf_alt
+#' @return A list:
+#'   \describe{
+#'     \item{flagged_calls}{One row per flagged call: `locus`, `sample`, `GT`,
+#'       `AD_ref`, `AD_alt`, `DP`, `alt_fraction`.}
+#'     \item{locus_summary}{One row per record: `locus`, `n_alt_calls`,
+#'       `n_flagged`, `flagged_fraction`.}
+#'   }
+#' @examples
+#' H <- read_stacks_vcf(system.file("extdata", "small.haps.vcf",
+#'                                  package = "RADdiversity"), verbose = FALSE)
+#' flagged <- low_conf_alt_calls(H, min_alt_reads = 2)
+#' head(flagged$locus_summary)
+#' @export
+low_conf_alt_calls <- function(H, min_alt_reads = 2) {
+  H <- .resolve_H(H, verbose = FALSE)
+  .check_number(min_alt_reads, "min_alt_reads", min = 0)
+  calls <- .parse_alt_ad(H)
+  flags <- .flag_summary(H, calls, min_alt_reads)
+  f <- flags$flagged
+  list(flagged_calls = data.frame(locus = H$locus[calls$record[f]],
+                                  sample = H$samples[calls$sample[f]],
+                                  GT = calls$GT[f], AD_ref = calls$AD_ref[f],
+                                  AD_alt = calls$AD_alt[f], DP = calls$DP[f],
+                                  alt_fraction = calls$alt_fraction[f], row.names = NULL),
+       locus_summary = flags$per_record)
 }
 
 #' Sensitivity table for the low-confidence-ALT threshold
 #'
-#' Ports the Python script's `--sensitivity-table` option: for a range of
-#' possible `min_alt_reads` thresholds, shows how many ALT-containing
-#' genotype calls would be flagged. Useful for picking a threshold for
-#' [filter_low_conf_alt()] before committing to one.
+#' For a range of `min_alt_reads` thresholds, how many ALT-containing genotype
+#' calls [filter_low_conf_alt()] would flag. Use it to choose a threshold.
 #'
-#' @param H A list as returned by [read_stacks_vcf()].
-#' @param thresholds Which `min_alt_reads` values to try. Default
+#' @inheritParams filter_low_conf_alt
+#' @param thresholds The `min_alt_reads` values to try. Default
 #'   `c(1, 2, 3, 4, 5, 10)`.
-#' @param calls Optionally, a precomputed result from the internal
-#'   `.parse_alt_ad()` helper (see [filter_low_conf_alt()]'s matching
-#'   argument). Left `NULL` (the default), it's computed automatically.
-#' @return A data frame with one row per threshold: `threshold, n_flagged,
-#'   pct_flagged, total_usable` (the last two out of every ALT-containing
-#'   call whose AD value could actually be read).
+#' @return A data frame with one row per threshold: `threshold`, `n_flagged`,
+#'   `pct_flagged` and `total_usable` (ALT-containing calls whose AD could be
+#'   read).
 #' @examples
-#' vcf_lines <- c(
-#'   "##fileformat=VCFv4.2",
-#'   "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tind1\tind2",
-#'   "un\t1\tlocus_1\tA\tC\t.\tPASS\t.\tGT:AD:DP\t0/0:10,0:10\t0/1:9,1:10"
-#' )
-#' vcf_file <- tempfile(fileext = ".vcf")
-#' writeLines(vcf_lines, vcf_file)
-#' H <- read_stacks_vcf(vcf_file, verbose = FALSE)
+#' H <- read_stacks_vcf(system.file("extdata", "small.haps.vcf",
+#'                                  package = "RADdiversity"), verbose = FALSE)
 #' low_conf_alt_sensitivity(H)
 #' @export
-low_conf_alt_sensitivity <- function(H, thresholds = c(1, 2, 3, 4, 5, 10), calls = NULL) {
-  if (is.null(calls)) calls <- .parse_alt_ad(H)
+low_conf_alt_sensitivity <- function(H, thresholds = c(1, 2, 3, 4, 5, 10)) {
+  H <- .resolve_H(H, verbose = FALSE)
+  if (!(is.numeric(thresholds) && length(thresholds) && !anyNA(thresholds)))
+    stop("`thresholds` must be a vector of numbers.", call. = FALSE)
+  calls <- .parse_alt_ad(H)
   usable_ad <- calls$AD_alt[calls$usable]
   total <- length(usable_ad)
   n_flagged <- vapply(thresholds, function(t) sum(usable_ad <= t), integer(1))
-  data.frame(
-    threshold = thresholds, n_flagged = n_flagged,
-    pct_flagged = if (total) round(100 * n_flagged / total, 2) else rep(NA_real_, length(thresholds)),
-    total_usable = total
-  )
+  data.frame(threshold = thresholds, n_flagged = n_flagged,
+             pct_flagged = if (total) 100 * n_flagged / total else rep(NA_real_, length(thresholds)),
+             total_usable = total)
 }

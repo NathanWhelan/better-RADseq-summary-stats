@@ -2,58 +2,66 @@
 % Please edit documentation in R/vcf_io.R
 \name{read_stacks_vcf}
 \alias{read_stacks_vcf}
-\alias{read_haps_vcf}
+\alias{print.raddiv_vcf}
 \title{Read a Stacks haplotype or SNP VCF}
 \usage{
-read_stacks_vcf(path, verbose = TRUE, locus_from = "auto", window_bp = 1000)
+read_stacks_vcf(path, locus_from = "auto", window_bp = 1000, verbose = TRUE)
 
-read_haps_vcf(path, verbose = TRUE, locus_from = "auto", window_bp = 1000)
+\method{print}{raddiv_vcf}(x, ...)
 }
 \arguments{
 \item{path}{Path to the VCF file (\code{.vcf} or \code{.vcf.gz}).}
 
-\item{verbose}{Print progress/summary messages. Default \code{TRUE}.}
-
-\item{locus_from}{How to tell which RAD locus each record belongs to --
-the unit the block jackknife and bootstrap resample, so that SNPs on one
-RAD tag move together. \code{"auto"} (the default) uses the ID column when
-every record has one (Stacks writes the locus number, or
-\code{locus:column:strand} in a SNP VCF), and \code{"window"} otherwise.
-\code{"ID"}: the ID column, up to its first \code{:}. \code{"CHROM"}: one locus per
-CHROM value, for de novo formats that put the locus there (some Stacks 2
-versions, ipyrad, dDocent). \code{"window"}: records on the same CHROM within
-\code{window_bp} of the previous record form one locus -- which gives one
-locus per CHROM for the de novo formats (a RAD locus is far shorter than
-1 kb) and one per RAD locus, or run of adjacent loci, for
-reference-aligned data. For a reference-aligned VCF whose IDs are
-unique per SNP (e.g. dbSNP rs numbers), choose \code{"window"} explicitly.}
+\item{locus_from}{How to tell which RAD locus each record belongs to. RAD
+loci are the unit that standard errors and bootstrap intervals resample,
+so that linked SNPs on one RAD tag move together.
+\itemize{
+\item \code{"auto"} (default): the ID column when every record has one (Stacks
+writes the locus number, or \code{locus:column:strand} in a SNP VCF), and
+\code{"window"} otherwise.
+\item \code{"ID"}: the ID column, up to its first \code{:}.
+\item \code{"CHROM"}: one locus per CHROM value, for de novo formats that put the
+locus there (some Stacks 2 versions, ipyrad, dDocent).
+\item \code{"window"}: records on the same CHROM within \code{window_bp} of the
+previous record form one locus. This gives one locus per CHROM for de
+novo formats and one per RAD locus (or run of adjacent loci) for
+reference-aligned data. Choose it explicitly for a reference-aligned
+VCF whose IDs are unique per SNP (e.g. dbSNP rs numbers).
+}}
 
 \item{window_bp}{Largest gap, in base pairs, between consecutive records of
 one locus under \code{locus_from = "window"}. Default \code{1000}.}
+
+\item{verbose}{Print a short summary of what was read. Default \code{TRUE}.}
+
+\item{x}{A \code{raddiv_vcf} object, as returned by \code{read_stacks_vcf()}.}
+
+\item{...}{Ignored.}
 }
 \value{
-A list with elements \code{A1}, \code{A2} (allele-index matrices, one row per
-record, one column per sample), \code{locus} (unique per-record locus names),
-\code{locus_raw} (locus grouping, shared across SNPs on one RAD tag),
-\code{alleles} (list of allele strings per record), \code{n_alleles}, \code{samples},
-and \code{fields} (the raw parsed VCF field matrix).
+An object of class \code{raddiv_vcf}: a list with elements \code{A1}, \code{A2}
+(allele-number matrices, one row per record, one column per sample;
+1 = REF, 2 = first ALT, ...; \code{NA} = missing), \code{locus} (unique record
+names), \code{locus_raw} (the RAD locus of each record), \code{alleles} (allele
+sequences per record), \code{n_alleles}, \code{samples}, \code{fields} (the raw VCF
+columns) and \code{n_records_read} (records in the file, unchanged by the
+\verb{filter_*()} functions). Printing it shows a short summary.
 }
 \description{
-Parses \code{populations.haps.vcf} or \code{populations.snps.vcf} (gzip-compressed or
-not) into genotype matrices plus locus/allele metadata. Used by
-\code{\link[=diversity_stats]{diversity_stats()}} and \code{\link[=het_between_pops]{het_between_pops()}}.
+Reads \code{populations.haps.vcf} or \code{populations.snps.vcf} (gzip-compressed or
+not) into genotype matrices plus locus and allele information. The result
+can be passed to every analysis function in place of the file path, and
+through any \verb{filter_*()} function first.
 }
 \details{
-\code{read_haps_vcf()} is this function's former name (it reads SNP VCFs too),
-kept as an alias for one release.
-
-Other VCFs (ipyrad, dDocent/freebayes, GATK, ...) are read the same way,
-provided GT is the first FORMAT field; \code{locus_from} below says how to
-group their records into RAD loci.
+VCFs from other pipelines (ipyrad, dDocent/freebayes, GATK, ...) are read
+the same way, provided GT is the first FORMAT field; \code{locus_from} says how
+their records are grouped into RAD loci.
 }
 \examples{
 H <- read_stacks_vcf(system.file("extdata", "small.haps.vcf",
                                  package = "RADdiversity"))
+H                  # a short summary
 dim(H$A1)          # records x samples
 H$alleles[[1]]     # the haplotype alleles of the first RAD locus
 H$A1[1:3, 1:4]     # first allele of each genotype (1 = REF, 2 = first ALT, ...)

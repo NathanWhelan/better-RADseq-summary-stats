@@ -3,95 +3,125 @@
 \name{het_between_pops}
 \alias{het_between_pops}
 \alias{print.raddiv_het}
+\alias{summary.raddiv_het}
 \title{Test whether mean heterozygosity differs between populations}
 \usage{
 het_between_pops(
-  vcf_file,
-  popmap_f,
+  vcf,
+  popmap,
   min_call = 0.9,
+  min_loci = 50L,
+  nboot_g2 = 200L,
   outdir = NULL,
-  seed = 2024,
-  verbose = TRUE,
-  stem = NULL
+  stem = NULL,
+  seed = NULL,
+  verbose = TRUE
 )
 
 \method{print}{raddiv_het}(x, ...)
+
+\method{summary}{raddiv_het}(object, ...)
 }
 \arguments{
-\item{vcf_file}{Path to a Stacks VCF (\code{populations.snps.vcf} or
-\code{populations.haps.vcf}, optionally gzip-compressed) -- OR, an already-
-parsed (and optionally filtered) \code{H} list, i.e. the object returned by
-\code{\link[=read_stacks_vcf]{read_stacks_vcf()}}, on its own or passed through one or more \verb{filter_*()}
-functions first (see \code{R/filter_loci.R}). Passing a list skips re-reading
-and re-parsing the VCF file.}
+\item{vcf}{Path to a Stacks VCF (\code{populations.snps.vcf} or
+\code{populations.haps.vcf}, optionally gzip-compressed), or the object
+returned by \code{\link[=read_stacks_vcf]{read_stacks_vcf()}}, optionally passed through \verb{filter_*()}
+functions.}
 
-\item{popmap_f}{Path to a two-column, no-header popmap TSV (\verb{sample_id <TAB> population}).}
+\item{popmap}{Path to a two-column, no-header popmap file (\verb{sample_id <TAB> population}), or the list returned by \code{\link[=read_popmap]{read_popmap()}}.}
 
-\item{min_call}{Minimum fraction of individuals that must be genotyped at
-a locus for that locus to be used, applied within each population.
-Default \code{0.9}.}
+\item{min_call}{Minimum fraction of individuals genotyped at a locus for the
+locus to be used, applied within each population (see Details). Default
+\code{0.9}.}
 
-\item{outdir}{Directory to write the two result tables into as TSV files
-(created if needed). Default \code{NULL}: write no files -- the tables are in
-the returned object. The command-line script writes to the current
-directory.}
+\item{min_loci}{Minimum number of loci. An individual genotyped at fewer
+loci is excluded (a failed library cannot give a heterozygosity), a pair
+of populations sharing fewer is reported as \code{NA}, and a warning is given
+if fewer pass the pooled filter. Default \code{50}.}
 
-\item{seed}{Random seed set before any randomness, for reproducibility.
-Default \code{2024}. The caller's own RNG state (e.g. from their own prior
-\code{set.seed()}) is restored when this function returns, so calling it
-interactively does not affect subsequent random draws in the caller's
-session.}
+\item{nboot_g2}{Bootstrap replicates for the g2 confidence interval.
+Default \code{200}.}
 
-\item{verbose}{Print the VCF/popmap parsing summary. Default \code{TRUE}.
-Progress messages can be silenced with \code{suppressMessages()}; the report
-itself appears only when the result is printed.}
+\item{outdir}{Directory to write the result tables to as TSV files
+(created if needed). Default \code{NULL}: write nothing.}
 
-\item{stem}{Text used in the two output filenames
-(\verb{individual_heterozygosity.<stem>.tsv} and
-\verb{het_between_pops_tests.<stem>.tsv}). Derived from \code{vcf_file}'s name when
-it is a path (\code{populations.snps.vcf} gives \code{"snps"}), so a run on the SNP
-VCF and a run on the haplotype VCF into the same \code{outdir} do not
-overwrite each other. Required when writing files (\code{outdir}) from an
-already-parsed list, which has no filename to derive it from.}
+\item{stem}{Text in the output file names
+(\verb{diversity_per_population.<stem>.tsv}). By default it comes from the
+VCF's file name (\code{populations.haps.vcf} gives \code{"haps"}), so runs on the
+haplotype and SNP VCFs can share \code{outdir} without overwriting each other.
+Required when writing files from an already-read object, which has no
+file name.}
 
-\item{x}{A \code{raddiv_het} object, as returned by \code{het_between_pops()}.}
+\item{seed}{Random seed for the g2 bootstrap. Default \code{NULL}: use R's
+current random-number stream (call \code{set.seed()} first for a reproducible
+interval). A number makes the result reproducible on its own and leaves
+your session's random-number stream as it was.}
+
+\item{verbose}{Print progress messages. Default \code{TRUE}.}
+
+\item{x, object}{A \code{raddiv_het} object, as returned by \code{het_between_pops()}.}
 
 \item{...}{Ignored.}
 }
 \value{
-An object of class \code{raddiv_het}: a list with elements
-\code{individual_heterozygosity} (one row per individual, with its
-heterozygosity and its \code{F}), \code{pairwise_tests} (heterozygosity, one row per
-pair of populations) and \code{pairwise_F_tests} (the same tests on \code{F}).
-Printing it shows the full report, including the missingness-confound
-and overdispersion checks. With \code{outdir}, the tables are also written to
+An object of class \code{raddiv_het}, a list of:
+\describe{
+\item{individual_heterozygosity}{One row per individual: loci called,
+heterozygosity (on the pooled locus set) and individual \code{F}.}
+\item{population_summary}{Per population: individuals, loci, mean, SD,
+SE, range of individual heterozygosity, and mean \code{F}.}
+\item{pairwise_tests}{Heterozygosity, one row per pair of populations:
+means, difference with Welch 95\% CI, Welch and Wilcoxon p-values
+(with Benjamini-Hochberg adjusted versions), Hedges' g.}
+\item{pairwise_F_tests}{The same tests on \code{F}.}
+\item{overdispersion}{Observed vs binomial SD of individual
+heterozygosity per population, their variance ratio, and roughly how
+much a locus bootstrap would understate the SE.}
+\item{g2}{Identity disequilibrium per population, with bootstrap CI.}
+\item{missingness_confound}{Correlation between an individual's call
+rate and its heterozygosity, overall (\code{overall}) and within each
+population (\code{within}).}
+\item{settings}{The settings of this run.}
+}
+Values are stored at full precision; \code{print()}, \code{summary()} and the TSV
+files round them. With \code{outdir}, \code{individual_heterozygosity},
+\code{pairwise_tests} and \code{pairwise_F_tests} are written to
 \verb{individual_heterozygosity.<stem>.tsv},
 \verb{het_between_pops_tests.<stem>.tsv} and
 \verb{het_between_pops_F_tests.<stem>.tsv}.
 }
 \description{
-Uses the INDIVIDUAL, not the locus, as the unit of replication (Welch's t
-with Wilcoxon as a distribution-free check), plus a missingness-confound
-diagnostic and an overdispersion check quantifying how badly a locus
-bootstrap would have misled on this dataset. Returns the result tables;
-printing the result shows the same report as the \code{het_between_pops.R}
-command-line script, and \code{outdir} writes the tables to TSV files.
+Uses the INDIVIDUAL, not the locus, as the unit of replication (Welch's t,
+with Wilcoxon as a distribution-free check), and adds a missingness-confound
+check, an overdispersion check showing how badly a locus bootstrap would
+have misled on this dataset, and identity disequilibrium (g2) per
+population. Printing the result shows the main tables; \code{summary()} shows the
+full report; \code{outdir} also writes the tables to TSV files.
 }
 \details{
-Two questions, two tests, same machinery. \code{pairwise_tests} compares mean
-individual heterozygosity: do the populations differ in diversity?
+Two questions, same machinery. \code{pairwise_tests} compares mean individual
+heterozygosity: do the populations differ in diversity?
 \code{pairwise_F_tests} compares the individual inbreeding coefficient \code{F}
 (\code{\link[=individual_inbreeding]{individual_inbreeding()}}, expected heterozygosity from each individual's
 own population): do they differ in inbreeding? Report the one that matches
-your question -- a difference in FIS is a difference in inbreeding.
+your question.
+
+\strong{Which loci are used.} An individual's heterozygosity in
+\code{individual_heterozygosity} and the missingness check use the loci
+genotyped in at least \code{min_call} of ALL individuals pooled. Everything that
+describes or compares populations uses loci that each population clears
+on its own: \code{population_summary} uses each population's own loci, and a
+pairwise test uses the loci BOTH populations of that pair clear. A pooled
+rule would let a well-covered population carry a poorly covered one.
 }
 \examples{
 # A toy dataset shipped with the package (4 and 3 individuals -- far too
 # few for a real test, which needs individuals, not loci).
 vcf    <- system.file("extdata", "small.haps.vcf", package = "RADdiversity")
 popmap <- system.file("extdata", "small_popmap.tsv", package = "RADdiversity")
+set.seed(1)
 res <- het_between_pops(vcf, popmap, min_call = 0.5)
+res                       # the main tables
 res$individual_heterozygosity
-res$pairwise_tests
-print(res)   # the full report, with the confound and overdispersion checks
+summary(res)              # the full report, with the confound and overdispersion checks
 }

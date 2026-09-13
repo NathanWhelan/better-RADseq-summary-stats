@@ -29,12 +29,18 @@ test_that("differentiation_stats()'s internal WC formula matches hierfstat::wc()
   ## differentiation_stats() itself builds internally for its cross-check
   ## message, so this test is checking the SAME thing that message reports,
   ## independently, rather than trusting the message text.
+  ## hierfstat is given only the records typed in every population: at a
+  ## record typed in just one population, hierfstat keeps the within-population
+  ## variance and this package deliberately skips the record (see
+  ## ?differentiation_stats). On every other record the two must agree.
   r <- length(pops); ids <- unlist(pops, use.names = FALSE)
+  typed_everywhere <- rowSums(RADdiversity:::.typed_by_pop(H, pops) > 0) == r
+  H_typed <- RADdiversity:::.subset_H(H, typed_everywhere)
   popvec <- rep(seq_len(r), lengths(pops))
-  n_rec <- nrow(H$A1)
+  n_rec <- nrow(H_typed$A1)
   Gm <- matrix(NA_integer_, length(ids), n_rec)
   for (j in seq_len(n_rec)) {
-    a <- H$A1[j, ids]; b <- H$A2[j, ids]
+    a <- H_typed$A1[j, ids]; b <- H_typed$A2[j, ids]
     Gm[, j] <- pmin(a, b) * 1000L + pmax(a, b)
   }
   dat <- data.frame(pop = popvec, Gm)
@@ -45,7 +51,7 @@ test_that("differentiation_stats()'s internal WC formula matches hierfstat::wc()
     res <- differentiation_stats(H, fx("small_popmap.tsv"), nboot = 0,
                                   stem = "wctest", outdir = tempfile("dd-"), verbose = FALSE)
   ))
-  expect_equal(res$global$FST, round(hw$FST, 4), tolerance = 1e-6)
+  expect_equal(res$global$FST, hw$FST, tolerance = 1e-6)
   ## pairwise.WCfst() indexes populations by their integer pop id (1, 2, ...,
   ## in `names(pops)` order) rather than by name -- translate before comparing.
   ## res$pairwise_fst holds unrounded point estimates (see @return); compare
@@ -54,6 +60,41 @@ test_that("differentiation_stats()'s internal WC formula matches hierfstat::wc()
     expect_equal(res$pairwise_fst[names(pops)[a], names(pops)[b]],
                  hpw[a, b], tolerance = 1e-6)
   }
+})
+
+test_that("FST ignores records typed in only one population (no dilution toward 0)", {
+  ## Two populations differentiated at FST ~ 0.1. Adding records at which
+  ## population Y has no genotyped individual -- as Stacks' -r leaves them
+  ## with 3+ populations and a low -p -- must not change FST or D.
+  set.seed(3)
+  L <- 1500; n <- 15
+  p_anc <- stats::rbeta(L, 2, 2)
+  X <- sim_genotypes(sim_diverged_freqs(p_anc, 0.1), n)
+  Y <- sim_genotypes(sim_diverged_freqs(p_anc, 0.1), n)
+  ids <- c(paste0("x", 1:n), paste0("y", 1:n))
+  A1 <- cbind(X$A1, Y$A1); A2 <- cbind(X$A2, Y$A2)
+  colnames(A1) <- colnames(A2) <- ids
+  pops <- list(X = ids[1:n], Y = ids[n + 1:n])
+
+  extra <- sim_genotypes(stats::rbeta(600, 2, 2), 2 * n)
+  B1 <- extra$A1; B2 <- extra$A2
+  B1[, n + 1:n] <- NA; B2[, n + 1:n] <- NA
+  colnames(B1) <- colnames(B2) <- ids
+
+  both <- differentiation_stats(sim_H(A1, A2), pops, nboot = 0, verbose = FALSE)
+  with_extra <- differentiation_stats(sim_H(rbind(A1, B1), rbind(A2, B2)), pops,
+                                      nboot = 0, verbose = FALSE)
+  expect_equal(with_extra$global$FST, both$global$FST, tolerance = 1e-12)
+  expect_equal(with_extra$pairwise$FST, both$pairwise$FST, tolerance = 1e-12)
+  expect_equal(with_extra$global$D, both$global$D, tolerance = 1e-12)
+  expect_equal(unname(with_extra$settings$fst_records_skipped), c(600, 600))
+  expect_equal(unname(both$settings$fst_records_skipped), c(0, 0))
+
+  ## hierfstat::wc() keeps those records, which pulls its FST down.
+  skip_if_not_installed("hierfstat")
+  H_extra <- sim_H(rbind(A1, B1), rbind(A2, B2))
+  hw <- hierfstat::wc(RADdiversity:::.to_hierfstat_df(H_extra, pops))
+  expect_lt(hw$FST, 0.9 * with_extra$global$FST)
 })
 
 ## ---------------------------------------------------------------------------
@@ -137,7 +178,8 @@ test_that("differentiation_stats() returns the documented shape and honors nboot
     res <- differentiation_stats(H, fx("small_popmap.tsv"), nboot = 0,
                                   stem = "shape", outdir = tempfile("dd-"), verbose = FALSE)
   ))
-  expect_named(res, c("global", "pairwise", "pairwise_fst", "pairwise_beta", "pairwise_D"))
+  expect_named(res, c("global", "pairwise", "pairwise_fst", "pairwise_beta", "pairwise_D",
+                      "settings"))
   expect_equal(nrow(res$pairwise), 1L)                    # one pair: popA-popB
   expect_true(all(is.na(res$global[, c("FST_lo", "FST_hi", "D_lo", "D_hi")])))
   expect_false(is.na(res$global$FST_se))  # jackknife SE needs no nboot

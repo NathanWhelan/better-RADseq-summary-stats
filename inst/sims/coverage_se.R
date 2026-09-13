@@ -41,9 +41,9 @@ writeLines(paste0(samp, "\t", rep(c("popA", "popB"), each = n)), popmap)
 draw_F <- function(k, sdF) pmin(pmax(stats::rnorm(k, 0.1, sdF), 0), 0.9)
 
 one_rep <- function(sdF) {
-  F <- draw_F(2 * n, sdF)
+  F_individual <- draw_F(2 * n, sdF)       # not `F`, which is R's shorthand for FALSE
   a1 <- matrix(1L + (stats::runif(L * 2 * n) < p), L)
-  ibd <- matrix(stats::runif(L * 2 * n) < rep(F, each = L), L)
+  ibd <- matrix(stats::runif(L * 2 * n) < rep(F_individual, each = L), L)
   a2 <- ifelse(ibd, a1, 1L + (stats::runif(L * 2 * n) < p))
   dimnames(a1) <- dimnames(a2) <- list(NULL, samp)
   H <- list(A1 = a1, A2 = a2, locus = paste0("l", seq_len(L)),
@@ -59,10 +59,12 @@ for (sdF in c(0, 0.1, 0.25)) {
   Fbar <- mean(draw_F(1e6, sdF))                # E[F] after truncation
   truth <- c(Ho = truth_He * (1 - Fbar), He = truth_He, Fis = Fbar)
   hit <- list()
-  for (rep in seq_len(reps)) {
+  for (replicate_index in seq_len(reps)) {
     pp <- one_rep(sdF)
     for (s in names(truth)) {
-      est <- pp[[s]]; se_l <- pp[[paste0(s, "_se")]]; se_i <- pp[[paste0(s, "_se_ind")]]
+      est <- pp[[s]]
+      se_l <- pp[[paste0(s, "_se")]]
+      se_i <- pp[[paste0(s, "_se_ind")]]
       hit[[length(hit) + 1]] <- data.frame(
         stat = s, loci = abs(est - truth[[s]]) <= 1.96 * se_l,
         individuals = abs(est - truth[[s]]) <= 1.96 * se_i, ratio = se_i / se_l)

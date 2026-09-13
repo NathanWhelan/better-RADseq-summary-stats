@@ -5,36 +5,37 @@
 \title{Per-locus test of Hardy-Weinberg equilibrium}
 \usage{
 hwe_test(
-  H,
-  pops = NULL,
+  vcf,
+  popmap = NULL,
   method = "exact",
   n_draws = 10000L,
   stop_after = 20,
-  seed = 2024,
+  seed = NULL,
   verbose = TRUE
 )
 }
 \arguments{
-\item{H}{A list as returned by \code{\link[=read_stacks_vcf]{read_stacks_vcf()}} (or by another filter in
-this package, since they all return the same shape).}
+\item{vcf}{Path to a VCF file, or the object returned by \code{\link[=read_stacks_vcf]{read_stacks_vcf()}}
+(optionally filtered).}
 
-\item{pops}{Optional named list of sample-ID vectors (from
-\code{\link[=read_popmap]{read_popmap()}}). \code{NULL} (the default) pools every sample into one
-group named \code{"pooled"}; given, tests each population separately.}
+\item{popmap}{Optional: a popmap file path or the list returned by
+\code{\link[=read_popmap]{read_popmap()}}, to test each population separately. Default \code{NULL}: pool
+every sample into one group named \code{"pooled"}.}
 
 \item{method}{\code{"exact"} (default) or \code{"chisq"}.}
 
 \item{n_draws}{Maximum Monte Carlo draws per multiallelic locus under
-\code{method = "exact"}. Default \code{10000L}. Ignored for biallelic loci
-(exact by enumeration) and under \code{method = "chisq"}.}
+\code{method = "exact"}. Default \code{10000}. Ignored for biallelic loci (exact by
+enumeration) and under \code{method = "chisq"}.}
 
 \item{stop_after}{Stop drawing for a locus once this many draws at least
 as extreme as the observed table have been seen (Besag & Clifford
 1991). Default \code{20}. \code{Inf} always uses all \code{n_draws} draws.}
 
-\item{seed}{Random seed for the Monte Carlo draws, for reproducibility.
-Default \code{2024}. The caller's own RNG state is restored when this
-function returns (see \code{\link[=diversity_stats]{diversity_stats()}} for the same convention).}
+\item{seed}{Random seed for the Monte Carlo draws. Default \code{NULL}: use R's
+current random-number stream (call \code{set.seed()} first for reproducible
+p-values). A number makes the result reproducible on its own and leaves
+your session's random-number stream as it was.}
 
 \item{verbose}{Print a short summary. Default \code{TRUE}.}
 }
@@ -42,13 +43,15 @@ function returns (see \code{\link[=diversity_stats]{diversity_stats()}} for the 
 A data frame, one row per (locus, population) combination:
 \code{locus}, \code{population}, \code{method}, \code{submethod} (\code{"exact-enum"},
 \code{"exact-mc"}, or \code{"chisq"}), \code{n_alleles} (declared), \code{n_observed_alleles},
-\code{n_called} (typed individuals in that group), \code{statistic}, \code{df},
+\code{n_called} (typed individuals in that group), \code{F} (\code{1 - Ho/He}, with
+Nei & Chesser's He: positive for a heterozygote deficit, negative for an
+excess -- the test itself is two-sided, so \code{F} says which way a small
+p-value points), \code{statistic}, \code{df},
 \code{p_value}, \code{p_value_se} and \code{n_draws_used} (only defined for
-\code{"exact-mc"} rows),
-\code{pct_low_expected} (only defined for \code{"chisq"} rows). A locus/group
-combination with fewer than 2 observed alleles (monomorphic there) or
-fewer than 2 typed individuals gets \code{NA} throughout except \code{n_called}/
-\code{n_observed_alleles} themselves.
+\code{"exact-mc"} rows), and \code{pct_low_expected} (only defined for \code{"chisq"}
+rows). A locus/group with fewer than 2 observed alleles (monomorphic
+there) or fewer than 2 typed individuals gets \code{NA} throughout except
+\code{n_called} and \code{n_observed_alleles}.
 }
 \description{
 Tests every locus in \code{H} for departure from Hardy-Weinberg equilibrium
@@ -107,16 +110,10 @@ p-values should never be zero. \emph{Statistical Applications in Genetics and
 Molecular Biology} 9:39.
 }
 \examples{
-# 2 loci: locus_1 biallelic (12 individuals, exact-enum path), locus_2
-# triallelic (exact-mc path).
-samp <- paste0("s", 1:12)
-H <- list(
-  A1 = rbind(locus_1 = rep(c(1L,1L,2L), 4), locus_2 = rep(c(1L,2L,3L), 4)),
-  A2 = rbind(locus_1 = rep(c(1L,2L,2L), 4), locus_2 = rep(c(2L,3L,1L), 4)),
-  locus = c("locus_1","locus_2"), locus_raw = c("locus_1","locus_2"),
-  n_alleles = c(2L, 3L), alleles = list(c("A","C"), c("A","C","T")),
-  samples = samp
-)
-colnames(H$A1) <- colnames(H$A2) <- samp
-hwe_test(H, n_draws = 500, verbose = FALSE)
+vcf    <- system.file("extdata", "small.haps.vcf", package = "RADdiversity")
+popmap <- system.file("extdata", "small_popmap.tsv", package = "RADdiversity")
+set.seed(1)
+hw <- hwe_test(vcf, popmap, n_draws = 500, verbose = FALSE)
+head(hw)
+table(hw$submethod, useNA = "ifany")
 }

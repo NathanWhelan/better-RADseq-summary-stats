@@ -65,10 +65,11 @@ test_that("identity_disequilibrium() and individual_inbreeding() accept a VCF an
   expect_equal(nrow(individual_inbreeding(vcf, pm, min_call = 0.5)), 7L)
 })
 
-test_that("identity_disequilibrium() restores the caller's RNG state", {
+test_that("identity_disequilibrium() with a seed restores the caller's RNG state", {
   H <- sim_F(rep(0.1, 8), 100, seed = 5)
-  set.seed(9); before <- .Random.seed
-  identity_disequilibrium(H, list(pop = H$samples), nboot = 20, nperm = 20)
+  set.seed(9)
+  before <- .Random.seed
+  identity_disequilibrium(H, list(pop = H$samples), nboot = 20, nperm = 20, seed = 1)
   expect_identical(.Random.seed, before)
 })
 

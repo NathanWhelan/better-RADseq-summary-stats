@@ -52,7 +52,7 @@
 #  Compare anything from this package against `Pi`, never against `Exp_Het`.
 #
 #  Both estimators are computed here. hs_nei_chesser() is the default and what
-#  diversity_stats() reports; hs_stacks_pi() / hs_stacks_pi_counts() reproduce
+#  diversity_stats() reports; hs_stacks_pi() / gene_div_2n_counts() reproduce
 #  the Stacks quantity so the two can be printed side by side.
 #
 #  A CAVEAT ON THE NAME. At a BIALLELIC site, per-site pi and expected
@@ -79,19 +79,36 @@
 #  that, not the thing itself.
 #
 #  The conversion is one multiplication, so there is no excuse for not
-#  reporting it:
+#  reporting it. For each population separately:
 #
 #       He_autosomal = He_per_SNP * (n_variant_records / n_sites_sequenced)
 #
-#  n_variant_records is EVERY variant record called, not just the ones that
-#  passed diversity_stats()'s missing-data rule: the mean over the used
-#  records estimates the mean over all of them, and scaling by the smaller
-#  used count would understate pi by exactly the retention fraction.
+#  `n_sites_sequenced` is the population's `Sites` in the "All positions
+#  (variant and fixed)" block of populations.sumstats_summary.tsv. Stacks
+#  counts a site there only if that population has at least one genotyped
+#  individual at it (SumStatsSummary::accumulate(), Stacks 2.68).
 #
-#  `n_sites_sequenced` is the `Sites` column of the "All positions (variant and
-#  fixed)" block of populations.sumstats_summary.tsv. Stacks reports both
-#  blocks; the "All positions" one is the Schmidt-compliant estimate, and the
-#  "Variant positions" one is not.
+#  n_variant_records must be counted the same way: the variant sites where
+#  THAT population has at least one genotyped individual -- Stacks'
+#  `Variant_Sites` in the same block. It is not every record in the VCF: with
+#  3 or more populations and `-p` below their number, Stacks blanks a
+#  population at the sites where it fails `-r` and keeps the site for the
+#  others, and those records are not in that population's `Sites`. It is
+#  also not just the records that passed diversity_stats()'s min_n rule: the
+#  mean over the used records estimates the mean over all of them, and
+#  scaling by the smaller used count would understate pi by exactly the
+#  retention fraction. diversity_stats() computes both counts per population
+#  (.autosomal_counts() in R/diversity_stats.R).
+#
+#  Stacks reports both blocks; the "All positions" one is the
+#  Schmidt-compliant estimate, and the "Variant positions" one is not.
+#
+#  NO ALLELE-FREQUENCY FILTER. Stacks' --min-mac/--min-maf turn a failing SNP
+#  into a fixed site that still counts in `Sites`, so its contribution to pi
+#  is lost from Stacks' own all-positions Pi and from this conversion alike.
+#  Under a neutral site-frequency spectrum, sites with minor allele count <= 2
+#  carry about 4/(N - 1) of pi for N pooled gene copies: 21% at 10 diploids,
+#  10% at 20, 7% at 30 -- a bias that depends on sample size.
 #
 #  autosomal_het() below does the conversion and is used wherever a total-site
 #  count is supplied.
@@ -182,13 +199,15 @@
 #' @param he Per-locus (or per-site) expected heterozygosity, same loci as
 #'   `ho`.
 #' @param het_per_snp Heterozygosity per variant record.
-#' @param n_snps_used Number of variant (SNP) records called in the dataset
-#'   -- all of them, not only those retained for estimating `het_per_snp`
-#'   (the mean over the retained records estimates the mean over all).
-#' @param n_sites_sequenced Total sequenced sites, variant and fixed: the
-#'   `Sites` column of the "All positions (variant and fixed)" block of
-#'   `populations.sumstats_summary.tsv`. One value, or one per element of
-#'   `het_per_snp`.
+#' @param n_snps_used Number of variant (SNP) sites at which the population
+#'   has at least one genotyped individual -- Stacks' `Variant_Sites` in the
+#'   "All positions (variant and fixed)" block -- not only those retained for
+#'   estimating `het_per_snp` (the mean over the retained records estimates
+#'   the mean over all). One value, or one per element of `het_per_snp`.
+#' @param n_sites_sequenced Sequenced sites, variant and fixed, at which the
+#'   population has at least one genotyped individual: the `Sites` column of
+#'   the same block of `populations.sumstats_summary.tsv`. One value, or one
+#'   per element of `het_per_snp`.
 #' @param g Rarefaction size in gene copies.
 #' @param count_mat Matrix of gene-copy counts, populations (rows) x alleles.
 #' @param j Row (population) of `count_mat` to compute private richness for.
@@ -288,8 +307,10 @@ hs_from_counts <- function(counts, ho, n) {
 #' @export
 fis_ratio_of_sums <- function(ho, he) {
   ok <- is.finite(ho) & is.finite(he)
-  sh <- sum(he[ok]); if (!isTRUE(sh > 0)) return(NA_real_)
-  1 - sum(ho[ok]) / sh
+  sum_he <- sum(he[ok])
+  ## No expected heterozygosity at all (every locus monomorphic): undefined.
+  if (!isTRUE(sum_he > .zero_tol)) return(NA_real_)
+  1 - sum(ho[ok]) / sum_he
 }
 
 #' @rdname estimators
@@ -306,33 +327,52 @@ autosomal_het <- function(het_per_snp, n_snps_used, n_sites_sequenced) {
 ## Rarefaction
 ## ---------------------------------------------------------------------------
 
-## 1 - C(N - N_i, g) / C(N, g), on the log scale (lchoose) so it stays finite
-## at large N.
+## Not exported. The rarefaction formula itself, for many records at once:
+## `counts` is a records x alleles matrix of gene-copy counts, and the result
+## has the same shape, holding for each allele the probability that it
+## appears at least once in `g` gene copies drawn without replacement from
+## that record's N copies:
+##
+##     1 - C(N - N_i, g) / C(N, g)
+##
+## computed on the log scale (lchoose) so it stays finite at large N. A row
+## with fewer than `g` copies is all NA (the draw is impossible). An allele
+## with count 0 gets exactly 0, so zero-padded columns change nothing.
+## p_sampled(), rare_richness(), rare_private() and diversity_stats() all use
+## this one function, so the formula exists in exactly one place.
+.p_sampled_mat <- function(counts, g) {
+  N <- rowSums(counts)
+  out <- 1 - exp(lchoose(N - counts, g) - lchoose(N, g))
+  out[!is.finite(N) | N < g, ] <- NA_real_
+  out
+}
+
 #' @rdname estimators
 #' @export
 p_sampled <- function(counts, g) {
-  N <- sum(counts)
-  if (!is.finite(N) || g > N || g < 1) return(rep(NA_real_, length(counts)))
-  1 - exp(lchoose(N - counts, g) - lchoose(N, g))
+  if (!is.finite(g) || g < 1) return(rep(NA_real_, length(counts)))
+  .p_sampled_mat(matrix(counts, nrow = 1L), g)[1L, ]
 }
 
 #' @rdname estimators
 #' @export
 rare_richness <- function(counts, g) {
   if (!is.finite(sum(counts)) || sum(counts) < g) return(NA_real_)
-  ps <- p_sampled(counts, g)
-  if (anyNA(ps)) return(NA_real_) else sum(ps)
+  p_drawn <- p_sampled(counts, g)
+  if (anyNA(p_drawn)) NA_real_ else sum(p_drawn)
 }
 
 #' @rdname estimators
 #' @export
 rare_private <- function(count_mat, j, g) {
   if (!is.matrix(count_mat)) count_mat <- rbind(count_mat)
-  ps <- matrix(NA_real_, nrow(count_mat), ncol(count_mat))
-  for (rr in seq_len(nrow(count_mat))) ps[rr, ] <- p_sampled(count_mat[rr, ], g)
-  if (anyNA(ps)) return(NA_real_)
-  term <- ps[j, ]
-  for (k in setdiff(seq_len(nrow(count_mat)), j)) term <- term * (1 - ps[k, ])
+  ## Row = population, column = allele: Pr(allele drawn in g copies).
+  p_drawn <- .p_sampled_mat(count_mat, g)
+  ## "Private" needs every population's sample defined at the same depth g.
+  if (anyNA(p_drawn)) return(NA_real_)
+  ## Drawn in population j AND not drawn in each other population.
+  term <- p_drawn[j, ]
+  for (k in setdiff(seq_len(nrow(count_mat)), j)) term <- term * (1 - p_drawn[k, ])
   sum(term)
 }
 

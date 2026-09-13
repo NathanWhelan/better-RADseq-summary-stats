@@ -19,12 +19,28 @@ is here so every step runs in seconds. The reasoning behind each step is in
 
 ```{r}
 library(RADdiversity)
-haps   <- system.file("extdata", "small.haps.vcf", package = "RADdiversity")
-snps   <- system.file("extdata", "small.snps.vcf", package = "RADdiversity")
-popmap <- system.file("extdata", "small_popmap.tsv", package = "RADdiversity")
+haps     <- system.file("extdata", "small.haps.vcf", package = "RADdiversity")
+snps     <- system.file("extdata", "small.snps.vcf", package = "RADdiversity")
+popmap   <- system.file("extdata", "small_popmap.tsv", package = "RADdiversity")
 sumstats <- system.file("extdata", "populations.sumstats_summary.tsv",
                         package = "RADdiversity")
+
+# Bootstrap intervals and permutation p-values use random numbers. Setting the
+# seed once makes every result below reproducible.
+set.seed(2024)
 ```
+
+Two conventions hold for every analysis function:
+
+* the data (`vcf`) can be a file path or an object you have already read
+  with `read_stacks_vcf()` (and perhaps filtered);
+* the populations (`popmap`) can be a file path or the list returned by
+  `read_popmap()`.
+
+Printing a result shows its main tables; `summary()` shows the full report
+with notes on interpretation. Every table is also an element of the result
+(`res$per_population`, ...), stored at full precision. Add `verbose = FALSE`
+to any call to silence its progress messages.
 
 ## 1. Run Stacks once
 
@@ -32,15 +48,18 @@ A few `populations` flags are worth setting carefully for everything below: a
 minimum genotype depth, so that heterozygotes are not silently called
 homozygous, and a per-population (not pooled) missing-data filter, so that
 both populations are filtered the same way. There is deliberately no `--hwe`
-filter.
+filter, and no `--min-mac`/`--min-maf`: Stacks turns a SNP that fails them
+into a fixed site, and the rare variants they remove carry much of the
+diversity (about 10% of π at 20 diploids, 21% at 10). Make a separate,
+filtered run if another analysis needs one.
 
 ```bash
 populations --in-path ./stacks_out --popmap popmap.tsv -O ./out \
-            --min-gt-depth 6 -r 0.8 -p 2 --min-mac 3 \
+            --min-gt-depth 6 -r 0.8 -p 2 \
             --max-obs-het 0.70 --fstats --vcf --genepop --fasta-samples -t 8
 ```
 
-This writes `populations.snps.vcf` (one record per SNP) and
+This writes `populations.snps.vcf` (one record per SNP),
 `populations.haps.vcf` (one record per RAD locus), and
 `populations.sumstats_summary.tsv`. Add `--vcf-all` to also get every
 sequenced site, variable or not, for `pi_allsites()` (section 8).
@@ -49,7 +68,9 @@ sequenced site, variable or not, for `pi_allsites()` (section 8).
 
 ```{r}
 H <- read_stacks_vcf(haps)
+H
 pops <- read_popmap(popmap, H$samples)
+pops
 ```
 
 `read_stacks_vcf()` also reads VCFs from other pipelines (ipyrad, dDocent,
@@ -64,25 +85,34 @@ filtering is cheap:
 
 ```{r}
 head(locus_allele_stats(H))
-H_f <- filter_call_rate(H, min_call = 0.5, pops = pops)
+H_f <- filter_call_rate(H, min_call = 0.5, popmap = pops)
 H_f <- filter_max_het(H_f, max_ho = 0.8)
 ```
 
-`filter_maf()`, `filter_mac()`, `filter_thin_one_snp()` and
-`filter_low_conf_alt()` work the same way. A filtered object can go straight
-into the functions below (with `stem =` naming its output files).
+`filter_genotype_depth()`, `filter_maf()`, `filter_mac()`,
+`filter_thin_one_snp()` and `filter_low_conf_alt()` work the same way. A
+filtered object can go straight into the functions below (add `stem = ` to
+name its output files if you use `outdir`). Two cautions for diversity
+statistics: an allele-frequency filter (`filter_maf()`, `filter_mac()`)
+removes low-diversity sites and biases H<sub>e</sub> per site, and
+`filter_low_conf_alt()` masks only calls carrying an ALT allele, which
+removes heterozygotes preferentially; to mask low-depth genotypes use
+`filter_genotype_depth()`, which treats every genotype alike.
 
 ## 4. Screen for close relatives
 
 Every between-population test below assumes independent individuals.
 
 ```{r}
-kin <- kinship_check(H)
+kin <- kinship_check(H, pops)
 kin$flagged_pairs
 ```
 
 KING-robust misses many real relatives in reduced-representation data
-(McMaster et al. 2025), so a clean result is reassuring, not proof.
+(McMaster et al. 2025), so a clean result is reassuring, not proof. With
+`method = "beta"`, always pass the popmap: beta compares each pair with the
+average pair it is given, so on several populations pooled, unrelated
+members of the same population read as relatives.
 
 ## 5. Diversity within each population
 
@@ -90,21 +120,21 @@ Run `diversity_stats()` on both files: the haplotype VCF gives FIS and
 allelic richness, the SNP VCF gives Ho, He and their per-site values.
 
 ```{r}
-div_haps <- diversity_stats(haps, popmap, g = 4, nboot = 200)
-div_haps$per_population
-div_haps$richness
+div_haps <- diversity_stats(haps, pops, g = 4, nboot = 200)
+div_haps
 ```
 
 ```{r}
-div_snps <- diversity_stats(snps, popmap, g = 4, nboot = 200, sites = sumstats)
+div_snps <- diversity_stats(snps, pops, g = 4, nboot = 200, sites = sumstats,
+                            verbose = FALSE)
 div_snps$autosomal
 ```
 
-Printing a result shows the full report, including which of its numbers to
-take from this file:
+The full report explains each number, including which of them to take from
+this file:
 
 ```{r, eval = FALSE}
-print(div_snps)
+summary(div_snps)
 ```
 
 ## 6. Do individuals differ in inbreeding?
@@ -120,7 +150,8 @@ identity_disequilibrium(H, pops, nboot = 200, nperm = 200, min_call = 0.5)
 If its interval excludes 0, report the individual-jackknife standard errors:
 
 ```{r}
-div_ind <- diversity_stats(haps, popmap, g = 4, nboot = 0, se_individuals = TRUE)
+div_ind <- diversity_stats(haps, pops, g = 4, nboot = 0, se_individuals = TRUE,
+                           verbose = FALSE)
 div_ind$per_population[, c("population", "Fis", "Fis_se", "Fis_se_ind")]
 ```
 
@@ -131,7 +162,7 @@ same machinery: mean individual heterozygosity (diversity) and the individual
 inbreeding coefficient F (inbreeding):
 
 ```{r}
-het <- het_between_pops(haps, popmap, min_call = 0.5)
+het <- het_between_pops(haps, pops, min_call = 0.5, verbose = FALSE)
 het$pairwise_tests      # heterozygosity
 het$pairwise_F_tests    # inbreeding
 ```
@@ -139,7 +170,7 @@ het$pairwise_F_tests    # inbreeding
 Differentiation between the populations:
 
 ```{r}
-dif <- differentiation_stats(haps, popmap, nboot = 200)
+dif <- differentiation_stats(haps, pops, nboot = 200, verbose = FALSE)
 dif$global
 ```
 
@@ -156,9 +187,7 @@ writeLines(c(
   "1\t1\t.\tA\tG\t.\tPASS\t.\tGT\t0/0\t0/1\t1/1\t1/1",
   "1\t2\t.\tC\t.\t.\tPASS\t.\tGT\t0/0\t0/0\t0/0\t0/0",
   "2\t1\t.\tT\tC\t.\tPASS\t.\tGT\t0/1\t./.\t0/0\t0/1"), allsites)
-pm4 <- tempfile()
-writeLines(c("a1\tpopA", "a2\tpopA", "b1\tpopB", "b2\tpopB"), pm4)
-pi_allsites(allsites, pm4, nboot = 0)$pi
+pi_allsites(allsites, list(popA = c("a1", "a2"), popB = c("b1", "b2")), nboot = 0)$pi
 ```
 
 ## 9. Hardy-Weinberg: a report, never a filter
@@ -167,7 +196,7 @@ A heterozygote deficit is the signal FIS measures, so no function here removes
 loci on HWE:
 
 ```{r}
-hw <- hwe_test(H, pops = pops, n_draws = 1000)
+hw <- hwe_test(H, pops, n_draws = 1000, verbose = FALSE)
 table(p_below_0.05 = hw$p_value < 0.05, useNA = "ifany")
 ```
 
@@ -175,9 +204,9 @@ table(p_below_0.05 = hw$p_value < 0.05, useNA = "ifany")
 
 ```{r, eval = FALSE}
 write_vcf(H_f, "filtered.vcf")
-write_plink(H_f, "filtered", pops = pops, drop_multiallelic = TRUE)
-write_structure(H_f, "filtered.str", pops = pops)
-write_genepop(H_f, "filtered.gen", pops = pops)
+write_plink(H_f, "filtered", popmap = pops, drop_multiallelic = TRUE)
+write_structure(H_f, "filtered.str", popmap = pops)
+write_genepop(H_f, "filtered.gen", popmap = pops)
 write_radpainter(H_f, "filtered.radpainter")
 ```
 

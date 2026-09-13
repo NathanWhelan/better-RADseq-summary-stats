@@ -17,14 +17,22 @@ rarefied allelic and private allelic richness, per-sequenced-site Ho/He.
 individual (not the locus) as the unit of replication.
 \item \code{\link[=differentiation_stats]{differentiation_stats()}}: Weir & Cockerham FST, Jost's D and Weir &
 Goudet's beta.
+\item \code{\link[=pi_allsites]{pi_allsites()}}: nucleotide diversity and divergence from an all-sites VCF.
+\item \code{\link[=individual_inbreeding]{individual_inbreeding()}} and \code{\link[=identity_disequilibrium]{identity_disequilibrium()}}: inbreeding of
+each individual, and whether individuals differ in inbreeding.
 \item \code{\link[=kinship_check]{kinship_check()}} and \code{\link[=hwe_test]{hwe_test()}}: a relatedness screen and an exact
 Hardy-Weinberg test (a report, never a filter).
-\item \code{\link[=read_stacks_vcf]{read_stacks_vcf()}}, the \verb{filter_*()} functions and the \verb{write_*()}
-functions: read, filter and export.
+\item \code{\link[=read_stacks_vcf]{read_stacks_vcf()}}, \code{\link[=read_popmap]{read_popmap()}}, the \verb{filter_*()} functions and the
+\verb{write_*()} functions: read, filter and export.
 }
 
-Standard errors and confidence intervals resample whole RAD loci. The
-command-line scripts are in \code{system.file("scripts", package = "RADdiversity")}; the statistical rationale is in \code{vignette("rationale")}.
+Every analysis function takes \code{vcf} (a file path or the object from
+\code{\link[=read_stacks_vcf]{read_stacks_vcf()}}) and, where populations matter, \code{popmap} (a file path
+or the list from \code{\link[=read_popmap]{read_popmap()}}). Printing a result shows its main
+tables; \code{summary()} shows the full report. Standard errors and confidence
+intervals resample whole RAD loci. The command-line scripts are in
+\code{system.file("scripts", package = "RADdiversity")}; the statistical
+rationale is in \code{vignette("rationale")}.
 }
 \seealso{
 Useful links:
@@ -36,6 +44,11 @@ Useful links:
 }
 \author{
 \strong{Maintainer}: Nathan Whelan \email{nathan.whelan@gmail.com}
+
+Other contributors:
+\itemize{
+  \item David Winter (author of the 'mmod' code adapted in the internal Jost's D function) [copyright holder]
+}
 
 }
 \keyword{internal}

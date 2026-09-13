@@ -48,6 +48,14 @@ test_that("read_sumstats_summary() requires both blocks, in order", {
   expect_error(read_sumstats_summary(f), "expected exactly 2 block title lines")
 })
 
+test_that("read_sumstats_summary() explains a block with a header but no rows", {
+  x <- readLines(fx("sumstats_summary_small.tsv"))
+  all_positions <- grep("^# All positions", x)
+  f <- tempfile(fileext = ".tsv")
+  writeLines(x[seq_len(all_positions + 1L)], f)          # the last block loses its rows
+  expect_error(read_sumstats_summary(f), "no population rows")
+})
+
 test_that("read_sumstats_summary() errors on a nonexistent file", {
   expect_error(read_sumstats_summary("no/such/file.tsv"), "File not found")
 })

@@ -264,7 +264,7 @@ test_that("exact-mc p-values do not show excess small values under the null (mul
 ## API/plumbing: pops, RNG discipline, edge cases
 ## ---------------------------------------------------------------------------
 
-test_that("pops = NULL pools every sample; pops given tests per population", {
+test_that("popmap = NULL pools every sample; popmap given tests per population", {
   H <- make_H(A1 = rbind(c(1,1,1,1,2,2,2,1)), A2 = rbind(c(1,1,2,1,2,2,1,2)),
               samples = paste0("s", 1:8))
   pooled <- suppressMessages(hwe_test(H, verbose = FALSE))
@@ -272,7 +272,7 @@ test_that("pops = NULL pools every sample; pops given tests per population", {
   expect_equal(pooled$n_called, 8L)
 
   pops <- list(popA = paste0("s", 1:4), popB = paste0("s", 5:8))
-  bypop <- suppressMessages(hwe_test(H, pops = pops, verbose = FALSE))
+  bypop <- suppressMessages(hwe_test(H, popmap = pops, verbose = FALSE))
   expect_setequal(bypop$population, c("popA", "popB"))
   expect_equal(nrow(bypop), 2L)
 })
@@ -297,7 +297,7 @@ test_that("fewer than 2 typed individuals in a group is reported as NA", {
 
 test_that("method must be exactly \"exact\" or \"chisq\"", {
   H <- make_H(A1 = rbind(c(1,1,1,1)), A2 = rbind(c(1,2,1,2)))
-  expect_error(hwe_test(H, method = "exac", verbose = FALSE), "method must be")
+  expect_error(hwe_test(H, method = "exac", verbose = FALSE), "`method` must be one of")
 })
 
 ## ---------------------------------------------------------------------------
@@ -349,12 +349,23 @@ test_that("hwe_test() reports n_draws_used only for exact-mc rows", {
   expect_gte(res$n_draws_used[res$submethod == "exact-mc"], 20L)
 })
 
-test_that("hwe_test() restores the caller's RNG state (uses Monte Carlo internally)", {
+test_that("hwe_test() with a seed restores the caller's RNG state (uses Monte Carlo internally)", {
   H <- make_H(A1 = rbind(c(1,2,3,1,2,3,1,2,3,1)), A2 = rbind(c(2,3,1,3,1,2,1,2,3,2)),
               n_alleles = 3L, alleles = list(c("A","C","T")))
   set.seed(123)
   before <- .Random.seed
-  suppressMessages(hwe_test(H, n_draws = 500, verbose = FALSE))
+  suppressMessages(hwe_test(H, n_draws = 500, seed = 1, verbose = FALSE))
   after <- .Random.seed
   expect_identical(before, after)
+})
+
+test_that("the F column gives the direction of a departure", {
+  ## Record 1: every individual heterozygous (excess, F = -1 by Nei & Chesser).
+  ## Record 2: half REF and half ALT homozygotes, no heterozygotes (deficit, F = 1).
+  A1 <- rbind(rep(1L, 10), rep(c(1L, 2L), each = 5))
+  A2 <- rbind(rep(2L, 10), rep(c(1L, 2L), each = 5))
+  colnames(A1) <- colnames(A2) <- paste0("s", 1:10)
+  res <- hwe_test(sim_H(A1, A2), verbose = FALSE)
+  expect_equal(res$F, c(-1, 1))
+  expect_message(hwe_test(sim_H(A1, A2)), "Wahlund")
 })

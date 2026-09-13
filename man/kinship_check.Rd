@@ -5,109 +5,122 @@
 \title{Screen every pair of individuals for close relatives}
 \usage{
 kinship_check(
-  vcf_file,
+  vcf,
+  popmap = NULL,
   method = "king",
   threshold = 0.0442,
+  min_shared_loci = 30L,
+  low_confidence_loci = 200L,
   outdir = NULL,
   verbose = TRUE
 )
 }
 \arguments{
-\item{vcf_file}{Path to a Stacks VCF, or an already-parsed \code{H} list (see
-\code{\link[=diversity_stats]{diversity_stats()}} for the same option there).}
+\item{vcf}{Path to a VCF file, or the object returned by \code{\link[=read_stacks_vcf]{read_stacks_vcf()}}
+(optionally filtered).}
+
+\item{popmap}{Optional: a popmap file path or the list returned by
+\code{\link[=read_popmap]{read_popmap()}}. Only its samples are screened, and each pair is
+labeled with the samples' populations. Needed for \code{method = "beta"} on
+more than one population (see Details). Default \code{NULL}.}
 
 \item{method}{\code{"king"} (default, no extra package needed) or \code{"beta"}
-(Goudet's beta via \code{hierfstat::beta.dosage()}, needs hierfstat
-installed).}
+(Goudet's beta via \code{hierfstat::beta.dosage()}; needs hierfstat).}
 
-\item{threshold}{Kinship value above which a pair is reported in
-\code{flagged_pairs}. Default \code{0.0442} (the third-degree-or-closer KING
-cutpoint -- see \verb{@details}).}
+\item{threshold}{Kinship above which a pair is listed in \code{flagged_pairs}.
+Default \code{0.0442} (third degree or closer; see Details). \code{NULL} lists every
+pair that has a kinship value.}
 
-\item{outdir}{If given, write \code{kinship_pairwise.tsv} there. Default \code{NULL}
-(no file written).}
+\item{min_shared_loci}{Pairs with fewer loci genotyped in both individuals
+get kinship \code{NA}: too little data to report a number. Default \code{30}.}
 
-\item{verbose}{Print progress and the locus-count summary. Default \code{TRUE}.}
+\item{low_confidence_loci}{Pairs with fewer shared loci than this are
+marked \code{low_confidence = TRUE}. Default \code{200}.}
+
+\item{outdir}{If given, write \code{kinship_pairwise.tsv} there. Default \code{NULL}.}
+
+\item{verbose}{Print progress and a summary. Default \code{TRUE}.}
 }
 \value{
-Invisibly, a list:
+A list:
 \describe{
-\item{pairwise}{Data frame, one row per pair: \code{sample1}, \code{sample2},
-\code{kinship} (\code{NA} if \code{n_loci_used} is below 30), \code{n_loci_used},
-\code{low_confidence} (\code{TRUE} below 200 shared loci).}
-\item{flagged_pairs}{The subset of \code{pairwise} with \code{kinship > threshold} (and therefore never the \code{NA}-kinship rows).}
+\item{pairwise}{One row per pair: \code{sample1}, \code{sample2}, (with \code{popmap})
+\code{population1}, \code{population2}, then \code{kinship} (\code{NA} below
+\code{min_shared_loci}), \code{n_loci_used}, \code{low_confidence}.}
+\item{flagged_pairs}{The rows of \code{pairwise} with \code{kinship > threshold}
+(never an \code{NA} kinship).}
 }
 }
 \description{
-Estimates pairwise kinship for every pair of individuals in \code{vcf_file},
-using either KING-robust (Manichaikul et al. 2010, the default -- needs no
-extra package) or Goudet's beta (\code{method = "beta"}, needs \code{hierfstat}).
-Both methods are screening tools, not a validated final answer -- see
-\verb{@details} and the header comment in \code{R/kinship.R} for why. Intended to be
-run BEFORE \code{\link[=het_between_pops]{het_between_pops()}} or \code{\link[=diversity_stats]{diversity_stats()}}, excluding one
-individual from each flagged pair so those functions' "independent
-individuals" assumption actually holds.
+Estimates kinship for every pair of individuals, with KING-robust
+(Manichaikul et al. 2010, the default, no extra package needed) or
+Goudet's beta (\code{method = "beta"}, needs \code{hierfstat}). Both are screening
+tools, not a validated final answer (see Details). Run it BEFORE
+\code{\link[=het_between_pops]{het_between_pops()}} or \code{\link[=diversity_stats]{diversity_stats()}} and exclude one individual from
+each flagged pair, so that those functions' assumption of independent
+individuals holds.
 }
 \details{
-\strong{This is a screening tool, not a validated final answer.} The most
-directly relevant benchmark for reduced-representation SNP data in
-non-model species (McMaster et al. 2025) found KING-robust has high
-precision but sensitivity below 0.5 on this kind of data (it misses more
-real relatives than it flags), while Goudet's beta has better sensitivity
-but degrades under real population structure or inbreeding. That
-benchmark's own overall top pick for default use was a THIRD method
-(classic PLINK moment-of-moments IBD, \code{PI_HAT}) that this function
-implements neither of. Treat a clean result (nothing flagged) with real
-caution, not as proof the dataset has no close relatives.
+\strong{A screening tool, not a final answer.} The most relevant benchmark for
+reduced-representation SNP data in non-model species (McMaster et al. 2025)
+found that KING-robust has high precision but sensitivity below 0.5 on
+such data (it misses more real relatives than it finds), while Goudet's
+beta has high sensitivity but limited precision, worse under population
+structure or inbreeding. For general use that benchmark recommended a
+third method (PLINK's method-of-moments IBD, \code{PI_HAT}), as a balance of
+the two, while noting it was sensitive to filtering and often
+underestimated relatedness; this function does not implement it. Treat a
+clean result (nothing flagged) with caution, not as proof that there are
+no close relatives.
 
-\strong{The KING cutpoint table}, for setting \code{threshold} deliberately rather
-than accepting the loosest default: ~0.354 (duplicate/identical twin),
-~0.177 (first-degree: parent-offspring or full sibling), ~0.0884
-(second-degree: half-sibling, grandparent-grandchild, avuncular), ~0.0442
-(third-degree). \code{threshold} defaults to 0.0442, the loosest (most
-inclusive) of these.
+\strong{Relatives are looked for within populations.} Goudet's beta measures
+how much more alike two individuals are than the average pair it is
+given. Computed on several differentiated populations at once, unrelated
+members of the same population look related (in a simulation at FST =
+0.1, about 70\% of unrelated same-population pairs were flagged). With
+\code{popmap}, beta is computed within each population, each population being
+its own reference, and pairs from different populations are \code{NA}. In a
+small population, or one with many relatives, that reference itself
+contains relatedness, so beta then understates kinship. KING uses no
+allele frequencies and is computed on every pair either way; a pair from
+different populations flagged by KING is worth checking as a possible
+sample mix-up.
 
-\strong{\code{n_loci_used} matters as much as the kinship value.} Two pairs at the
-same kinship value can rest on very different amounts of evidence once
-RADseq missingness is uneven -- pairs with fewer than 30 shared
-both-called loci get \code{NA} instead of a number (too little data to trust
-at all), and pairs under 200 are still reported but noted as
-low-confidence, rather than silently trusted the same as a
-well-supported pair.
+\strong{Which KING formula.} This is Manichaikul et al.'s (2010) estimator
+with the SUM of the two individuals' heterozygote counts in the
+denominator. PLINK 2 (\code{--make-king}) uses their between-family version,
+with the SMALLER count, so values can differ when two individuals differ
+in heterozygosity. The sum form is less affected by heterozygotes that
+were called homozygous in a low-coverage library (see \code{R/kinship.R}).
+
+\strong{KING cutpoints}, for choosing \code{threshold}: ~0.354 (duplicate/identical
+twin), ~0.177 (first degree: parent-offspring or full sibling), ~0.0884
+(second degree: half-sibling, grandparent-grandchild, avuncular), ~0.0442
+(third degree). The default, 0.0442, is the most inclusive.
+
+\strong{\code{n_loci_used} matters as much as the kinship value.} With uneven RAD-seq
+missing data, two pairs with the same kinship can rest on very different
+amounts of evidence. Pairs with fewer than \code{min_shared_loci} loci genotyped
+in both individuals get \code{NA}, and pairs with fewer than
+\code{low_confidence_loci} are marked \code{low_confidence}.
 
 \strong{References.} Manichaikul, A., Mychaleckyj, J.C., Rich, S.S., Daly, K.,
 Sale, M. & Chen, W.-M. (2010) Robust relationship inference in
 genome-wide association studies. \emph{Bioinformatics} 26:2867-2873.
-\doi{10.1093/bioinformatics/btq559} (KING-robust, primary
-source) -- Waples, R.K., Albrechtsen, A. & Moltke, I. (2019) Allele
-frequency-free inference of close familial relationships from genotypes
-or low-depth sequencing data. \emph{Molecular Ecology} 28:35-48.
-\doi{10.1111/mec.14954} (independent re-derivation of the
-same statistic, more directly on-point for RADseq/low-depth data) --
-McMaster, E.S. et al. (2025) Evaluating kinship estimation methods for
-reduced-representation SNP data in non-model species. \emph{Molecular
-Ecology Resources}. \doi{10.1111/1755-0998.70038} (the
-sensitivity/precision benchmark this function's \verb{@details} cites
-above).
+\doi{10.1093/bioinformatics/btq559} -- Waples, R.K., Albrechtsen, A. &
+Moltke, I. (2019) Allele frequency-free inference of close familial
+relationships from genotypes or low-depth sequencing data. \emph{Molecular
+Ecology} 28:35-48. \doi{10.1111/mec.14954} -- McMaster, E.S. et al. (2025)
+Evaluating kinship estimation methods for reduced-representation SNP data
+in non-model species. \emph{Molecular Ecology Resources}.
+\doi{10.1111/1755-0998.70038}
 }
 \examples{
-# 3 samples: s1 and s2 are constructed as identical (every genotype
-# matches -- KING should read this pair at exactly 0.5), s3 differs.
-# The 6-locus pattern below is repeated 6x (36 loci total) purely so this
-# toy example clears the "at least 30 shared loci" floor described above
-# and actually prints a number instead of NA -- a real dataset would not
-# need this repetition trick.
-samp <- c("s1", "s2", "s3")
-base1 <- matrix(c(1,1,1, 1,1,2, 2,2,1, 1,1,2, 2,2,1, 1,1,2), nrow = 6, byrow = TRUE)
-base2 <- matrix(c(1,1,2, 2,2,1, 2,2,2, 2,2,1, 2,2,2, 2,2,1), nrow = 6, byrow = TRUE)
-n_loc <- 36
-H <- list(
-  A1 = `dimnames<-`(do.call(rbind, replicate(6, base1, simplify = FALSE)), list(NULL, samp)),
-  A2 = `dimnames<-`(do.call(rbind, replicate(6, base2, simplify = FALSE)), list(NULL, samp)),
-  locus = paste0("locus_", seq_len(n_loc)), locus_raw = paste0("locus_", seq_len(n_loc)),
-  n_alleles = rep(2L, n_loc), alleles = replicate(n_loc, c("A", "C"), simplify = FALSE),
-  samples = samp
-)
-res <- kinship_check(H, verbose = FALSE)
-res$pairwise  # s1-s2 (identical) reads 0.5; s1-s3/s2-s3 read noticeably lower
+H <- read_stacks_vcf(system.file("extdata", "small.snps.vcf",
+                                 package = "RADdiversity"), verbose = FALSE)
+# The toy data have few loci, so lower the evidence floors for this example.
+popmap <- system.file("extdata", "small_popmap.tsv", package = "RADdiversity")
+kin <- kinship_check(H, popmap, min_shared_loci = 5, low_confidence_loci = 10)
+kin$pairwise
+kin$flagged_pairs
 }

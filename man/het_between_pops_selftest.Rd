@@ -4,18 +4,21 @@
 \alias{het_between_pops_selftest}
 \title{Calibration self-test for het_between_pops()}
 \usage{
-het_between_pops_selftest()
+het_between_pops_selftest(verbose = TRUE)
+}
+\arguments{
+\item{verbose}{Print the report. Default \code{TRUE}.}
 }
 \value{
-Invisibly, \code{TRUE}. The caller's own RNG state is restored when
-this function returns, so calling it interactively does not affect
-subsequent random draws in the caller's session.
+Invisibly, a data frame with one row per simulated setting:
+\code{method}, \code{sd_F} (the spread of inbreeding among individuals) and
+\code{rejection_rate} (the target is 0.05). Your own random-number state is
+left as it was.
 }
 \description{
-Reproduces the type I error table run by \verb{Rscript het_between_pops.R --selftest}: 400 simulations of two populations with IDENTICAL true
-heterozygosity, comparing the rejection rate of Welch's t / Wilcoxon
-(individual-level) against a locus bootstrap, for a nominal 5\% test.
-Prints a report to the console.
+Runs the type I error simulation behind \verb{Rscript het_between_pops.R --selftest}: 400 simulations of two populations with IDENTICAL true
+heterozygosity, comparing how often Welch's t and Wilcoxon (individuals as
+replicates) reject at the 5\% level with how often a locus bootstrap does.
 }
 \examples{
 \donttest{

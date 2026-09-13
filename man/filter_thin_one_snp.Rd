@@ -7,43 +7,29 @@
 filter_thin_one_snp(H, method = "first", seed = NULL, verbose = TRUE)
 }
 \arguments{
-\item{H}{A list as returned by \code{\link[=read_stacks_vcf]{read_stacks_vcf()}}.}
+\item{H}{The object returned by \code{\link[=read_stacks_vcf]{read_stacks_vcf()}} (optionally filtered).}
 
-\item{method}{\code{"first"} (the default) keeps the first record seen for
-each RAD tag, giving the same result every time. \code{"random"} picks one
-record per RAD tag at random.}
+\item{method}{\code{"first"} (default) keeps the first record of each RAD locus,
+the same every time. \code{"random"} picks one record per RAD locus at random.}
 
-\item{seed}{Only used when \code{method = "random"}. An integer to make the
-random choice reproducible. Left \code{NULL} (the default), the choice
-depends on R's current random-number state, same as calling
-\code{sample()} yourself without first calling \code{set.seed()}. Either way,
-your own R session's random-number state is left exactly as it was
-before this function was called (see \code{?set.seed} if you're not
-familiar with this) -- calling this function will never change what
-random numbers you get afterwards in your own code.}
+\item{seed}{Used only when \code{method = "random"}. Default \code{NULL}: use R's
+current random-number stream (call \code{set.seed()} first for a reproducible
+choice). A number makes the choice reproducible on its own and leaves your
+session's random-number stream as it was.}
 
 \item{verbose}{Print how many records were kept. Default \code{TRUE}.}
 }
 \value{
-\code{H}, thinned to one record per RAD locus, with the kept records
-left in their original order.
+\code{H} with one record per RAD locus, in the original order.
 }
 \description{
-Some analyses assume every locus is inherited independently of every
-other one. Several SNPs sharing the same RAD tag do NOT meet that
-assumption -- they're physically linked, so treating them as independent
-overstates how much information the dataset really contains. This
-function keeps exactly one record per RAD tag (\code{H$locus_raw} group),
-dropping the rest, so that every remaining locus is a genuinely
-independent RAD tag.
+Some analyses assume every locus is inherited independently. SNPs on the
+same RAD tag are physically linked, so treating them as independent
+overstates how much information the data hold. This keeps exactly one
+record per RAD locus (\code{H$locus_raw} group).
 }
 \examples{
-# Two SNPs on locus_1's RAD tag, one SNP alone on locus_2's:
-H <- list(
-  A1 = matrix(1L, nrow = 3, ncol = 2), A2 = matrix(1L, nrow = 3, ncol = 2),
-  locus = c("locus_1_a", "locus_1_b", "locus_2"),
-  locus_raw = c("locus_1", "locus_1", "locus_2"),
-  n_alleles = c(2L, 2L, 2L), samples = c("a1", "a2")
-)
-filter_thin_one_snp(H, verbose = FALSE)$locus  # keeps "locus_1_a" and "locus_2"
+H <- read_stacks_vcf(system.file("extdata", "small.snps.vcf",
+                                 package = "RADdiversity"), verbose = FALSE)
+filter_thin_one_snp(H)
 }

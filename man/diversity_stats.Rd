@@ -3,153 +3,162 @@
 \name{diversity_stats}
 \alias{diversity_stats}
 \alias{print.raddiv_diversity}
+\alias{summary.raddiv_diversity}
 \title{Diversity statistics from a Stacks VCF}
 \usage{
 diversity_stats(
-  vcf_file,
-  popmap_f,
+  vcf,
+  popmap,
   g,
   nboot = 10000L,
   boot = "loci",
-  sites = 0,
+  sites = NULL,
   min_n = 2L,
   complete_case = FALSE,
-  outdir = NULL,
-  seed = 2024,
-  verbose = TRUE,
-  stem = NULL,
+  se_individuals = FALSE,
   hierfstat_check = FALSE,
-  se_individuals = FALSE
+  outdir = NULL,
+  stem = NULL,
+  seed = NULL,
+  verbose = TRUE
 )
 
 \method{print}{raddiv_diversity}(x, ...)
+
+\method{summary}{raddiv_diversity}(object, ...)
 }
 \arguments{
-\item{vcf_file}{Path to \code{populations.snps.vcf} or \code{populations.haps.vcf}
-(optionally gzip-compressed) -- OR, an already-parsed (and optionally
-filtered) \code{H} list, i.e. the object returned by \code{\link[=read_stacks_vcf]{read_stacks_vcf()}}, on
-its own or passed through one or more \verb{filter_*()} functions first (see
-\code{R/filter_loci.R}). When passing a list and writing files (\code{outdir}),
-\code{stem} must also be given (see below), since the output filenames need
-a name to work from.}
+\item{vcf}{Path to \code{populations.snps.vcf} or \code{populations.haps.vcf}
+(optionally gzip-compressed), or the object returned by
+\code{\link[=read_stacks_vcf]{read_stacks_vcf()}}, optionally passed through \verb{filter_*()} functions.}
 
-\item{popmap_f}{Path to a two-column, no-header popmap TSV (\verb{sample_id <TAB> population}).}
+\item{popmap}{Path to a two-column, no-header popmap file (\verb{sample_id <TAB> population}), or the list returned by \code{\link[=read_popmap]{read_popmap()}}.}
 
-\item{g}{Rarefaction size in GENE COPIES (10 diploids = 20). Required, no
-default -- must be \verb{<= 2x} the smallest population.}
+\item{g}{Rarefaction size in GENE COPIES (10 diploid individuals = 20).
+Required; at most twice the size of the smallest population.}
 
-\item{nboot}{Bootstrap replicates. Default \code{10000L}; \code{0} = none.}
+\item{nboot}{Bootstrap replicates. Default \code{10000}; \code{0} for none (the
+jackknife standard errors are always computed).}
 
-\item{boot}{Which axis the bootstrap resamples: one of \code{"loci"} (whole RAD
-loci, the default), \code{"individuals"} (within each population, as
-diveRsity does), or \code{"both"} (the Owen & Eckles 2012 crossed-factor
-scheme) -- matched exactly, not partially. \code{"individuals"}/\code{"both"} are
-comparison modes only: an empirical coverage simulation found they badly
-undercover the true value for every statistic with a finite-sample
-correction (\code{vignette("rationale")}, "Bootstrap mode"). For uncertainty
-over individuals use \code{se_individuals = TRUE} instead.}
+\item{boot}{What the bootstrap resamples: \code{"loci"} (whole RAD loci, the
+default), \code{"individuals"} (within each population, as diveRsity does) or
+\code{"both"} (Owen & Eckles 2012). Matched exactly. \code{"individuals"} and
+\code{"both"} are for comparison only: in a coverage simulation their
+intervals badly missed the true He, FIS, Ar and privAr
+(\code{vignette("rationale")}, "Bootstrap mode"). For uncertainty over
+individuals use \code{se_individuals = TRUE} instead.}
 
-\item{sites}{Total sequenced sites, for the autosomal Ho/He (nucleotide
-diversity) conversion -- adds \code{Ho_autosomal}/\code{He_autosomal} alongside
-Ho/He (SNP VCF only; ignored, with a message, on a haplotype VCF).
-Accepts four shapes: a single non-negative number, broadcast to every
-population (the default \code{0} means "off"); a named numeric vector, one
-value per population (names must match the popmap's population names);
-a data frame or matrix with a population column (\code{population}/\code{pop})
-and a sites column (\code{sites}); or a path to a Stacks
-\code{populations.sumstats_summary.tsv} file, from which each population's
-own \code{Sites} (the "All positions (variant and fixed)" block) is read
-automatically via \code{\link[=read_sumstats_summary]{read_sumstats_summary()}}. The vector/data-frame/path
-forms let a population with more missing loci -- which is exactly what
-makes its own \code{Sites} count smaller in Stacks' own accounting -- use
-its own denominator instead of another population's.}
+\item{sites}{Total sequenced sites, to convert Ho and He to per-site values
+(\code{Ho_autosomal}, \code{He_autosomal}; SNP VCF only). Default \code{NULL}: no
+conversion. One of:
+\itemize{
+\item one number, used for every population;
+\item a named numeric vector, one value per population (names must match
+the popmap's populations);
+\item a data frame with a \code{population} (or \code{pop}) column and a \code{sites}
+column;
+\item the path to Stacks' \code{populations.sumstats_summary.tsv}, from which each
+population's own \code{Sites} ("All positions (variant and fixed)" block) is
+read with \code{\link[=read_sumstats_summary]{read_sumstats_summary()}}.
+}
 
-\item{min_n}{Available-data mode only: minimum typed individuals a
-population needs at a locus to use that locus for that population.
-Default \code{2L}, the mathematical floor below which Hs/FIS are undefined.
-Ignored when \code{complete_case = TRUE}.}
+A population's own value matters because Stacks counts a site for a
+population only where that population has a genotyped individual. For
+the same reason, each population's He is multiplied by its own number of
+variant records: \code{Variant_Sites} from the same file when \code{sites} is that
+file, otherwise the records of this VCF where the population has a
+genotyped individual (column \code{variant_records} of the result).
 
-\item{complete_case}{Use the old, stricter rule: a record is used only if
-every individual of every population is genotyped there (Schmidt et al.
-2021 recommendation (b)). Default \code{FALSE}.}
+Per-site values assume the variant records are all the variant sites
+inside \code{sites}. Records removed in R with a \verb{filter_*()} function are
+still counted in \code{sites}: pass the \code{populations.sumstats_summary.tsv} path (whose \code{Variant_Sites}
+is unfiltered) and a warning is given. Allele-frequency filters
+(\code{\link[=filter_maf]{filter_maf()}}, \code{\link[=filter_mac]{filter_mac()}}, Stacks' \code{--min-mac}/\code{--min-maf}) remove
+exactly the low-diversity sites and bias per-site values low, by an
+amount that grows as samples get smaller; do not use them for this run.}
 
-\item{outdir}{Directory to write the result tables into as TSV files
-(created if needed). Default \code{NULL}: write no files -- the tables are in
-the returned object. The command-line script writes to the current
-directory.}
+\item{min_n}{Minimum genotyped individuals a population needs at a record
+to use that record. Default \code{2}, the smallest number for which He and
+FIS are defined. Ignored when \code{complete_case = TRUE}.}
 
-\item{seed}{Random seed set before bootstrapping, for reproducibility.
-Default \code{2024}. The caller's own RNG state (e.g. from their own prior
-\code{set.seed()}) is restored when this function returns, so calling it
-interactively does not affect subsequent random draws in the caller's
-session.}
-
-\item{verbose}{Print the VCF/popmap parsing summary. Default \code{TRUE}.
-Progress messages can be silenced with \code{suppressMessages()}; the report
-itself appears only when the result is printed.}
-
-\item{stem}{Text used to build the two output filenames (e.g.
-\verb{diversity_per_population.<stem>.tsv}) -- ordinarily derived
-automatically from \code{vcf_file}'s own filename (e.g.
-\code{populations.haps.vcf} gives \code{stem = "haps"}), which is why this
-package's documented workflow runs this function once on the haplotype
-VCF and once on the SNP VCF without the second run silently overwriting
-the first run's files. That automatic derivation has no filename to
-work from when \code{vcf_file} is an already-parsed list rather than a path,
-so when writing files (\code{outdir}) from a list, \code{stem} must be given
-(e.g. \code{stem = "snps"}) -- this function stops with an explanatory error
-rather than guessing. Default \code{NULL}. Supplying \code{stem} alongside a path
-overrides the automatic derivation.}
-
-\item{hierfstat_check}{If \code{TRUE} and the \code{hierfstat} package is installed,
-also compute per-locus Ho/Hs with \code{hierfstat::basic.stats()} and
-rarefied allelic richness with \code{hierfstat::allelic.richness()}, and
-report the largest difference from this package's own values (with a
-warning if they disagree). Default \code{FALSE}: every number is computed by
-this package either way, the package tests already make this comparison,
-and on large datasets the hierfstat calls were most of the run time. For
-Weir & Cockerham FST, use \code{\link[=differentiation_stats]{differentiation_stats()}}.}
+\item{complete_case}{Use a record only if every individual of every
+population is genotyped there (Schmidt et al. 2021, recommendation (b)).
+Default \code{FALSE}.}
 
 \item{se_individuals}{Also report delete-one-INDIVIDUAL jackknife standard
 errors (\code{Ho_se_ind}, \code{He_se_ind}, \code{Fis_se_ind}, \code{Ar_se_ind},
 \code{privAr_se_ind}): the uncertainty from which individuals were sampled,
-which the locus-based \verb{_se}, \verb{_lo} and \verb{_hi} leave out. They matter when
-individuals differ in inbreeding or include relatives -- check with
-\code{\link[=identity_disequilibrium]{identity_disequilibrium()}} (g2 > 0) -- and are then the ones to report
-for population-level inference. The Ar/privAr ones need
+which the locus-based \verb{_se}, \verb{_lo} and \verb{_hi} leave out. Report these when
+individuals differ in inbreeding or include relatives (check with
+\code{\link[=identity_disequilibrium]{identity_disequilibrium()}}: g2 > 0). The Ar/privAr ones need
 \code{g <= 2 * (n - 1)} for every population and are \code{NA} otherwise. Default
 \code{FALSE}.}
 
-\item{x}{A \code{raddiv_diversity} object, as returned by \code{diversity_stats()}.}
+\item{hierfstat_check}{If \code{TRUE} and the \code{hierfstat} package is installed,
+also compute per-record Ho/Hs with \code{hierfstat::basic.stats()} and
+allelic richness with \code{hierfstat::allelic.richness()}, and report the
+largest difference from this package's values (with a warning if they
+disagree). Default \code{FALSE}: the package tests already make this
+comparison, and on large datasets the hierfstat calls are slow.}
+
+\item{outdir}{Directory to write the result tables to as TSV files
+(created if needed). Default \code{NULL}: write nothing.}
+
+\item{stem}{Text in the output file names
+(\verb{diversity_per_population.<stem>.tsv}). By default it comes from the
+VCF's file name (\code{populations.haps.vcf} gives \code{"haps"}), so runs on the
+haplotype and SNP VCFs can share \code{outdir} without overwriting each other.
+Required when writing files from an already-read object, which has no
+file name.}
+
+\item{seed}{Random seed for the bootstrap. Default \code{NULL}: use R's current
+random-number stream, so call \code{set.seed()} first for reproducible
+intervals. A number makes the result reproducible on its own and leaves
+your session's random-number stream as it was.}
+
+\item{verbose}{Print progress messages. Default \code{TRUE}.}
+
+\item{x, object}{A \code{raddiv_diversity} object, as returned by
+\code{diversity_stats()}.}
 
 \item{...}{Ignored.}
 }
 \value{
-An object of class \code{raddiv_diversity}: a list with elements
-\code{per_population} (Ho, He, FIS and \% polymorphic, with jackknife SEs and
-bootstrap CIs), \code{richness} (Ar, privAr and priv_total) and \code{autosomal}
-(per-sequenced-site Ho/He; \code{NULL} unless \code{sites} gave at least one
-population a plausible value, and always \code{NULL} on a haplotype VCF).
-Printing it shows the full report. With \code{outdir}, the tables are also
-written to \verb{diversity_per_population.<stem>.tsv},
-\verb{diversity_richness.<stem>.tsv} and (when present)
-\verb{diversity_autosomal.<stem>.tsv}.
+An object of class \code{raddiv_diversity}, a list of:
+\describe{
+\item{per_population}{Ho, He, FIS and \% polymorphic records per
+population, each with its jackknife SE (\verb{_se}) and 95\% bootstrap
+interval (\verb{_lo}, \verb{_hi}).}
+\item{richness}{Ar, privAr and priv_total per population, with the
+number of records each rests on (\code{Ar_n}, \code{privAr_n}).}
+\item{autosomal}{Per-sequenced-site Ho/He, with the \code{sites_used} and
+\code{variant_records} each population was scaled by; \code{NULL} unless
+\code{sites} gave at least one population a plausible value, and always
+\code{NULL} for a haplotype VCF.}
+\item{estimator_comparison}{He and FIS from Nei & Chesser and from the
+estimator behind Stacks' \code{Pi}, side by side.}
+\item{he_difference}{For two populations with \code{nboot > 0}: the He
+difference with its locus-bootstrap interval (not a test; see
+\code{\link[=het_between_pops]{het_between_pops()}}). Otherwise \code{NULL}.}
+\item{settings}{The settings and record counts of this run.}
+}
+Values are stored at full precision; \code{print()}, \code{summary()} and the TSV
+files round them. With \code{outdir}, \code{per_population}, \code{richness} and
+\code{autosomal} are written to \verb{diversity_<table>.<stem>.tsv}.
 }
 \description{
 Computes Ho, He, FIS (Nei & Chesser 1983, ratio of sums), rarefied allelic
 richness and rarefied private allelic richness from a Stacks 2
-\code{populations} VCF and popmap, with a block bootstrap over RAD loci and a
-delete-one-block jackknife standard error. Returns the result tables;
-printing the result (at the console, or with \code{print()}) shows the same
-report as the \code{diversity_stats.R} command-line script, and \code{outdir} writes
-the tables to TSV files.
+\code{populations} VCF and popmap, with a delete-one-locus jackknife standard
+error and a bootstrap confidence interval over RAD loci. Printing the
+result shows the main tables; \code{summary()} shows the full report with notes
+on interpretation; \code{outdir} also writes the tables to TSV files.
 }
 \details{
 Run it twice: \code{populations.snps.vcf} gives Ho, He, \code{pct_poly} and the
 per-sequenced-site values; \code{populations.haps.vcf} gives FIS, Ar and
-privAr. Each run prints which of its numbers to take. See
-\code{vignette("rationale")} ("Which file for which statistic") for the full
-reasoning.
+privAr. The printed result says which numbers to take from each file. See
+\code{vignette("rationale")} ("Which file for which statistic").
 }
 \examples{
 # A toy dataset shipped with the package: 80 RAD loci, 2 populations of 4
@@ -159,17 +168,19 @@ snps   <- system.file("extdata", "small.snps.vcf", package = "RADdiversity")
 popmap <- system.file("extdata", "small_popmap.tsv", package = "RADdiversity")
 
 # Haplotype VCF: FIS, allelic richness, private allelic richness.
+set.seed(1)
 res <- diversity_stats(haps, popmap, g = 4, nboot = 100)
-res$per_population
-res$richness
+res                    # the main tables
+res$per_population     # one table
 
 # SNP VCF with each population's own sequenced-site count, read from Stacks'
 # populations.sumstats_summary.tsv: Ho and He per sequenced site.
 sumstats <- system.file("extdata", "populations.sumstats_summary.tsv",
                         package = "RADdiversity")
-res_snps <- diversity_stats(snps, popmap, g = 4, nboot = 0, sites = sumstats)
+res_snps <- diversity_stats(snps, popmap, g = 4, nboot = 0, sites = sumstats,
+                            verbose = FALSE)
 res_snps$autosomal
 
-# The full report, as the command-line script prints it:
-print(res_snps)
+# The full report, with notes on interpreting each number:
+summary(res_snps)
 }

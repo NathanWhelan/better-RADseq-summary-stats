@@ -31,18 +31,22 @@
 ## Loci where Hs is undefined (fewer than 2 typed individuals) are skipped.
 ## Returns a data frame, one row per individual (columns of `a1`).
 .ind_F <- function(a1, a2) {
-  nr <- nrow(a1); nc <- ncol(a1)
-  typed <- !is.na(a1)
-  het   <- typed & (a1 != a2)                  # FALSE where untyped
-  n_l   <- rowSums(typed)
-  ho_l  <- rowSums(het) / n_l
-  cnt  <- .allele_counts(a1, a2)
-  hs_l <- hs_nei_chesser(rowSums((cnt / (2 * n_l))^2), ho_l, n_l)   # NA if n < 2
-  use  <- is.finite(hs_l)
-  obs  <- colSums(het & use)
-  expd <- colSums(ifelse(typed & use, hs_l, 0))
-  data.frame(n_loci = colSums(typed & use), obs_het = obs, exp_het = expd,
-             F = ifelse(expd > 0, 1 - obs / expd, NA_real_), row.names = NULL)
+  typed <- !is.na(a1)                           # loci x individuals
+  het <- typed & (a1 != a2)                     # FALSE where untyped
+  ## Per locus: genotyped individuals, observed heterozygosity, Hs.
+  n_typed <- rowSums(typed)
+  ho_locus <- rowSums(het) / n_typed
+  counts <- .allele_counts(a1, a2)
+  hs_locus <- hs_nei_chesser(rowSums((counts / (2 * n_typed))^2), ho_locus, n_typed)
+  usable <- is.finite(hs_locus)                 # NA when fewer than 2 typed
+  ## Per individual: observed heterozygous loci, and the sum of Hs over the
+  ## usable loci it is typed at. (hs_locus has one value per row, so
+  ## ifelse() recycles it down each individual's column.)
+  observed <- colSums(het & usable)
+  expected <- colSums(ifelse(typed & usable, hs_locus, 0))
+  data.frame(n_loci = as.integer(colSums(typed & usable)), obs_het = as.integer(observed),
+             exp_het = expected,
+             F = ifelse(expected > 0, 1 - observed / expected, NA_real_), row.names = NULL)
 }
 
 #' Individual inbreeding coefficients
@@ -63,12 +67,14 @@
 #' diversity. Negative values mean more heterozygosity than random mating
 #' predicts.
 #'
-#' @param H A list as returned by [read_stacks_vcf()] (optionally filtered),
-#'   or the path to a VCF.
-#' @param pops A named list of sample-ID vectors, one per population, as
-#'   returned by [read_popmap()], or the path to a popmap file.
+#' @param vcf Path to a VCF file, or the object returned by [read_stacks_vcf()]
+#'   (optionally filtered).
+#' @param popmap Path to a popmap file, or the list returned by
+#'   [read_popmap()].
 #' @param min_call Use a locus for a population only if at least this fraction
 #'   of that population's individuals is genotyped there. Default `0.9`.
+#' @param verbose Print progress messages (when `vcf` or `popmap` is a path).
+#'   Default `TRUE`.
 #' @return A data frame, one row per individual: `sample`, `population`,
 #'   `n_loci` (loci used), `obs_het` (heterozygous loci), `exp_het` (expected
 #'   number) and `F`.
@@ -80,26 +86,23 @@
 #' and population-based linkage analyses. *American Journal of Human
 #' Genetics* 81:559-575.
 #' @examples
-#' H <- read_stacks_vcf(system.file("extdata", "small.haps.vcf",
-#'                                  package = "RADdiversity"), verbose = FALSE)
-#' pops <- read_popmap(system.file("extdata", "small_popmap.tsv",
-#'                                 package = "RADdiversity"), H$samples)
-#' individual_inbreeding(H, pops, min_call = 0.5)
+#' vcf    <- system.file("extdata", "small.haps.vcf", package = "RADdiversity")
+#' popmap <- system.file("extdata", "small_popmap.tsv", package = "RADdiversity")
+#' individual_inbreeding(vcf, popmap, min_call = 0.5, verbose = FALSE)
 #' @export
-individual_inbreeding <- function(H, pops, min_call = 0.9) {
-  H <- .resolve_H(H, verbose = FALSE)
-  if (is.character(pops) && length(pops) == 1L) pops <- read_popmap(pops, H$samples, verbose = FALSE)
-  if (!is.list(pops) || is.null(names(pops)))
-    stop("pops must be a named list of sample IDs per population (see read_popmap()).")
-  if (!(is.numeric(min_call) && length(min_call) == 1L && min_call >= 0 && min_call <= 1))
-    stop("min_call must be a single number between 0 and 1.")
-  keep <- sweep(.typed_by_pop(H, pops), 2L, lengths(pops), "/") >= min_call - 1e-9
-  out <- do.call(rbind, lapply(names(pops), function(p) {
-    rows <- keep[, p]
+individual_inbreeding <- function(vcf, popmap, min_call = 0.9, verbose = TRUE) {
+  .check_number(min_call, "min_call", min = 0, max = 1)
+  .check_flag(verbose, "verbose")
+  H <- .resolve_H(vcf, verbose = verbose)
+  pops <- .resolve_pops(popmap, H$samples, verbose = verbose)
+  ## A locus is used for population p when p itself genotypes >= min_call of
+  ## its individuals there.
+  locus_sets <- .population_locus_sets(H, pops, min_call)
+  do.call(rbind, lapply(names(pops), function(p) {
+    loci <- locus_sets[, p]
     data.frame(sample = pops[[p]], population = p,
-               .ind_F(H$A1[rows, pops[[p]], drop = FALSE],
-                      H$A2[rows, pops[[p]], drop = FALSE]),
+               .ind_F(H$A1[loci, pops[[p]], drop = FALSE],
+                      H$A2[loci, pops[[p]], drop = FALSE]),
                row.names = NULL)
   }))
-  out
 }

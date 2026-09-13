@@ -2,45 +2,35 @@
 % Please edit documentation in R/filter_loci.R
 \name{filter_maf}
 \alias{filter_maf}
-\title{Filter loci by minor allele frequency}
+\title{Filter records by minor allele frequency}
 \usage{
-filter_maf(H, min_maf, stats = NULL, verbose = TRUE)
+filter_maf(H, min_maf, allele_stats = NULL, verbose = TRUE)
 }
 \arguments{
-\item{H}{A list as returned by \code{\link[=read_stacks_vcf]{read_stacks_vcf()}}.}
+\item{H}{The object returned by \code{\link[=read_stacks_vcf]{read_stacks_vcf()}} (optionally filtered).}
 
-\item{min_maf}{Minimum minor allele frequency a locus must have to be
-kept (a number between 0 and 1, e.g. \code{0.05} for 5\%).}
+\item{min_maf}{Minimum minor allele frequency to keep a record, a number
+from 0 to 1 (e.g. \code{0.05} for 5\%).}
 
-\item{stats}{Optionally, the data frame already returned by
-\code{\link[=locus_allele_stats]{locus_allele_stats()}} for this exact \code{H} -- pass it in to avoid
-recomputing it if you're also calling \code{\link[=filter_mac]{filter_mac()}} on the same
-dataset. Left as \code{NULL} (the default), it's computed automatically.}
+\item{allele_stats}{Optional: \code{\link[=locus_allele_stats]{locus_allele_stats()}} already computed for
+this \code{H}, to save computing it again when you also run \code{\link[=filter_mac]{filter_mac()}}.
+Default \code{NULL}: computed automatically.}
 
-\item{verbose}{Print how many loci were kept. Default \code{TRUE}.}
+\item{verbose}{Print how many records were kept. Default \code{TRUE}.}
 }
 \value{
-\code{H}, with only the loci that passed the filter kept (a locus with
-no genotyped individuals at all has an undefined MAF and is always
-dropped, since it can't be shown to clear the threshold).
+\code{H} with only the records that pass. A record with no genotyped
+individual has no MAF and is always dropped.
 }
 \description{
-Keeps only loci whose minor allele frequency (MAF) is at least \code{min_maf}.
-Rare variants are the ones most likely to be sequencing/genotyping
-errors rather than real biological variation, so a MAF filter is one of
-the most common first QC steps for SNP data.
+Keeps only records whose minor allele frequency (MAF) is at least
+\code{min_maf}. Rare variants are the ones most likely to be sequencing or
+genotyping errors, so a MAF filter is a common first quality-control step
+for SNP data.
 }
 \examples{
-# Each row of A1/A2 is one locus's alleles across 3 samples; locus_1 is
-# homozygous REF (allele 1) in everyone, locus_2 has 2 REF and 4 ALT
-# copies (MAF = 2/6 = 0.33):
-H <- list(
-  A1 = rbind(locus_1 = c(1, 1, 1), locus_2 = c(1, 2, 2)),
-  A2 = rbind(locus_1 = c(1, 1, 1), locus_2 = c(1, 2, 2)),
-  locus = c("locus_1", "locus_2"), locus_raw = c("locus_1", "locus_2"),
-  alleles = list(c("A", "C"), c("A", "C")), n_alleles = c(2L, 2L),
-  samples = c("ind1", "ind2", "ind3")
-)
-# only locus_2 clears a 20\% MAF threshold:
-filter_maf(H, min_maf = 0.2, verbose = FALSE)$locus
+H <- read_stacks_vcf(system.file("extdata", "small.snps.vcf",
+                                 package = "RADdiversity"), verbose = FALSE)
+H_common <- filter_maf(H, min_maf = 0.1)
+H_common
 }

@@ -3,11 +3,12 @@
 \name{pi_allsites}
 \alias{pi_allsites}
 \alias{print.raddiv_pi}
+\alias{summary.raddiv_pi}
 \title{Nucleotide diversity and divergence from an all-sites VCF}
 \usage{
 pi_allsites(
-  vcf_file,
-  popmap_f,
+  vcf,
+  popmap,
   locus_from = "auto",
   window_bp = 1000,
   nboot = 1000L,
@@ -15,35 +16,42 @@ pi_allsites(
   chunk_lines = 50000L,
   outdir = NULL,
   stem = NULL,
-  seed = 2024,
+  seed = NULL,
   verbose = TRUE
 )
 
 \method{print}{raddiv_pi}(x, ...)
+
+\method{summary}{raddiv_pi}(object, ...)
 }
 \arguments{
-\item{vcf_file}{Path to an all-sites VCF (\code{.vcf} or \code{.vcf.gz}).}
+\item{vcf}{Path to an all-sites VCF (\code{.vcf} or \code{.vcf.gz}). Unlike the other
+analysis functions, this one needs the file itself, because it reads it
+in chunks.}
 
-\item{popmap_f}{Path to a two-column, no-header popmap TSV (\verb{sample_id <TAB> population}).}
+\item{popmap}{Path to a two-column, no-header popmap file (\verb{sample_id <TAB> population}), or the list returned by \code{\link[=read_popmap]{read_popmap()}}.}
 
-\item{locus_from}{How to tell which RAD locus each record belongs to --
-the unit the block jackknife and bootstrap resample, so that SNPs on one
-RAD tag move together. \code{"auto"} (the default) uses the ID column when
-every record has one (Stacks writes the locus number, or
-\code{locus:column:strand} in a SNP VCF), and \code{"window"} otherwise.
-\code{"ID"}: the ID column, up to its first \code{:}. \code{"CHROM"}: one locus per
-CHROM value, for de novo formats that put the locus there (some Stacks 2
-versions, ipyrad, dDocent). \code{"window"}: records on the same CHROM within
-\code{window_bp} of the previous record form one locus -- which gives one
-locus per CHROM for the de novo formats (a RAD locus is far shorter than
-1 kb) and one per RAD locus, or run of adjacent loci, for
-reference-aligned data. For a reference-aligned VCF whose IDs are
-unique per SNP (e.g. dbSNP rs numbers), choose \code{"window"} explicitly.}
+\item{locus_from}{How to tell which RAD locus each record belongs to. RAD
+loci are the unit that standard errors and bootstrap intervals resample,
+so that linked SNPs on one RAD tag move together.
+\itemize{
+\item \code{"auto"} (default): the ID column when every record has one (Stacks
+writes the locus number, or \code{locus:column:strand} in a SNP VCF), and
+\code{"window"} otherwise.
+\item \code{"ID"}: the ID column, up to its first \code{:}.
+\item \code{"CHROM"}: one locus per CHROM value, for de novo formats that put the
+locus there (some Stacks 2 versions, ipyrad, dDocent).
+\item \code{"window"}: records on the same CHROM within \code{window_bp} of the
+previous record form one locus. This gives one locus per CHROM for de
+novo formats and one per RAD locus (or run of adjacent loci) for
+reference-aligned data. Choose it explicitly for a reference-aligned
+VCF whose IDs are unique per SNP (e.g. dbSNP rs numbers).
+}}
 
 \item{window_bp}{Largest gap, in base pairs, between consecutive records of
 one locus under \code{locus_from = "window"}. Default \code{1000}.}
 
-\item{nboot}{Bootstrap replicates over RAD loci. Default \code{1000L}; \code{0} for
+\item{nboot}{Bootstrap replicates over RAD loci. Default \code{1000}; \code{0} for
 none (the jackknife SE is always given).}
 
 \item{complete_sites}{If \code{TRUE}, a population uses only the sites at which
@@ -51,48 +59,44 @@ every one of its individuals is typed (Schmidt et al. 2021's
 recommendation). Default \code{FALSE}: every site counts with the individuals
 typed there, which is the unbiased pixy estimator.}
 
-\item{chunk_lines}{Records read at a time. Default \code{50000L}.}
+\item{chunk_lines}{Records read at a time. Default \code{50000}.}
 
-\item{outdir}{Directory to write the result tables into as TSV files
-(created if needed). Default \code{NULL}: write no files -- the tables are in
-the returned object. The command-line script writes to the current
-directory.}
+\item{outdir}{Directory to write the result tables to as TSV files
+(created if needed). Default \code{NULL}: write nothing.}
 
-\item{stem}{Text used to build the two output filenames (e.g.
-\verb{diversity_per_population.<stem>.tsv}) -- ordinarily derived
-automatically from \code{vcf_file}'s own filename (e.g.
-\code{populations.haps.vcf} gives \code{stem = "haps"}), which is why this
-package's documented workflow runs this function once on the haplotype
-VCF and once on the SNP VCF without the second run silently overwriting
-the first run's files. That automatic derivation has no filename to
-work from when \code{vcf_file} is an already-parsed list rather than a path,
-so when writing files (\code{outdir}) from a list, \code{stem} must be given
-(e.g. \code{stem = "snps"}) -- this function stops with an explanatory error
-rather than guessing. Default \code{NULL}. Supplying \code{stem} alongside a path
-overrides the automatic derivation.}
+\item{stem}{Text in the output file names
+(\verb{diversity_per_population.<stem>.tsv}). By default it comes from the
+VCF's file name (\code{populations.haps.vcf} gives \code{"haps"}), so runs on the
+haplotype and SNP VCFs can share \code{outdir} without overwriting each other.
+Required when writing files from an already-read object, which has no
+file name.}
 
-\item{seed}{Random seed set before bootstrapping, for reproducibility.
-Default \code{2024}. The caller's own RNG state (e.g. from their own prior
-\code{set.seed()}) is restored when this function returns, so calling it
-interactively does not affect subsequent random draws in the caller's
-session.}
+\item{seed}{Random seed for the bootstrap. Default \code{NULL}: use R's current
+random-number stream, so call \code{set.seed()} first for reproducible
+intervals. A number makes the result reproducible on its own and leaves
+your session's random-number stream as it was.}
 
-\item{verbose}{Print the VCF/popmap parsing summary. Default \code{TRUE}.
-Progress messages can be silenced with \code{suppressMessages()}; the report
-itself appears only when the result is printed.}
+\item{verbose}{Print progress messages. Default \code{TRUE}.}
 
-\item{x}{A \code{raddiv_pi} object, as returned by \code{pi_allsites()}.}
+\item{x, object}{A \code{raddiv_pi} object, as returned by \code{pi_allsites()}.}
 
 \item{...}{Ignored.}
 }
 \value{
-An object of class \code{raddiv_pi} (printing it shows a report): a
-list with \code{pi} (one row per population: \code{pi}, \code{pi_se}, \code{pi_lo},
-\code{pi_hi}, \code{sites} used), \code{dxy} (one row per pair: \code{dxy} and \code{da}, each
-with SE and CI; \code{NULL} for a single population) and \code{individual}
-(\code{het_sites}, \code{called_sites}, \code{het_per_site} per individual). With
-\code{outdir}, the three tables are written to \verb{pi_allsites_pi.<stem>.tsv},
-\verb{pi_allsites_dxy.<stem>.tsv} and \verb{pi_allsites_individual.<stem>.tsv}.
+An object of class \code{raddiv_pi}, a list of:
+\describe{
+\item{pi}{One row per population: \code{pi}, \code{pi_se}, \code{pi_lo}, \code{pi_hi}, the
+same for \code{pi_nc} (see Details), and \code{sites} (sites with at least two
+typed gene copies).}
+\item{dxy}{One row per pair: \code{dxy} and \code{da}, each with SE and interval;
+\code{NULL} for a single population.}
+\item{individual}{Per individual: \code{het_sites}, \code{called_sites},
+\code{het_per_site}.}
+\item{settings}{The settings of this run.}
+}
+Values are stored at full precision. With \code{outdir}, the three tables are
+written to \verb{pi_allsites_pi.<stem>.tsv}, \verb{pi_allsites_dxy.<stem>.tsv} and
+\verb{pi_allsites_individual.<stem>.tsv}.
 }
 \description{
 Per-population nucleotide diversity (pi), between-population divergence
@@ -108,8 +112,15 @@ differences and comparisons among the gene copies typed there.
 per-site value by dividing by the number of sequenced sites. That cannot
 account for missing genotypes at invariant sites. With an all-sites VCF,
 this function computes pi directly, with no such approximation. With no
-missing data the two agree: pi here equals the per-site average of the
-2n-corrected gene diversity (\code{He_2n_corr}) over every sequenced site.
+missing data the two agree: \code{pi} here equals the per-site average of the
+2n-corrected gene diversity (\code{He_2n_corr}) over every sequenced site, and
+\code{pi_nc} the per-site average of Nei & Chesser's \code{He}.
+
+\strong{No allele-frequency filter.} Stacks' \code{--min-mac}/\code{--min-maf} turn a
+failing SNP into a fixed site, so its diversity is lost while the site is
+still counted. Under a neutral site-frequency spectrum, sites with minor
+allele count 2 or less carry about 4/(N - 1) of pi for N gene copies (21\%
+at 10 diploids, 10\% at 20), so leave those flags off for this run.
 
 \strong{Estimators.} For a population at a site with allele counts \code{c_a} among
 \code{m} typed gene copies: comparisons \code{C(m, 2)}, differences
@@ -117,7 +128,16 @@ missing data the two agree: pi here equals the per-site average of the
 Between populations: comparisons \verb{m_x m_y}, differences
 \verb{m_x m_y - sum c_xa c_ya} (dxy); \code{Da = dxy - (pi_x + pi_y) / 2}. Per
 individual, heterozygous sites over typed sites (Schmidt et al. 2021's
-autosomal heterozygosity). Standard errors are a delete-one-block
+autosomal heterozygosity).
+
+\strong{\code{pi} and \code{pi_nc}.} \code{pi} is the pixy estimator above. It counts the two
+gene copies inside each individual as a comparison, so, like Stacks' \code{Pi},
+it runs low when individuals are inbred (FIS > 0): its expectation is
+the true value times \verb{1 - FIS / (2n - 1)} for n individuals. \code{pi_nc} leaves those within-individual
+comparisons out and compares only copies from different individuals; at
+each site it equals Nei & Chesser's (1983) gene diversity, the \code{He} of
+\code{\link[=diversity_stats]{diversity_stats()}}, and it stays unbiased at any FIS. Report \code{pi_nc} as
+the estimate and \code{pi} when comparing with pixy, VCFtools or Stacks. Standard errors are a delete-one-block
 jackknife and intervals a block bootstrap, both over RAD loci (see
 \code{locus_from} in \code{\link[=read_stacks_vcf]{read_stacks_vcf()}}).
 
@@ -134,8 +154,7 @@ writeLines(c(
   "1\t1\t.\tA\tG\t.\tPASS\t.\tGT\t0/0\t0/1\t1/1\t1/1",
   "1\t2\t.\tC\t.\t.\tPASS\t.\tGT\t0/0\t0/0\t0/0\t0/0",
   "2\t1\t.\tT\tC\t.\tPASS\t.\tGT\t0/1\t./.\t0/0\t0/1"), vcf)
-popmap <- tempfile()
-writeLines(c("a1\tpopA", "a2\tpopA", "b1\tpopB", "b2\tpopB"), popmap)
+popmap <- list(popA = c("a1", "a2"), popB = c("b1", "b2"))
 res <- pi_allsites(vcf, popmap, nboot = 0)
 res$pi
 res$dxy

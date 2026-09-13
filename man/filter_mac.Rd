@@ -2,40 +2,32 @@
 % Please edit documentation in R/filter_loci.R
 \name{filter_mac}
 \alias{filter_mac}
-\title{Filter loci by minor allele count}
+\title{Filter records by minor allele count}
 \usage{
-filter_mac(H, min_mac, stats = NULL, verbose = TRUE)
+filter_mac(H, min_mac, allele_stats = NULL, verbose = TRUE)
 }
 \arguments{
-\item{H}{A list as returned by \code{\link[=read_stacks_vcf]{read_stacks_vcf()}}.}
+\item{H}{The object returned by \code{\link[=read_stacks_vcf]{read_stacks_vcf()}} (optionally filtered).}
 
-\item{min_mac}{Minimum minor allele count a locus must have to be kept
-(a whole number, e.g. \code{3}).}
+\item{min_mac}{Minimum minor allele count to keep a record (e.g. \code{3}).}
 
-\item{stats}{Optionally, a precomputed \code{\link[=locus_allele_stats]{locus_allele_stats()}} result for
-this \code{H} (see \code{\link[=filter_maf]{filter_maf()}} for why you might pass this in).}
+\item{allele_stats}{Optional: \code{\link[=locus_allele_stats]{locus_allele_stats()}} already computed for
+this \code{H}, to save computing it again when you also run \code{\link[=filter_mac]{filter_mac()}}.
+Default \code{NULL}: computed automatically.}
 
-\item{verbose}{Print how many loci were kept. Default \code{TRUE}.}
+\item{verbose}{Print how many records were kept. Default \code{TRUE}.}
 }
 \value{
-\code{H}, with only the loci that passed the filter kept.
+\code{H} with only the records that pass.
 }
 \description{
-Keeps only loci with at least \code{min_mac} copies of the minor allele
-(counting across every genotyped individual). This is the count-based
-cousin of \code{\link[=filter_maf]{filter_maf()}} -- useful because a fixed count threshold (e.g.
-"at least 3 copies") behaves more predictably than a frequency threshold
-when sample sizes are small or uneven, where a single individual can
-swing the frequency a lot.
+Keeps only records with at least \code{min_mac} copies of the minor allele,
+counted over every genotyped individual. The count-based version of
+\code{\link[=filter_maf]{filter_maf()}}: a fixed count (e.g. "at least 3 copies") behaves more
+predictably than a frequency when sample sizes are small or uneven.
 }
 \examples{
-# locus_2 has 2 minor (REF) allele copies out of 6; locus_1 has none:
-H <- list(
-  A1 = rbind(locus_1 = c(1, 1, 1), locus_2 = c(1, 2, 2)),
-  A2 = rbind(locus_1 = c(1, 1, 1), locus_2 = c(1, 2, 2)),
-  locus = c("locus_1", "locus_2"), locus_raw = c("locus_1", "locus_2"),
-  alleles = list(c("A", "C"), c("A", "C")), n_alleles = c(2L, 2L),
-  samples = c("ind1", "ind2", "ind3")
-)
-filter_mac(H, min_mac = 2, verbose = FALSE)$locus  # only locus_2 has >= 2 minor copies
+H <- read_stacks_vcf(system.file("extdata", "small.snps.vcf",
+                                 package = "RADdiversity"), verbose = FALSE)
+filter_mac(H, min_mac = 3)
 }

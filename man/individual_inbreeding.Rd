@@ -4,17 +4,20 @@
 \alias{individual_inbreeding}
 \title{Individual inbreeding coefficients}
 \usage{
-individual_inbreeding(H, pops, min_call = 0.9)
+individual_inbreeding(vcf, popmap, min_call = 0.9, verbose = TRUE)
 }
 \arguments{
-\item{H}{A list as returned by \code{\link[=read_stacks_vcf]{read_stacks_vcf()}} (optionally filtered),
-or the path to a VCF.}
+\item{vcf}{Path to a VCF file, or the object returned by \code{\link[=read_stacks_vcf]{read_stacks_vcf()}}
+(optionally filtered).}
 
-\item{pops}{A named list of sample-ID vectors, one per population, as
-returned by \code{\link[=read_popmap]{read_popmap()}}, or the path to a popmap file.}
+\item{popmap}{Path to a popmap file, or the list returned by
+\code{\link[=read_popmap]{read_popmap()}}.}
 
 \item{min_call}{Use a locus for a population only if at least this fraction
 of that population's individuals is genotyped there. Default \code{0.9}.}
+
+\item{verbose}{Print progress messages (when \code{vcf} or \code{popmap} is a path).
+Default \code{TRUE}.}
 }
 \value{
 A data frame, one row per individual: \code{sample}, \code{population},
@@ -40,11 +43,9 @@ diversity. Negative values mean more heterozygosity than random mating
 predicts.
 }
 \examples{
-H <- read_stacks_vcf(system.file("extdata", "small.haps.vcf",
-                                 package = "RADdiversity"), verbose = FALSE)
-pops <- read_popmap(system.file("extdata", "small_popmap.tsv",
-                                package = "RADdiversity"), H$samples)
-individual_inbreeding(H, pops, min_call = 0.5)
+vcf    <- system.file("extdata", "small.haps.vcf", package = "RADdiversity")
+popmap <- system.file("extdata", "small_popmap.tsv", package = "RADdiversity")
+individual_inbreeding(vcf, popmap, min_call = 0.5, verbose = FALSE)
 }
 \references{
 Nei, M. & Chesser, R.K. (1983) Estimation of fixation indices and gene

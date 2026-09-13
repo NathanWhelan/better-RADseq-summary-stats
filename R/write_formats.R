@@ -1,530 +1,390 @@
 ###############################################################################
 #
-#  R/write_formats.R -- write a (filtered) H out to the file formats other
-#  RADseq/population-genetics tools expect.
+#  R/write_formats.R -- write a (filtered) H to the file formats other
+#  population-genetics programs read.
 #
-#  Every function here takes `H` (the list read_stacks_vcf() returns, possibly
-#  already run through one or more filters from R/filter_loci.R) and writes
-#  it to disk in one specific format, so a typical session looks like:
+#  Every function takes `H` (the object read_stacks_vcf() returns, possibly
+#  run through filter_*() functions) and writes one format:
 #
 #    H <- read_stacks_vcf("populations.snps.vcf")
 #    H <- filter_call_rate(H, min_call = 0.8)
-#    H <- filter_maf(H, min_maf = 0.05)
-#    write_plink(H, "cleaned", pops = read_popmap("popmap.tsv", H$samples))
+#    write_plink(H, "cleaned", popmap = "popmap.tsv")
 #
-#  `pops` (a named list of sample-ID vectors, from read_popmap()) is
-#  REQUIRED for the two formats that are always organized by population
-#  (Genepop, FSTAT) and OPTIONAL for the rest (STRUCTURE and PLINK can both
-#  carry a population label, but don't have to; plain VCF and RADpainter
-#  have no notion of population at the file level at all).
+#  `popmap` (a popmap file path or the list from read_popmap()) is REQUIRED
+#  for the formats organized by population (Genepop, FSTAT) and OPTIONAL for
+#  STRUCTURE and PLINK, which can carry a population label. VCF and
+#  RADpainter files have no population field.
 #
-#  Every format's exact layout below (locus-name placement, column order,
-#  the missing-data code) was checked against that format's own
-#  documentation or reference source code while writing this file, rather
-#  than assumed from memory -- see each function's comments for what was
-#  confirmed and against what.
+#  Each format's layout (locus-name placement, column order, missing-data
+#  code) follows that format's documentation or reference implementation, as
+#  noted at each function. Checked by tests/testthat/test-write-formats.R.
 #
 ###############################################################################
 
-## Not exported. Turns `pops` (read_popmap()'s named-list-of-sample-IDs
-## shape) into one population NUMBER per sample in H, in H$samples order --
-## e.g. if pops = list(popA = c("a1","a2"), popB = c("b1")), then sample
-## "b1" gets population number 2. Used by every writer below that needs a
-## population column.
+## Not exported. For each sample of H (in H$samples order), the NUMBER of its
+## population in `pops`: with pops = list(popA = c("a1","a2"), popB = "b1"),
+## sample "b1" gets 2. Stops if a sample of H has no population.
 .pop_id_vector <- function(H, pops) {
   ids <- unlist(pops, use.names = FALSE)
-  dupd <- unique(ids[duplicated(ids)])
-  if (length(dupd))
-    stop("These sample(s) appear in more than one element of `pops`, so it's ",
-         "ambiguous which population they belong to: ", paste(dupd, collapse = ", "),
-         ". Each sample must be assigned to exactly one population.")
-  missing_samples <- setdiff(H$samples, ids)
-  if (length(missing_samples))
-    stop("These samples are in H but aren't assigned to any population in `pops`: ",
-         paste(missing_samples, collapse = ", "),
-         ". Every sample in H must appear in exactly one element of `pops` ",
-         "(as read_popmap() already ensures) before this function can label them.")
-  ## A named vector like c(a1 = 1, a2 = 1, b1 = 2) -- indexing it by sample
-  ## NAME (not position) then gives each sample's population number, in
-  ## whatever order H$samples happens to list them.
-  pop_idx <- stats::setNames(rep(seq_along(pops), lengths(pops)), ids)
-  unname(pop_idx[H$samples])
+  unassigned <- setdiff(H$samples, ids)
+  if (length(unassigned))
+    stop("These samples are in H but not in `popmap`: ", paste(unassigned, collapse = ", "),
+         ". Every sample must be assigned to a population; remove the others from H first.",
+         call. = FALSE)
+  pop_number <- stats::setNames(rep(seq_along(pops), lengths(pops)), ids)
+  unname(pop_number[H$samples])
 }
 
-## Not exported. Genepop and FSTAT both encode each allele as a zero-padded
-## number of a FIXED width for the whole file (2 digits if there are at most
-## 99 possible alleles anywhere in the dataset, otherwise 3) -- picking the
-## width once, for the whole file, is required by both formats' own specs
-## (confirmed against the official Genepop manual and the FSTAT format
-## description in hierfstat's documentation).
+## Not exported. `popmap` for the writers: required for Genepop and FSTAT,
+## optional for the others. Returns the population list, or NULL when
+## `popmap` is NULL and not required.
+.writer_pops <- function(H, popmap, required, format_name) {
+  if (is.null(popmap)) {
+    if (required)
+      stop(format_name, " needs `popmap` (a popmap file path, or the list returned by ",
+           "read_popmap()): ", format_name, " files are organized by population.",
+           call. = FALSE)
+    return(NULL)
+  }
+  .resolve_pops(popmap, H$samples, verbose = FALSE)
+}
+
+## Not exported. Genepop and FSTAT write each allele as a zero-padded number
+## of one FIXED width for the whole file: 2 digits when no record has more
+## than 99 alleles, otherwise 3 (Genepop manual; FSTAT format description in
+## hierfstat).
 .digit_width <- function(H) if (max(H$n_alleles) <= 99L) 2L else 3L
 
-## Not exported. A one-line wrapper around requireNamespace() so tests can
-## force write_fstat() down its no-hierfstat fallback path (via testthat's
-## mocking helpers) without actually needing hierfstat to be uninstalled --
-## testthat can only override a binding that lives IN this package's own
-## namespace, not one (like requireNamespace itself) inherited from base.
-.hierfstat_available <- function() requireNamespace("hierfstat", quietly = TRUE)
-
-## Not exported. Re-expresses H$A1/H$A2 (this package's small-integer allele
-## numbers) as zero-padded text of a given width, e.g. allele 3 at width 2
-## becomes "03". A missing allele (NA) becomes a run of zeros of that same
-## width (e.g. "00") -- the standard missing-allele code both formats use.
-.allele_code_matrix <- function(H, width = .digit_width(H)) {
-  fmt  <- paste0("%0", width, "d")
-  miss <- strrep("0", width)
-  code_one <- function(A) {
-    out <- sprintf(fmt, A)          # e.g. sprintf("%02d", 3) == "03"
-    out[is.na(A)] <- miss
-    matrix(out, nrow = nrow(A), dimnames = dimnames(A))
-  }
-  list(A1 = code_one(H$A1), A2 = code_one(H$A2), width = width)
+## Not exported. Each genotype as the text Genepop and FSTAT use: both allele
+## numbers, zero-padded to `width` and smaller first (alleles 3 and 1 at width
+## 2 -> "0103"), with all zeros ("0000") for a missing genotype. Returns a
+## records x samples character matrix.
+.genotype_codes <- function(H, width = .digit_width(H)) {
+  smaller <- pmin(H$A1, H$A2)
+  larger <- pmax(H$A1, H$A2)
+  codes <- matrix(paste0(sprintf(paste0("%0", width, "d"), smaller),
+                         sprintf(paste0("%0", width, "d"), larger)),
+                  nrow = nrow(H$A1), dimnames = dimnames(H$A1))
+  codes[is.na(H$A1) | is.na(H$A2)] <- strrep("0", 2L * width)
+  codes
 }
 
 #' Write a (filtered) H back out as a VCF file
 #'
-#' Serializes `H` -- including any changes made by [filter_maf()],
-#' [filter_low_conf_alt()], or any other filter in this package -- back into
-#' a valid VCF file, so it can be re-read with [read_stacks_vcf()] or handed to
-#' another VCF-based tool.
+#' Writes `H`, including any changes made by the `filter_*()` functions, as a
+#' VCF file that [read_stacks_vcf()] or other VCF tools can read.
 #'
-#' Only the `GT` (genotype) values are ever rewritten from `H$A1`/`H$A2`
-#' themselves. Everything else in each record (`QUAL`, `FILTER`, `INFO`, and
-#' the original `AD`/`DP`/etc. per-sample values) is copied through
-#' unchanged from the ORIGINAL file, because a filter like
-#' [filter_low_conf_alt()] can change which genotype is recorded at a cell
-#' without knowing (or needing to know) how to update every other per-cell
-#' value that used to describe the old genotype -- writing them out anyway
-#' would silently mislead anyone reading them back. For that reason, the
-#' `FORMAT` column in the file this writes is always just `GT`.
+#' Only the genotypes (`GT`) are written from `H$A1`/`H$A2`. `QUAL`, `FILTER`
+#' and `INFO` are copied from the original file, but per-sample fields such as
+#' `AD` and `DP` are NOT: a filter such as [filter_low_conf_alt()] can change a
+#' genotype without updating those values, and writing them would mislead
+#' anyone reading the file. The `FORMAT` column is therefore always `GT`.
 #'
-#' @param H A list as returned by [read_stacks_vcf()]. Must still have its
-#'   `fields` element (present by default; only missing if `H` was built by
-#'   hand rather than from a real VCF file).
-#' @param path Output file path. Ending it in `.gz` writes a gzip-compressed
-#'   file, same as [read_stacks_vcf()] can read back in.
+#' @param H The object returned by [read_stacks_vcf()] (optionally filtered).
+#'   It must still contain `$fields`, the original VCF columns.
+#' @param path Output file path. A name ending in `.gz` writes a
+#'   gzip-compressed file.
 #' @param verbose Print a short summary once written. Default `TRUE`.
 #' @return `path`, invisibly.
 #' @examples
-#' vcf_lines <- c(
-#'   "##fileformat=VCFv4.2",
-#'   "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tind1\tind2",
-#'   "un\t1\tlocus_1\tA\tC\t.\tPASS\t.\tGT\t0/0\t0/1"
-#' )
-#' in_file <- tempfile(fileext = ".vcf")
-#' writeLines(vcf_lines, in_file)
-#' H <- read_stacks_vcf(in_file, verbose = FALSE)
+#' H <- read_stacks_vcf(system.file("extdata", "small.haps.vcf",
+#'                                  package = "RADdiversity"), verbose = FALSE)
 #' out_file <- tempfile(fileext = ".vcf")
-#' write_vcf(H, out_file, verbose = FALSE)
-#' cat(readLines(out_file), sep = "\n")
+#' write_vcf(H, out_file)
+#' head(readLines(out_file), 4)
 #' @export
 write_vcf <- function(H, path, verbose = TRUE) {
+  H <- .resolve_H(H, verbose = FALSE)
+  .check_string(path, "path")
+  .check_flag(verbose, "verbose")
   if (is.null(H$fields))
-    stop("write_vcf() needs H$fields (the raw VCF columns read_stacks_vcf() keeps for ",
-         "CHROM/POS/ID/REF/ALT/QUAL/FILTER/INFO) -- this H doesn't have it, e.g. ",
-         "because it was built by hand rather than from read_stacks_vcf().")
-  n_rec  <- nrow(H$A1)
-  n_samp <- ncol(H$A1)
+    stop("write_vcf() needs H$fields (the original VCF columns CHROM ... INFO), but this ",
+         "H has none -- for example because it was built by hand rather than read with ",
+         "read_stacks_vcf().", call. = FALSE)
+  n_rec <- nrow(H$A1)
 
-  ## VCF numbers alleles starting at 0 (REF = 0, first ALT = 1, ...) while
-  ## this package numbers them starting at 1 (REF = 1, first ALT = 2, ...)
-  ## purely so 1-based indexing into H$alleles works naturally in R -- so
-  ## converting back for the file just means subtracting 1. A missing
-  ## allele (NA) becomes VCF's own missing genotype text, ".".
-  a1_txt <- ifelse(is.na(H$A1), ".", as.character(H$A1 - 1L))
-  a2_txt <- ifelse(is.na(H$A2), ".", as.character(H$A2 - 1L))
-  gt <- matrix(paste0(a1_txt, "/", a2_txt), nrow = n_rec, dimnames = dimnames(H$A1))
+  ## VCF numbers alleles from 0 (REF = 0); this package numbers them from 1,
+  ## so writing subtracts 1. A missing allele is written as ".".
+  allele_text <- function(A) ifelse(is.na(A), ".", as.character(A - 1L))
+  gt <- matrix(paste0(allele_text(H$A1), "/", allele_text(H$A2)), nrow = n_rec,
+               dimnames = dimnames(H$A1))
 
-  header <- c(
-    "##fileformat=VCFv4.2",
-    "##source=RADdiversity::write_vcf",
-    paste(c("#CHROM", "POS", "ID", "REF", "ALT", "QUAL", "FILTER", "INFO", "FORMAT", H$samples),
-          collapse = "\t")
-  )
-
-  ## Build the whole file body in one shot: a list of every column (as a
-  ## plain vector, one entry per locus), then paste() glues matching
-  ## positions from every column together with tabs in one vectorized pass
-  ## -- much faster than looping row by row for a large VCF.
-  cols <- c(
-    list(H$fields[, "CHROM"], H$fields[, "POS"], H$fields[, "ID"], H$fields[, "REF"],
-         H$fields[, "ALT"], H$fields[, "QUAL"], H$fields[, "FILTER"], H$fields[, "INFO"],
-         rep("GT", n_rec)),
-    lapply(H$samples, function(s) gt[, s])
-  )
-  body <- do.call(paste, c(cols, sep = "\t"))
+  header <- c("##fileformat=VCFv4.2",
+              "##source=RADdiversity::write_vcf",
+              paste(c("#CHROM", "POS", "ID", "REF", "ALT", "QUAL", "FILTER", "INFO", "FORMAT",
+                      H$samples), collapse = "\t"))
+  ## One vector per output column, then paste() joins them row by row with
+  ## tabs in a single vectorised call.
+  columns <- c(lapply(c("CHROM", "POS", "ID", "REF", "ALT", "QUAL", "FILTER", "INFO"),
+                      function(name) H$fields[, name]),
+               list(rep("GT", n_rec)),
+               lapply(H$samples, function(s) gt[, s]))
+  body <- do.call(paste, c(columns, sep = "\t"))
 
   con <- if (grepl("\\.gz$", path)) gzfile(path, "w") else file(path, "w")
   on.exit(close(con), add = TRUE)
   writeLines(c(header, body), con)
-
-  if (verbose)
-    message(sprintf("Wrote %s (%s loci, %d samples, FORMAT=GT only -- see ?write_vcf for why)",
-                    path, format(n_rec, big.mark = ","), n_samp))
+  .inform(verbose, sprintf("Wrote %s (%s records, %d samples, FORMAT=GT only -- see ?write_vcf)",
+                           path, .big(n_rec), ncol(H$A1)))
   invisible(path)
 }
 
 #' Write a (filtered) H as PLINK text files
 #'
-#' Writes the classic PLINK 1.x text format: `<path_prefix>.map` (one line
-#' per locus) and `<path_prefix>.ped` (one line per individual). Confirmed
-#' against PLINK's own documented `.map`/`.ped` column layout and missing-
-#' data code.
+#' Writes the PLINK 1 text format: `<path_prefix>.map` (one line per record)
+#' and `<path_prefix>.ped` (one line per individual), with PLINK's documented
+#' column layout and missing-data code (`0`).
 #'
-#' PLINK's `.ped` format has exactly two allele columns per locus -- it has
-#' no way to represent a locus with more than two alleles. Haplotype VCFs
-#' from Stacks routinely do have loci with 3 or more alleles, so this
-#' function checks for that using [locus_allele_stats()] before writing
-#' anything.
+#' PLINK's `.ped` format has exactly two allele columns per locus, so it
+#' cannot represent a record with more than two alleles, which haplotype VCFs
+#' often have. Such records stop the function unless `drop_multiallelic =
+#' TRUE`.
 #'
-#' @param H A list as returned by [read_stacks_vcf()].
+#' @inheritParams write_vcf
 #' @param path_prefix Output files are `<path_prefix>.map` and
 #'   `<path_prefix>.ped`.
-#' @param pops Optionally, a named list of sample-ID vectors (from
-#'   [read_popmap()]) -- when given, each individual's PLINK family ID (FID)
-#'   is their population name; otherwise FID is just their sample name.
-#' @param drop_multiallelic If `FALSE` (the default), a locus with more than
-#'   2 observed alleles causes an error (rather than writing a file PLINK
-#'   can't correctly read). Set to `TRUE` to instead silently exclude just
-#'   those loci and write everything else.
-#' @param verbose Print a short summary once written. Default `TRUE`.
+#' @param popmap Optional: a popmap file path or the list returned by
+#'   [read_popmap()]. When given, each individual's PLINK family ID (FID) is
+#'   its population name; otherwise FID is the sample name.
+#' @param drop_multiallelic If `FALSE` (default), a record with more than 2
+#'   observed alleles stops the function. If `TRUE`, such records are left
+#'   out (with a message).
 #' @return `path_prefix`, invisibly.
 #' @examples
-#' H <- list(
-#'   A1 = matrix(c(1L, 1L, 1L, 2L), nrow = 1), A2 = matrix(c(1L, 2L, 1L, 2L), nrow = 1),
-#'   locus = "locus_1", locus_raw = "locus_1", alleles = list(c("A", "C")),
-#'   n_alleles = 2L, samples = c("a1", "a2", "a3", "a4")
-#' )
+#' H <- read_stacks_vcf(system.file("extdata", "small.snps.vcf",
+#'                                  package = "RADdiversity"), verbose = FALSE)
+#' popmap <- system.file("extdata", "small_popmap.tsv", package = "RADdiversity")
 #' out <- tempfile()
-#' write_plink(H, out, verbose = FALSE)
-#' cat(readLines(paste0(out, ".ped")), sep = "\n")
+#' write_plink(H, out, popmap = popmap)
+#' readLines(paste0(out, ".map"))[1:3]
 #' @export
-write_plink <- function(H, path_prefix, pops = NULL, drop_multiallelic = FALSE, verbose = TRUE) {
-  stats <- locus_allele_stats(H)
-  bad <- stats$n_observed_alleles > 2L
-  if (any(bad)) {
+write_plink <- function(H, path_prefix, popmap = NULL, drop_multiallelic = FALSE, verbose = TRUE) {
+  H <- .resolve_H(H, verbose = FALSE)
+  .check_string(path_prefix, "path_prefix")
+  .check_flag(drop_multiallelic, "drop_multiallelic")
+  .check_flag(verbose, "verbose")
+  pops <- .writer_pops(H, popmap, required = FALSE, "PLINK")
+
+  multiallelic <- locus_allele_stats(H)$n_observed_alleles > 2L
+  if (any(multiallelic)) {
     if (!drop_multiallelic)
-      stop(sum(bad), " locus/loci have more than 2 observed alleles, which PLINK's ",
-           ".ped/.map format can't represent (it is strictly biallelic). Either set ",
-           "drop_multiallelic = TRUE to exclude just those loci, or reduce to a ",
-           "biallelic dataset first (e.g. filter_maf(), filter_thin_one_snp(), or use ",
-           "a SNP rather than a haplotype VCF).")
-    if (verbose)
-      message(sprintf("write_plink(): excluding %s of %s multiallelic loci (drop_multiallelic = TRUE)",
-                      format(sum(bad), big.mark = ","), format(nrow(stats), big.mark = ",")))
-    H <- .subset_H(H, !bad)
+      stop(sum(multiallelic), " record(s) have more than 2 observed alleles, which PLINK's ",
+           ".ped/.map format can't represent (it is strictly biallelic). Set ",
+           "drop_multiallelic = TRUE to leave them out, or use a biallelic dataset (e.g. ",
+           "the SNP VCF rather than the haplotype VCF).", call. = FALSE)
+    .inform(verbose, sprintf("write_plink(): excluding %s of %s multiallelic records (drop_multiallelic = TRUE)",
+                             .big(sum(multiallelic)), .big(length(multiallelic))))
+    H <- .subset_H(H, !multiallelic)
   }
   n_rec <- nrow(H$A1)
 
-  ## .map: chromosome, locus name, genetic distance (unused here, so always
-  ## 0), base-pair position -- one line per locus. Guarded explicitly for
-  ## the (unusual but possible, e.g. every locus excluded above) case of
-  ## zero remaining loci: paste() mixing a zero-length vector with the
-  ## constant "0" would otherwise produce ONE misleading blank-ish line
-  ## instead of a genuinely empty file.
-  if (n_rec == 0L) {
-    map_lines <- character(0)
-  } else {
+  ## .map: chromosome, marker name, genetic distance (unknown: 0), base-pair
+  ## position. With no records left the file is empty (paste() would
+  ## otherwise make one line out of the constant "0").
+  map_lines <- character(0)
+  if (n_rec > 0L) {
     chrom <- if (!is.null(H$fields)) H$fields[, "CHROM"] else rep("0", n_rec)
-    pos   <- if (!is.null(H$fields)) H$fields[, "POS"]   else as.character(seq_len(n_rec))
+    pos <- if (!is.null(H$fields)) H$fields[, "POS"] else as.character(seq_len(n_rec))
     map_lines <- paste(chrom, H$locus, "0", pos, sep = "\t")
   }
   writeLines(map_lines, paste0(path_prefix, ".map"))
 
-  ## .ped: 6 standard columns (family ID, individual ID, father, mother,
-  ## sex, phenotype -- PLINK's own codes for "unknown": 0, 0, 0, -9), then
-  ## TWO allele columns per locus, one line per individual.
-  fid <- if (!is.null(pops)) names(pops)[.pop_id_vector(H, pops)] else H$samples
-  ped_prefix <- paste(fid, H$samples, "0", "0", "0", "-9")
-
-  ## Each locus contributes its OWN two allele columns, holding the actual
-  ## REF/ALT sequence text (from H$alleles) rather than this package's
-  ## internal allele numbers -- PLINK's plain-text format accepts any
-  ## token, including multi-letter ones. A missing allele becomes PLINK's
-  ## missing code, "0".
-  allele_cols <- vector("list", 2L * n_rec)
-  k <- 1L
+  ## .ped: family ID, individual ID, father, mother, sex, phenotype (PLINK's
+  ## "unknown" codes 0, 0, 0, -9), then two allele columns per record holding
+  ## the allele sequences; "0" = missing.
+  family_id <- if (!is.null(pops)) names(pops)[.pop_id_vector(H, pops)] else H$samples
+  ped_start <- paste(family_id, H$samples, "0", "0", "0", "-9")
+  allele_columns <- vector("list", 2L * n_rec)
   for (j in seq_len(n_rec)) {
-    al <- H$alleles[[j]]
-    a1 <- al[H$A1[j, ]]; a1[is.na(H$A1[j, ])] <- "0"
-    a2 <- al[H$A2[j, ]]; a2[is.na(H$A2[j, ])] <- "0"
-    allele_cols[[k]] <- a1; allele_cols[[k + 1L]] <- a2
-    k <- k + 2L
+    sequences <- H$alleles[[j]]
+    first <- sequences[H$A1[j, ]]
+    second <- sequences[H$A2[j, ]]
+    first[is.na(H$A1[j, ])] <- "0"
+    second[is.na(H$A2[j, ])] <- "0"
+    allele_columns[[2L * j - 1L]] <- first
+    allele_columns[[2L * j]] <- second
   }
-  writeLines(do.call(paste, c(list(ped_prefix), allele_cols)), paste0(path_prefix, ".ped"))
+  writeLines(do.call(paste, c(list(ped_start), allele_columns)), paste0(path_prefix, ".ped"))
 
-  if (verbose)
-    message(sprintf("Wrote %s.map and %s.ped (%s loci, %d individuals)",
-                    path_prefix, path_prefix, format(n_rec, big.mark = ","), ncol(H$A1)))
+  .inform(verbose, sprintf("Wrote %s.map and %s.ped (%s records, %d individuals)",
+                           path_prefix, path_prefix, .big(n_rec), ncol(H$A1)))
   invisible(path_prefix)
 }
 
 #' Write a (filtered) H as a STRUCTURE input file
 #'
-#' Writes the standard two-rows-per-individual STRUCTURE format (one row per
-#' allele copy). Confirmed against the official `structure` software
-#' documentation, including its missing-data code (`-9`).
+#' Writes the two-rows-per-individual STRUCTURE format (one row per allele
+#' copy), with STRUCTURE's missing-data code `-9`.
 #'
-#' @param H A list as returned by [read_stacks_vcf()].
-#' @param path Output file path.
-#' @param pops Optionally, a named list of sample-ID vectors (from
-#'   [read_popmap()]) giving each individual's population. Left `NULL`
-#'   (the default), every individual is written with a placeholder
-#'   population code of `1`.
-#' @param verbose Print a short summary once written. Default `TRUE`.
+#' @details The file has a locus-name row, a sample-label column and a
+#'   population column, so the STRUCTURE run's `mainparams` should set
+#'   `MARKERNAMES=1`, `LABEL=1` and `POPDATA=1`. Without `popmap` the
+#'   population column is a placeholder `1` for everyone.
+#' @inheritParams write_vcf
+#' @param popmap Optional: a popmap file path or the list returned by
+#'   [read_popmap()]. Default `NULL`: every individual gets population `1`.
 #' @return `path`, invisibly.
-#' @details This file always has BOTH a sample-label column and a
-#'   population column, so the matching STRUCTURE run's `mainparams` should
-#'   set `LABEL=1` and `POPDATA=1` (as well as `MARKERNAMES=1`, for the
-#'   locus-name header row this function writes). If `pops` was left
-#'   `NULL`, the population column is a constant placeholder -- `POPDATA=1`
-#'   can still be set (it just won't distinguish any real groups), or the
-#'   column can be deleted by hand if `POPDATA=0` is preferred instead.
 #' @examples
-#' H <- list(
-#'   A1 = matrix(c(1L, 2L), nrow = 1), A2 = matrix(c(1L, 2L), nrow = 1),
-#'   locus = "locus_1", n_alleles = 2L, samples = c("a1", "a2")
-#' )
+#' H <- read_stacks_vcf(system.file("extdata", "small.snps.vcf",
+#'                                  package = "RADdiversity"), verbose = FALSE)
+#' popmap <- system.file("extdata", "small_popmap.tsv", package = "RADdiversity")
 #' out <- tempfile()
-#' write_structure(H, out, verbose = FALSE)
-#' cat(readLines(out), sep = "\n")
+#' write_structure(H, out, popmap = popmap)
 #' @export
-write_structure <- function(H, path, pops = NULL, verbose = TRUE) {
+write_structure <- function(H, path, popmap = NULL, verbose = TRUE) {
+  H <- .resolve_H(H, verbose = FALSE)
+  .check_string(path, "path")
+  .check_flag(verbose, "verbose")
+  pops <- .writer_pops(H, popmap, required = FALSE, "STRUCTURE")
   n_samp <- ncol(H$A1)
   pop_id <- if (!is.null(pops)) .pop_id_vector(H, pops) else rep(1L, n_samp)
-  if (is.null(pops) && verbose)
-    message("write_structure(): no `pops` given -- every individual is written with a ",
-            "placeholder population code of 1 (see ?write_structure for the mainparams ",
-            "settings this file needs).")
+  if (is.null(pops))
+    .inform(verbose, "write_structure(): no `popmap` given -- every individual is written with a ",
+            "placeholder population code of 1 (see ?write_structure for the mainparams settings).")
 
-  ## STRUCTURE's own documented missing-data code is -9 (this package's own
-  ## NA has no meaning to STRUCTURE itself).
-  recode <- function(A) { A[is.na(A)] <- -9L; A }
-  A1c <- recode(H$A1); A2c <- recode(H$A2)
-
-  header <- paste(H$locus, collapse = "\t")
+  missing_as_minus_9 <- function(A) {
+    A[is.na(A)] <- -9L
+    A
+  }
+  A1 <- missing_as_minus_9(H$A1)
+  A2 <- missing_as_minus_9(H$A2)
   lines <- character(2L * n_samp)
   for (i in seq_len(n_samp)) {
-    ## Two rows per individual -- one for each allele copy -- both starting
-    ## with that individual's name and population code.
-    lines[2L * i - 1L] <- paste(c(H$samples[i], pop_id[i], A1c[, i]), collapse = "\t")
-    lines[2L * i]      <- paste(c(H$samples[i], pop_id[i], A2c[, i]), collapse = "\t")
+    ## Two rows per individual, one per allele copy, each starting with the
+    ## individual's name and population code.
+    lines[2L * i - 1L] <- paste(c(H$samples[i], pop_id[i], A1[, i]), collapse = "\t")
+    lines[2L * i] <- paste(c(H$samples[i], pop_id[i], A2[, i]), collapse = "\t")
   }
-  writeLines(c(header, lines), path)
-  if (verbose)
-    message(sprintf("Wrote %s (%s loci, %d individuals, 2 rows each)",
-                    path, format(nrow(H$A1), big.mark = ","), n_samp))
+  writeLines(c(paste(H$locus, collapse = "\t"), lines), path)
+  .inform(verbose, sprintf("Wrote %s (%s records, %d individuals, 2 rows each)",
+                           path, .big(nrow(H$A1)), n_samp))
   invisible(path)
 }
 
 #' Write a (filtered) H as a Genepop input file
 #'
-#' Writes the standard Genepop text layout: a title line, one locus-name
-#' line per locus, then each population introduced by a `POP` line followed
-#' by one line per individual. Confirmed against the official Genepop
-#' manual, including its missing-data code (all-zero allele codes, e.g.
-#' `0000`) and comma-after-sample-ID convention.
+#' Writes the Genepop text layout: a title line, one locus-name line per
+#' record, then for each population a `POP` line followed by one line per
+#' individual (`name ,` then its genotypes). Missing genotypes are all zeros
+#' (e.g. `0000`), as in the Genepop manual.
 #'
-#' @param H A list as returned by [read_stacks_vcf()].
-#' @param path Output file path.
-#' @param pops A named list of sample-ID vectors (from [read_popmap()]).
-#'   Required -- Genepop files are always organized into population blocks,
-#'   so unlike [write_structure()]/[write_plink()] there's no sensible
-#'   single-population default.
+#' @inheritParams write_vcf
+#' @param popmap A popmap file path or the list returned by [read_popmap()].
+#'   Required: Genepop files are organized by population.
 #' @param title Text for the file's first line. Default
 #'   `"RADdiversity export"`.
-#' @param verbose Print a short summary once written. Default `TRUE`.
 #' @return `path`, invisibly.
 #' @examples
-#' # Column (sample) names on A1/A2 matter here -- write_genepop() looks
-#' # up each population's samples by name, exactly as read_stacks_vcf()'s
-#' # real output always allows.
-#' H <- list(
-#'   A1 = matrix(c(1L, 2L), nrow = 1, dimnames = list(NULL, c("a1", "a2"))),
-#'   A2 = matrix(c(1L, 2L), nrow = 1, dimnames = list(NULL, c("a1", "a2"))),
-#'   locus = "locus_1", n_alleles = 2L, samples = c("a1", "a2")
-#' )
-#' pops <- list(popA = "a1", popB = "a2")
+#' H <- read_stacks_vcf(system.file("extdata", "small.haps.vcf",
+#'                                  package = "RADdiversity"), verbose = FALSE)
+#' popmap <- system.file("extdata", "small_popmap.tsv", package = "RADdiversity")
 #' out <- tempfile()
-#' write_genepop(H, out, pops = pops, verbose = FALSE)
-#' cat(readLines(out), sep = "\n")
+#' write_genepop(H, out, popmap = popmap)
+#' readLines(out)[1:3]
 #' @export
-write_genepop <- function(H, path, pops, title = "RADdiversity export", verbose = TRUE) {
-  if (is.null(pops))
-    stop("write_genepop() needs `pops` (a named list of sample IDs per population, e.g. ",
-         "from read_popmap()) -- Genepop files are always organized into population ",
-         "blocks; there is no sensible single-population default the way there is for ",
-         "write_structure()/write_plink().")
+write_genepop <- function(H, path, popmap = NULL, title = "RADdiversity export", verbose = TRUE) {
+  H <- .resolve_H(H, verbose = FALSE)
+  .check_string(path, "path")
+  .check_string(title, "title")
+  .check_flag(verbose, "verbose")
+  pops <- .writer_pops(H, popmap, required = TRUE, "Genepop")
+  .pop_id_vector(H, pops)                 # stops if a sample has no population
   width <- .digit_width(H)
-  codes <- .allele_code_matrix(H, width)
+  codes <- .genotype_codes(H, width)
 
-  ## Combine each individual's two allele codes into ONE genotype code per
-  ## locus, e.g. width 2, alleles 1 and 3 -> "0103". The smaller code is
-  ## always written first so the same underlying genotype is always written
-  ## the same way, regardless of which allele happened to be read first.
-  ## (matrix() re-wraps pmin()/pmax()'s result with the original row/column
-  ## layout explicitly, rather than relying on them to preserve it.)
-  lo <- matrix(pmin(codes$A1, codes$A2), nrow = nrow(codes$A1), dimnames = dimnames(codes$A1))
-  hi <- matrix(pmax(codes$A1, codes$A2), nrow = nrow(codes$A1), dimnames = dimnames(codes$A1))
-  geno <- matrix(paste0(lo, hi), nrow = nrow(codes$A1), dimnames = dimnames(codes$A1))
-  geno[is.na(H$A1) | is.na(H$A2)] <- strrep("0", 2L * width)  # Genepop's missing code
-
-  lines <- c(title, H$locus)
-  for (p in names(pops)) {
-    lines <- c(lines, "POP")
-    for (s in pops[[p]])
-      lines <- c(lines, paste0(s, " ,\t", paste(geno[, s], collapse = "\t")))
-  }
-  writeLines(lines, path)
-  if (verbose)
-    message(sprintf("Wrote %s (%s loci, %d populations, %d individuals, %d-digit allele codes)",
-                    path, format(nrow(H$A1), big.mark = ","), length(pops), ncol(H$A1), width))
+  ## One POP block per population; each individual's line is its name, " ,",
+  ## and its genotype codes.
+  individual_lines <- lapply(names(pops), function(p) {
+    c("POP", paste0(pops[[p]], " ,\t",
+                    apply(codes[, pops[[p]], drop = FALSE], 2L, paste, collapse = "\t")))
+  })
+  writeLines(c(title, H$locus, unlist(individual_lines)), path)
+  .inform(verbose, sprintf("Wrote %s (%s records, %d populations, %d individuals, %d-digit allele codes)",
+                           path, .big(nrow(H$A1)), length(pops), ncol(H$A1), width))
   invisible(path)
 }
 
 #' Write a (filtered) H as an FSTAT input file
 #'
-#' Writes the FSTAT text format used by FSTAT itself and by the `hierfstat`
-#' R package. When `hierfstat` is installed, this delegates to its own
-#' `write.fstat()` (reusing the exact genotype-coding data frame shape
-#' [diversity_stats()] already builds internally); otherwise an internal
-#' fallback writes the format directly. Both confirmed against `hierfstat`'s
-#' documented FSTAT format description.
+#' Writes the FSTAT text format read by FSTAT and by the `hierfstat` R
+#' package: a header line (number of populations, number of loci, largest
+#' number of alleles, digits per allele), one locus name per line, then one
+#' line per individual with its population number and genotype codes.
 #'
-#' @param H A list as returned by [read_stacks_vcf()].
-#' @param path Output file path.
-#' @param pops A named list of sample-ID vectors (from [read_popmap()]).
-#'   Required -- FSTAT's first data column is always the population number.
-#' @param verbose Print a short summary once written. Default `TRUE`.
+#' @inheritParams write_genepop
+#' @param popmap A popmap file path or the list returned by [read_popmap()].
+#'   Required: FSTAT's first data column is the population number.
 #' @return `path`, invisibly.
-#' @details When `hierfstat` is installed, this relies on its own
-#'   `write.fstat()`, which has a known limitation of its own with a
-#'   dataset of exactly ONE locus (it errors rather than writes a
-#'   one-column file) -- not something a real RADseq dataset (always many
-#'   loci) will ever run into, but worth knowing if you're experimenting
-#'   with a tiny hand-built `H` for testing.
 #' @examples
-#' H <- list(
-#'   A1 = matrix(c(1L, 2L, 1L, 1L), nrow = 2),
-#'   A2 = matrix(c(1L, 2L, 1L, 2L), nrow = 2),
-#'   locus = c("locus_1", "locus_2"), locus_raw = c("locus_1", "locus_2"),
-#'   n_alleles = c(2L, 2L), samples = c("a1", "a2")
-#' )
-#' pops <- list(popA = "a1", popB = "a2")
+#' H <- read_stacks_vcf(system.file("extdata", "small.haps.vcf",
+#'                                  package = "RADdiversity"), verbose = FALSE)
+#' popmap <- system.file("extdata", "small_popmap.tsv", package = "RADdiversity")
 #' out <- tempfile()
-#' write_fstat(H, out, pops = pops, verbose = FALSE)
-#' cat(readLines(out), sep = "\n")
+#' write_fstat(H, out, popmap = popmap)
+#' readLines(out)[1:3]
 #' @export
-write_fstat <- function(H, path, pops, verbose = TRUE) {
-  if (is.null(pops))
-    stop("write_fstat() needs `pops` (see ?write_genepop for why) -- FSTAT's first ",
-         "data column is always the population number.")
+write_fstat <- function(H, path, popmap = NULL, verbose = TRUE) {
+  H <- .resolve_H(H, verbose = FALSE)
+  .check_string(path, "path")
+  .check_flag(verbose, "verbose")
+  pops <- .writer_pops(H, popmap, required = TRUE, "FSTAT")
   pop_id <- .pop_id_vector(H, pops)
-  n_rec  <- nrow(H$A1)
-  n_samp <- ncol(H$A1)
-
-  if (.hierfstat_available()) {
-    ## Reuse hierfstat's own writer, fed the exact same genotype-coding
-    ## scheme diversity_stats() already builds internally for its hierfstat
-    ## calculations (pmin/pmax of the two allele numbers, glued together as
-    ## a 3-digit-per-allele integer, e.g. alleles 1 and 12 -> 1012) --
-    ## reusing an already-checked pattern rather than inventing a second one.
-    Gm <- matrix(NA_integer_, n_samp, n_rec)
-    for (j in seq_len(n_rec)) {
-      a <- H$A1[j, ]; b <- H$A2[j, ]
-      Gm[, j] <- pmin(a, b) * 1000L + pmax(a, b)
-    }
-    dat <- data.frame(pop = pop_id, Gm)
-    names(dat)[-1] <- H$locus
-    hierfstat::write.fstat(dat, fname = path)
-  } else {
-    ## No hierfstat installed -- write the FSTAT text format directly:
-    ##   line 1: population count, locus count, largest allele count seen,
-    ##           digit width
-    ##   next nl lines: one locus name each
-    ##   remaining lines: one per individual, population number then one
-    ##           genotype code per locus (both alleles glued together)
-    width <- .digit_width(H)
-    codes <- .allele_code_matrix(H, width)
-    lo <- matrix(pmin(codes$A1, codes$A2), nrow = n_rec, dimnames = dimnames(codes$A1))
-    hi <- matrix(pmax(codes$A1, codes$A2), nrow = n_rec, dimnames = dimnames(codes$A1))
-    geno <- matrix(paste0(lo, hi), nrow = n_rec, dimnames = dimnames(codes$A1))
-    geno[is.na(H$A1) | is.na(H$A2)] <- strrep("0", 2L * width)
-    nal <- max(locus_allele_stats(H)$n_observed_alleles, na.rm = TRUE)
-
-    data_lines <- vapply(seq_len(n_samp), function(i)
-      paste(pop_id[i], paste(geno[, i], collapse = " ")), character(1))
-    writeLines(c(sprintf("%d %d %d %d", length(pops), n_rec, nal, width), H$locus, data_lines), path)
-  }
-
-  if (verbose)
-    message(sprintf("Wrote %s (%s loci, %d populations, %d individuals)%s",
-                    path, format(n_rec, big.mark = ","), length(pops), n_samp,
-                    if (.hierfstat_available()) " via hierfstat::write.fstat()" else ""))
+  n_rec <- nrow(H$A1)
+  width <- .digit_width(H)
+  codes <- .genotype_codes(H, width)
+  max_alleles <- max(locus_allele_stats(H)$n_observed_alleles, 1L, na.rm = TRUE)
+  data_lines <- vapply(seq_len(ncol(H$A1)), function(i)
+    paste(pop_id[i], paste(codes[, i], collapse = " ")), character(1))
+  writeLines(c(sprintf("%d %d %d %d", length(pops), n_rec, max_alleles, width),
+               H$locus, data_lines), path)
+  .inform(verbose, sprintf("Wrote %s (%s records, %d populations, %d individuals)",
+                           path, .big(n_rec), length(pops), ncol(H$A1)))
   invisible(path)
 }
 
-#' Write a (filtered) H as a RADpainter/fineRADstructure input file
+#' Write a (filtered) H as a RADpainter / fineRADstructure input file
 #'
-#' Writes fineRADstructure's haplotype input format for its `RADpainter`
-#' program: a header line of sample names, then one line per RAD locus
-#' giving each individual's two haplotype alleles. Confirmed directly
-#' against two independent reference implementations of this format --
-#' `hapsFromVCF.cpp` (the fineRADstructure project's own converter) and the
-#' community `finerad_input.py` script -- which agree exactly on every
-#' detail, including the easy-to-miss ones: no leading blank column before
-#' the sample names, and a missing genotype is written as a completely
-#' EMPTY field (nothing between its two surrounding tabs), not `-9`, `?`,
-#' or any other placeholder text.
+#' Writes the haplotype input format of fineRADstructure's `RADpainter`: a
+#' header line of sample names, then one line per RAD locus with each
+#' individual's two haplotypes. The layout follows the fineRADstructure
+#' project's `hapsFromVCF.cpp` and the community `finerad_input.py` script:
+#' no blank column before the sample names, and a missing genotype written
+#' as an EMPTY field (nothing between its two tabs).
 #'
-#' RADpainter is a haplotype-based method, so this is only meaningful for a
-#' haplotype-type `H` (one multi-allelic record per RAD tag, e.g. from
-#' `populations.haps.vcf`) -- not a plain per-site SNP VCF.
+#' RADpainter uses haplotypes, so this is meant for a haplotype `H` (one
+#' multi-allelic record per RAD tag, from `populations.haps.vcf`).
 #'
-#' @param H A list as returned by [read_stacks_vcf()], ideally from a
+#' @inheritParams write_vcf
+#' @param H The object returned by [read_stacks_vcf()], ideally from a
 #'   haplotype VCF.
-#' @param path Output file path.
-#' @param verbose Print a short summary once written. Default `TRUE`.
 #' @return `path`, invisibly.
 #' @examples
-#' H <- list(
-#'   A1 = matrix(c(1L, 2L), nrow = 1), A2 = matrix(c(1L, 2L), nrow = 1),
-#'   locus = "locus_1", alleles = list(c("AACGT", "AACGG")),
-#'   n_alleles = 2L, samples = c("a1", "a2")
-#' )
+#' H <- read_stacks_vcf(system.file("extdata", "small.haps.vcf",
+#'                                  package = "RADdiversity"), verbose = FALSE)
 #' out <- tempfile()
-#' write_radpainter(H, out, verbose = FALSE)
-#' cat(readLines(out), sep = "\n")
+#' write_radpainter(H, out)
+#' readLines(out)[1:2]
 #' @export
 write_radpainter <- function(H, path, verbose = TRUE) {
-  ## Same heuristic diversity_stats() already uses to tell a haplotype VCF
-  ## from a SNP VCF: haplotype alleles are usually multi-letter sequences,
-  ## and/or a locus commonly has more than 2 of them. If NEITHER is true
-  ## anywhere in this dataset, it's very likely per-site SNP data instead --
-  ## still writeable, just probably not what RADpainter is meant to analyze.
-  looks_snp <- !.is_haplotype_H(H)
-  if (looks_snp && verbose)
-    message("write_radpainter(): every locus here looks biallelic with single-",
+  H <- .resolve_H(H, verbose = FALSE)
+  .check_string(path, "path")
+  .check_flag(verbose, "verbose")
+  if (!.is_haplotype_H(H))
+    .inform(verbose, "write_radpainter(): every record here is biallelic with single-",
             "nucleotide alleles, i.e. this looks like SNP data rather than RAD-tag ",
-            "haplotypes. RADpainter is meant to run on haplotypes (e.g. from ",
-            "populations.haps.vcf) -- double check this is the file you meant to use.")
-
-  n_rec  <- nrow(H$A1)
-  header <- paste(H$samples, collapse = "\t")
-
+            "haplotypes. RADpainter is meant for haplotypes (e.g. from ",
+            "populations.haps.vcf) -- check this is the file you meant to use.")
+  n_rec <- nrow(H$A1)
   lines <- character(n_rec)
   for (j in seq_len(n_rec)) {
-    al <- H$alleles[[j]]
-    a1 <- al[H$A1[j, ]]; a2 <- al[H$A2[j, ]]
-    ## Each individual's cell is its two haplotype alleles joined by "/";
-    ## a missing genotype becomes a totally empty cell, per the confirmed
-    ## reference format (see the function's help page for the sources).
-    cell <- paste0(a1, "/", a2)
+    sequences <- H$alleles[[j]]
+    ## An individual's cell is its two haplotypes joined by "/"; a missing
+    ## genotype is an empty cell.
+    cell <- paste0(sequences[H$A1[j, ]], "/", sequences[H$A2[j, ]])
     cell[is.na(H$A1[j, ]) | is.na(H$A2[j, ])] <- ""
     lines[j] <- paste(cell, collapse = "\t")
   }
-  writeLines(c(header, lines), path)
-  if (verbose)
-    message(sprintf("Wrote %s (%s RAD loci, %d samples)", path, format(n_rec, big.mark = ","), ncol(H$A1)))
+  writeLines(c(paste(H$samples, collapse = "\t"), lines), path)
+  .inform(verbose, sprintf("Wrote %s (%s RAD loci, %d samples)", path, .big(n_rec), ncol(H$A1)))
   invisible(path)
 }

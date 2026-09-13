@@ -2,23 +2,26 @@
 % Please edit documentation in R/selftest.R
 \name{diversity_core_selftest}
 \alias{diversity_core_selftest}
-\title{Check the estimators in R/estimators.R against brute-force Monte Carlo}
+\title{Check the estimators against brute-force Monte Carlo}
 \usage{
-diversity_core_selftest()
+diversity_core_selftest(verbose = TRUE)
+}
+\arguments{
+\item{verbose}{Print the report. Default \code{TRUE}.}
 }
 \value{
-Invisibly, \code{TRUE} if every check passed, \code{FALSE} otherwise. The
-caller's own RNG state is restored when this function returns, so
-calling it interactively does not affect subsequent random draws in
-the caller's session.
+Invisibly, a data frame with one row per check: \code{check}, \code{value},
+\code{expected}, \code{tolerance} and \code{pass}. \code{all(result$pass)} is \code{TRUE} when
+every check passed. Your own random-number state is left as it was.
 }
 \description{
-Reproduces the checks run by \verb{Rscript diversity_core.R --selftest}: every
-estimator here against brute-force Monte Carlo, and the Stacks formulas
-against real published Stacks output. Prints a report to the console.
+Runs the checks behind \verb{Rscript diversity_core.R --selftest}: every
+estimator in \link{estimators} against brute-force Monte Carlo, and the Stacks
+formulas against published Stacks output.
 }
 \examples{
 \donttest{
-diversity_core_selftest()   # about 20 seconds of Monte Carlo
+result <- diversity_core_selftest()   # about 20 seconds of Monte Carlo
+all(result$pass)
 }
 }

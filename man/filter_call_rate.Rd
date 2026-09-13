@@ -2,57 +2,47 @@
 % Please edit documentation in R/filter_loci.R
 \name{filter_call_rate}
 \alias{filter_call_rate}
-\title{Filter loci by genotyping (call) rate}
+\title{Filter records by genotyping (call) rate}
 \usage{
-filter_call_rate(H, min_call, pops = NULL, rule = "all", verbose = TRUE)
+filter_call_rate(H, min_call, popmap = NULL, rule = "all", verbose = TRUE)
 }
 \arguments{
-\item{H}{A list as returned by \code{\link[=read_stacks_vcf]{read_stacks_vcf()}}.}
+\item{H}{The object returned by \code{\link[=read_stacks_vcf]{read_stacks_vcf()}} (optionally filtered).}
 
-\item{min_call}{Minimum fraction of individuals that must be genotyped at
-a locus for it to be kept (a number between 0 and 1, e.g. \code{0.8} for
-80\%).}
+\item{min_call}{Minimum fraction of individuals genotyped to keep a record,
+a number from 0 to 1 (e.g. \code{0.8} for 80\%).}
 
-\item{pops}{Optionally, a named list of sample-ID vectors (the output of
-\code{\link[=read_popmap]{read_popmap()}}) to judge the call rate separately per population
-instead of pooling everyone together. Default \code{NULL} (pooled).}
+\item{popmap}{Optional: a popmap file path or the list returned by
+\code{\link[=read_popmap]{read_popmap()}}, to judge the call rate within each population. Default
+\code{NULL}: pooled over all individuals.}
 
-\item{rule}{Only used when \code{pops} is given. \code{"all"} (the default) keeps a
-locus only if EVERY population individually clears \code{min_call} there --
-the right choice if you're going to compare populations to each other
-afterwards, since a pooled or "any population" rule can let one
-well-covered population effectively borrow coverage from a poorly-
-covered one. \code{"any"} keeps a locus if AT LEAST ONE population clears
-it -- appropriate if each population's own results will be used
-independently rather than compared directly.}
+\item{rule}{Used only with \code{popmap}. \code{"all"} (default) keeps a record only
+if EVERY population clears \code{min_call} -- the right choice before
+comparing populations, because otherwise a well-covered population can
+carry a poorly covered one. \code{"any"} keeps a record if AT LEAST ONE
+population clears it -- appropriate when each population will be analyzed
+on its own.}
 
-\item{verbose}{Print how many loci were kept (and, with \code{pops}, a
-per-population breakdown). Default \code{TRUE}.}
+\item{verbose}{Print how many records were kept (and, with \code{popmap}, a
+breakdown by population). Default \code{TRUE}.}
 }
 \value{
-\code{H}, with only the loci that passed the filter kept.
+\code{H} with only the records that pass.
 }
 \description{
-Keeps only loci that were genotyped often enough. Without \code{pops}, "often
-enough" means across the whole dataset pooled together; with \code{pops}
-(population assignments from \code{\link[=read_popmap]{read_popmap()}}), it's judged separately in
-each population, which matters because a locus can look well-covered
-overall while actually being poorly covered in just one population --
-see \code{rule} below.
+Keeps only records genotyped in enough individuals. Without \code{popmap},
+"enough" is judged over all individuals pooled; with \code{popmap}, it is
+judged within each population, because a record can look well covered
+overall while being poorly covered in one population (see \code{rule}).
 }
 \details{
-This is a standalone, general-purpose version of a call-rate check --
-it does not change or replace the call-rate logic already built into
-\code{\link[=het_between_pops]{het_between_pops()}} (which is tuned specifically for that function's own
-diagnostics) or the \code{min_n}/\code{complete_case} logic in \code{\link[=diversity_stats]{diversity_stats()}}.
+This is independent of the call-rate rule inside \code{\link[=het_between_pops]{het_between_pops()}} and
+the \code{min_n} / \code{complete_case} rules of \code{\link[=diversity_stats]{diversity_stats()}}.
 }
 \examples{
-H <- list(
-  A1 = rbind(locus_1 = c(1, 1, 1, NA), locus_2 = c(1, NA, 1, NA)),
-  A2 = rbind(locus_1 = c(1, 1, 1, NA), locus_2 = c(2, NA, 1, NA)),
-  locus = c("locus_1", "locus_2"), locus_raw = c("locus_1", "locus_2"),
-  n_alleles = c(2L, 2L), samples = c("a1", "a2", "a3", "a4")
-)
-# locus_1 is genotyped in 3 of 4 samples (75\%); locus_2 only in 2 of 4 (50\%).
-filter_call_rate(H, min_call = 0.75, verbose = FALSE)$locus
+H <- read_stacks_vcf(system.file("extdata", "small.haps.vcf",
+                                 package = "RADdiversity"), verbose = FALSE)
+popmap <- system.file("extdata", "small_popmap.tsv", package = "RADdiversity")
+filter_call_rate(H, min_call = 0.75)                    # pooled
+filter_call_rate(H, min_call = 0.75, popmap = popmap)   # within each population
 }

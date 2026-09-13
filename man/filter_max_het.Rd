@@ -2,40 +2,32 @@
 % Please edit documentation in R/filter_loci.R
 \name{filter_max_het}
 \alias{filter_max_het}
-\title{Filter out loci with excessive heterozygosity}
+\title{Filter out records with excessive heterozygosity}
 \usage{
 filter_max_het(H, max_ho, verbose = TRUE)
 }
 \arguments{
-\item{H}{A list as returned by \code{\link[=read_stacks_vcf]{read_stacks_vcf()}}.}
+\item{H}{The object returned by \code{\link[=read_stacks_vcf]{read_stacks_vcf()}} (optionally filtered).}
 
-\item{max_ho}{Maximum allowed observed heterozygosity at a locus (a
-number between 0 and 1, e.g. \code{0.5}). A locus above this is dropped.}
+\item{max_ho}{Maximum observed heterozygosity at a record, a number from 0
+to 1 (e.g. \code{0.5}). Records above it are dropped.}
 
-\item{verbose}{Print how many loci were kept. Default \code{TRUE}.}
+\item{verbose}{Print how many records were kept. Default \code{TRUE}.}
 }
 \value{
-\code{H}, with only the loci that passed the filter kept. A locus with
-no genotyped individuals at all is kept (not dropped) by this filter,
-since "no data" is not the same claim as "too much heterozygosity" --
-use \code{\link[=filter_call_rate]{filter_call_rate()}} if you also want to remove those.
+\code{H} with only the records that pass. A record with no genotyped
+individual is kept ("no data" is not "too heterozygous"); use
+\code{\link[=filter_call_rate]{filter_call_rate()}} to remove those.
 }
 \description{
-Drops loci where an unusually large share of individuals are called
-heterozygous. Real heterozygosity has a biological ceiling; a locus far
-above it is the classic signature of an undetected paralog (two
-similar-looking genomic regions being misread as one locus) or a
-collapsed repeat, both of which produce fake "heterozygous" calls that
-are really two different genes/copies being confused for two alleles of
-the same one.
+Drops records where an unusually large share of individuals are
+heterozygous. Real heterozygosity has a biological ceiling; a record far
+above it is the classic sign of an undetected paralog or collapsed repeat,
+where two similar genomic regions are read as one locus and their
+differences look like two alleles.
 }
 \examples{
-H <- list(
-  A1 = rbind(locus_1 = c(1, 1, 1, 1), locus_2 = c(1, 2, 1, 2)),
-  A2 = rbind(locus_1 = c(1, 1, 1, 1), locus_2 = c(2, 1, 2, 1)),
-  locus = c("locus_1", "locus_2"), locus_raw = c("locus_1", "locus_2"),
-  n_alleles = c(2L, 2L), samples = c("a1", "a2", "a3", "a4")
-)
-# locus_2 is heterozygous in all 4 samples (Ho = 1) -- dropped at max_ho = 0.6:
-filter_max_het(H, max_ho = 0.6, verbose = FALSE)$locus
+H <- read_stacks_vcf(system.file("extdata", "small.haps.vcf",
+                                 package = "RADdiversity"), verbose = FALSE)
+filter_max_het(H, max_ho = 0.7)
 }

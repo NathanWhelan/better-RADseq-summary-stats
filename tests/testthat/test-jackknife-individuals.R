@@ -27,7 +27,7 @@ test_that("with complete data, the individual SE of Ho is exactly sd(het)/sqrt(n
   d <- sim_two_pops(rep(0.1, 12), 300, seed = 1)
   res <- expect_no_warning(run_ind(d))     # no mismatch with the point estimates
   hA <- colMeans(d$H$A1[, 1:6] != d$H$A2[, 1:6])
-  expect_equal(res$per_population$Ho_se_ind[1], round(sd(hA) / sqrt(6), 4))
+  expect_equal(res$per_population$Ho_se_ind[1], sd(hA) / sqrt(6))
   expect_true(all(c("Ho_se_ind", "He_se_ind", "Fis_se_ind") %in% names(res$per_population)))
   expect_true(all(c("Ar_se_ind", "privAr_se_ind") %in% names(res$richness)))
   ## each _se_ind sits right after its locus-based _se
@@ -52,8 +52,8 @@ test_that("Ar/privAr individual SEs are NA when removing one individual leaves f
 
 test_that("the report explains the _se_ind columns only when they are there", {
   d <- sim_two_pops(rep(0.1, 12), 200, seed = 5)
-  expect_true(any(grepl("_se_ind columns", capture.output(print(run_ind(d))))))
+  expect_true(any(grepl("_se_ind columns", capture.output(print(summary(run_ind(d)))))))
   plain <- suppressMessages(diversity_stats(d$H, d$popmap, g = 4, nboot = 0, stem = "j"))
-  expect_false(any(grepl("_se_ind", capture.output(print(plain)))))
+  expect_false(any(grepl("_se_ind", capture.output(print(summary(plain))))))
   expect_false("Ho_se_ind" %in% names(plain$per_population))
 })

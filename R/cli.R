@@ -15,7 +15,10 @@
 #
 #  Nothing here calls quit(): .cli_main() returns the exit status and the
 #  shim quits with it, so these functions stay safe to call from an
-#  interactive R session.
+#  interactive R session. The scripts print the full report (summary() of
+#  the result) and write their tables to --outdir (default: the current
+#  directory). Their bootstraps use --seed=2024 unless told otherwise, so a
+#  script run is reproducible by default.
 #
 ###############################################################################
 
@@ -38,12 +41,13 @@
     "  --min-n=N        minimum typed individuals per population per locus",
     "                   (default 2)",
     "  --outdir=DIR     where to write the TSV files (default: current directory)",
+    "  --seed=N         random seed for the bootstrap (default 2024)",
     "  --complete-case  use a record only if every individual of every",
     "                   population is genotyped there (Schmidt et al. 2021)",
     "  --se-individuals also report delete-one-individual jackknife SEs",
     "                   (report these when individuals differ in inbreeding)"),
   het_between_pops = c(
-    "Usage: Rscript het_between_pops.R <vcf> <popmap.tsv> [--min-call=X] [--outdir=DIR]",
+    "Usage: Rscript het_between_pops.R <vcf> <popmap.tsv> [--min-call=X] [--outdir=DIR] [--seed=N]",
     "       Rscript het_between_pops.R <vcf> <popmap.tsv> [min_call] [outdir]",
     "       Rscript het_between_pops.R --selftest",
     "",
@@ -54,7 +58,8 @@
     "  --min-call=X   minimum fraction of individuals genotyped at a locus,",
     "                 within each population, for the locus to be used",
     "                 (default 0.9)",
-    "  --outdir=DIR   where to write the TSV files (default: current directory)"),
+    "  --outdir=DIR   where to write the TSV files (default: current directory)",
+    "  --seed=N       random seed for the g2 bootstrap (default 2024)"),
   diversity_core = c(
     "Usage: Rscript diversity_core.R --selftest",
     "",
@@ -66,7 +71,9 @@
 ## names in `flag_names`), bare --switches (only names in `switches`) and
 ## positional arguments. Anything else is an error that names the fix.
 .cli_parse <- function(args, flag_names = character(), switches = character()) {
-  flags <- list(); on <- character(); positional <- character()
+  flags <- list()
+  on <- character()
+  positional <- character()
   for (a in args) {
     nm <- sub("^--", "", a)
     m <- regmatches(a, regexec("^--([a-z-]+)=(.*)$", a))[[1]]
@@ -91,14 +98,23 @@
 }
 
 ## Not exported. `--sites=` is one number or a path to
-## populations.sumstats_summary.tsv. Command-line values always arrive as
-## text, and diversity_stats() reads any text as a file path, so a number
-## must be converted here first (without this, --sites=123456 failed with
-## "file not found: 123456").
+## populations.sumstats_summary.tsv. Command-line values arrive as text, and
+## diversity_stats() reads text as a file path, so a number is converted
+## here first.
 .cli_sites <- function(x) {
-  if (is.null(x)) return(0)
-  num <- suppressWarnings(as.numeric(x))
-  if (is.na(num)) x else num
+  if (is.null(x)) return(NULL)
+  number <- suppressWarnings(as.numeric(x))
+  if (is.na(number)) x else number
+}
+
+## Not exported. A numeric command-line flag: `default` when absent, otherwise
+## the text converted to a number (stopping with the flag's name if it is not
+## one). The analysis function then checks the value's range.
+.cli_number <- function(x, flag, default) {
+  if (is.null(x)) return(default)
+  number <- suppressWarnings(as.numeric(x))
+  if (is.na(number)) stop("--", flag, " must be a number (got: ", x, ").", call. = FALSE)
+  number
 }
 
 ## Not exported. Runs one command-line command and returns its exit status
@@ -106,44 +122,68 @@
 ## "Error: ..." message and status 1.
 .cli_main <- function(cmd, args) {
   usage <- function() cat(.cli_usage[[cmd]], sep = "\n")
+  ## Wide output, so report tables are not split across lines in a terminal
+  ## or log file. Restored when the command finishes.
+  old_options <- options(width = max(200L, getOption("width")))
+  on.exit(options(old_options), add = TRUE)
+
   run <- switch(cmd,
     diversity_stats = function() {
-      p <- .cli_parse(args, c("g", "nboot", "boot", "sites", "min-n", "outdir"),
+      p <- .cli_parse(args, c("g", "nboot", "boot", "sites", "min-n", "outdir", "seed"),
                       c("complete-case", "se-individuals"))
-      if (length(p$positional) != 2L) { usage(); return(1L) }
-      f <- p$flags
-      if (is.null(f$g)) {
+      if (length(p$positional) != 2L) {
+        usage()
+        return(1L)
+      }
+      f <- p$flags   # [[ ]] rather than $, which would also match abbreviations
+      if (is.null(f[["g"]])) {
         usage()
         stop("Missing required --g=N (rarefaction size in gene copies).", call. = FALSE)
       }
-      print(diversity_stats(p$positional[1], p$positional[2], g = f$g,
-                            nboot  = if (is.null(f$nboot)) 10000L else f$nboot,
-                            boot   = if (is.null(f$boot)) "loci" else f$boot,
-                            sites  = .cli_sites(f$sites),
-                            min_n  = if (is.null(f[["min-n"]])) 2L else f[["min-n"]],
-                            complete_case = "complete-case" %in% p$switches,
-                            se_individuals = "se-individuals" %in% p$switches,
-                            outdir = if (is.null(f$outdir)) "." else f$outdir))
+      result <- diversity_stats(p$positional[1], p$positional[2],
+                                g = .cli_number(f[["g"]], "g", NULL),
+                                nboot = .cli_number(f[["nboot"]], "nboot", 10000L),
+                                boot = if (is.null(f[["boot"]])) "loci" else f[["boot"]],
+                                sites = .cli_sites(f[["sites"]]),
+                                min_n = .cli_number(f[["min-n"]], "min-n", 2L),
+                                complete_case = "complete-case" %in% p$switches,
+                                se_individuals = "se-individuals" %in% p$switches,
+                                outdir = if (is.null(f[["outdir"]])) "." else f[["outdir"]],
+                                seed = .cli_number(f[["seed"]], "seed", 2024L))
+      print(summary(result))
       0L
     },
     het_between_pops = function() {
-      p <- .cli_parse(args, c("min-call", "outdir"), "selftest")
-      if ("selftest" %in% p$switches) { het_between_pops_selftest(); return(0L) }
-      pos <- p$positional
-      if (length(pos) < 2L || length(pos) > 4L) { usage(); return(1L) }
+      p <- .cli_parse(args, c("min-call", "outdir", "seed"), "selftest")
+      if ("selftest" %in% p$switches) {
+        het_between_pops_selftest()
+        return(0L)
+      }
+      positional <- p$positional
+      if (length(positional) < 2L || length(positional) > 4L) {
+        usage()
+        return(1L)
+      }
       ## Flags win; the older positional form (<vcf> <popmap> [min_call]
-      ## [outdir]) still works.
+      ## [outdir]) also works.
       min_call <- p$flags[["min-call"]]
-      if (is.null(min_call)) min_call <- if (length(pos) >= 3L) pos[3] else 0.9
-      outdir <- p$flags$outdir
-      if (is.null(outdir)) outdir <- if (length(pos) >= 4L) pos[4] else "."
-      print(het_between_pops(pos[1], pos[2], min_call = min_call, outdir = outdir))
+      if (is.null(min_call) && length(positional) >= 3L) min_call <- positional[3]
+      outdir <- p$flags[["outdir"]]
+      if (is.null(outdir)) outdir <- if (length(positional) >= 4L) positional[4] else "."
+      result <- het_between_pops(positional[1], positional[2],
+                                 min_call = .cli_number(min_call, "min-call", 0.9),
+                                 outdir = outdir,
+                                 seed = .cli_number(p$flags[["seed"]], "seed", 2024L))
+      print(summary(result))
       0L
     },
     diversity_core = function() {
       p <- .cli_parse(args, switches = "selftest")
-      if (!("selftest" %in% p$switches)) { usage(); return(1L) }
-      if (isTRUE(diversity_core_selftest())) 0L else 1L
+      if (!("selftest" %in% p$switches)) {
+        usage()
+        return(1L)
+      }
+      if (all(diversity_core_selftest()$pass)) 0L else 1L
     },
     stop("Unknown command: ", cmd, call. = FALSE))
   tryCatch(run(), error = function(e) {

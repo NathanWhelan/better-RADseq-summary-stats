@@ -55,14 +55,16 @@ locus.}
 
 \item{het_per_snp}{Heterozygosity per variant record.}
 
-\item{n_snps_used}{Number of variant (SNP) records called in the dataset
--- all of them, not only those retained for estimating \code{het_per_snp}
-(the mean over the retained records estimates the mean over all).}
+\item{n_snps_used}{Number of variant (SNP) sites at which the population
+has at least one genotyped individual -- Stacks' \code{Variant_Sites} in the
+"All positions (variant and fixed)" block -- not only those retained for
+estimating \code{het_per_snp} (the mean over the retained records estimates
+the mean over all). One value, or one per element of \code{het_per_snp}.}
 
-\item{n_sites_sequenced}{Total sequenced sites, variant and fixed: the
-\code{Sites} column of the "All positions (variant and fixed)" block of
-\code{populations.sumstats_summary.tsv}. One value, or one per element of
-\code{het_per_snp}.}
+\item{n_sites_sequenced}{Sequenced sites, variant and fixed, at which the
+population has at least one genotyped individual: the \code{Sites} column of
+the same block of \code{populations.sumstats_summary.tsv}. One value, or one
+per element of \code{het_per_snp}.}
 
 \item{g}{Rarefaction size in gene copies.}
 

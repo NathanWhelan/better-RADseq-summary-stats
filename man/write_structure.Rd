@@ -4,17 +4,17 @@
 \alias{write_structure}
 \title{Write a (filtered) H as a STRUCTURE input file}
 \usage{
-write_structure(H, path, pops = NULL, verbose = TRUE)
+write_structure(H, path, popmap = NULL, verbose = TRUE)
 }
 \arguments{
-\item{H}{A list as returned by \code{\link[=read_stacks_vcf]{read_stacks_vcf()}}.}
+\item{H}{The object returned by \code{\link[=read_stacks_vcf]{read_stacks_vcf()}} (optionally filtered).
+It must still contain \verb{$fields}, the original VCF columns.}
 
-\item{path}{Output file path.}
+\item{path}{Output file path. A name ending in \code{.gz} writes a
+gzip-compressed file.}
 
-\item{pops}{Optionally, a named list of sample-ID vectors (from
-\code{\link[=read_popmap]{read_popmap()}}) giving each individual's population. Left \code{NULL}
-(the default), every individual is written with a placeholder
-population code of \code{1}.}
+\item{popmap}{Optional: a popmap file path or the list returned by
+\code{\link[=read_popmap]{read_popmap()}}. Default \code{NULL}: every individual gets population \code{1}.}
 
 \item{verbose}{Print a short summary once written. Default \code{TRUE}.}
 }
@@ -22,25 +22,19 @@ population code of \code{1}.}
 \code{path}, invisibly.
 }
 \description{
-Writes the standard two-rows-per-individual STRUCTURE format (one row per
-allele copy). Confirmed against the official \code{structure} software
-documentation, including its missing-data code (\code{-9}).
+Writes the two-rows-per-individual STRUCTURE format (one row per allele
+copy), with STRUCTURE's missing-data code \code{-9}.
 }
 \details{
-This file always has BOTH a sample-label column and a
-population column, so the matching STRUCTURE run's \code{mainparams} should
-set \code{LABEL=1} and \code{POPDATA=1} (as well as \code{MARKERNAMES=1}, for the
-locus-name header row this function writes). If \code{pops} was left
-\code{NULL}, the population column is a constant placeholder -- \code{POPDATA=1}
-can still be set (it just won't distinguish any real groups), or the
-column can be deleted by hand if \code{POPDATA=0} is preferred instead.
+The file has a locus-name row, a sample-label column and a
+population column, so the STRUCTURE run's \code{mainparams} should set
+\code{MARKERNAMES=1}, \code{LABEL=1} and \code{POPDATA=1}. Without \code{popmap} the
+population column is a placeholder \code{1} for everyone.
 }
 \examples{
-H <- list(
-  A1 = matrix(c(1L, 2L), nrow = 1), A2 = matrix(c(1L, 2L), nrow = 1),
-  locus = "locus_1", n_alleles = 2L, samples = c("a1", "a2")
-)
+H <- read_stacks_vcf(system.file("extdata", "small.snps.vcf",
+                                 package = "RADdiversity"), verbose = FALSE)
+popmap <- system.file("extdata", "small_popmap.tsv", package = "RADdiversity")
 out <- tempfile()
-write_structure(H, out, verbose = FALSE)
-cat(readLines(out), sep = "\n")
+write_structure(H, out, popmap = popmap)
 }

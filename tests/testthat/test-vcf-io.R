@@ -16,9 +16,34 @@ test_that("read_popmap() splits samples by population", {
   expect_equal(lengths(pops), c(popA = 4L, popB = 3L))
 })
 
-test_that("read_haps_vcf() still works but says it is deprecated", {
-  expect_warning(H <- read_haps_vcf(fx("small.haps.vcf"), verbose = FALSE), "read_stacks_vcf")
-  expect_equal(nrow(H$A1), 80L)
+test_that("printing the data object gives a short summary, not the matrices", {
+  H <- read_stacks_vcf(fx("small.haps.vcf"), verbose = FALSE)
+  expect_s3_class(H, "raddiv_vcf")
+  out <- capture.output(print(H))
+  expect_lt(length(out), 20)
+  expect_true(any(grepl("80 records on 80 RAD loci; 7 samples", out, fixed = TRUE)))
+})
+
+test_that("read_stacks_vcf() explains a VCF with no sample columns", {
+  f <- tempfile(fileext = ".vcf")
+  writeLines(c("#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT",
+               "1\t1\tx\tA\tC\t.\tPASS\t.\tGT"), f)
+  expect_error(read_stacks_vcf(f, verbose = FALSE), "no sample columns")
+})
+
+test_that("read_popmap() keeps every sample when `samples` is not given", {
+  pops <- read_popmap(fx("small_popmap.tsv"), verbose = FALSE)
+  expect_equal(lengths(pops), c(popA = 4L, popB = 3L))
+})
+
+test_that("a popmap can be given as a path or as the list from read_popmap(), with the same result", {
+  H <- read_stacks_vcf(fx("small.haps.vcf"), verbose = FALSE)
+  pops <- read_popmap(fx("small_popmap.tsv"), verbose = FALSE)
+  by_path <- diversity_stats(H, fx("small_popmap.tsv"), g = 4, nboot = 0, verbose = FALSE)
+  by_list <- diversity_stats(H, pops, g = 4, nboot = 0, verbose = FALSE)
+  expect_identical(by_path$per_population, by_list$per_population)
+  expect_error(diversity_stats(H, list(c("popA_1", "popA_2")), g = 4, verbose = FALSE),
+               "named list")
 })
 
 test_that("an H list needs a stem only when files are written", {
@@ -75,7 +100,7 @@ test_that("locus_from can be set explicitly, and says what is wrong when it cann
   expect_equal(loci_of(ref, locus_from = "CHROM"), c("chr1", "chr1", "chr2"))
   expect_equal(length(unique(loci_of(ref, locus_from = "window", window_bp = 1e5))), 2L)
   expect_error(loci_of(ref, locus_from = "ID"), "some records have no ID")
-  expect_error(loci_of(ref, locus_from = "tag"), "locus_from must be one of")
+  expect_error(loci_of(ref, locus_from = "tag"), "must be one of")
 })
 
 test_that(".resolve_H() passes a path through to read_stacks_vcf() and an H list straight through", {
@@ -107,7 +132,7 @@ test_that("diversity_stats()/het_between_pops() accept a pre-parsed H list in pl
   res <- suppressMessages(capture.output(
     result <- diversity_stats(H, fx("small_popmap.tsv"), g = 4, nboot = 10, outdir = outdir, stem = "test")
   ))
-  expect_named(result, c("per_population", "richness", "autosomal"))
+  expect_s3_class(result, "raddiv_diversity")
   expect_true(file.exists(file.path(outdir, "diversity_per_population.test.tsv")))
 
   expect_error(
@@ -118,6 +143,6 @@ test_that("diversity_stats()/het_between_pops() accept a pre-parsed H list in pl
     het_result <- het_between_pops(H, fx("small_popmap.tsv"), min_call = 0.5,
                                    outdir = outdir, stem = "test")
   ))
-  expect_named(het_result, c("individual_heterozygosity", "pairwise_tests", "pairwise_F_tests"))
+  expect_s3_class(het_result, "raddiv_het")
   expect_true(file.exists(file.path(outdir, "individual_heterozygosity.test.tsv")))
 })

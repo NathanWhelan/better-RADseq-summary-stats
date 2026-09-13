@@ -7,12 +7,11 @@
 write_vcf(H, path, verbose = TRUE)
 }
 \arguments{
-\item{H}{A list as returned by \code{\link[=read_stacks_vcf]{read_stacks_vcf()}}. Must still have its
-\code{fields} element (present by default; only missing if \code{H} was built by
-hand rather than from a real VCF file).}
+\item{H}{The object returned by \code{\link[=read_stacks_vcf]{read_stacks_vcf()}} (optionally filtered).
+It must still contain \verb{$fields}, the original VCF columns.}
 
-\item{path}{Output file path. Ending it in \code{.gz} writes a gzip-compressed
-file, same as \code{\link[=read_stacks_vcf]{read_stacks_vcf()}} can read back in.}
+\item{path}{Output file path. A name ending in \code{.gz} writes a
+gzip-compressed file.}
 
 \item{verbose}{Print a short summary once written. Default \code{TRUE}.}
 }
@@ -20,32 +19,20 @@ file, same as \code{\link[=read_stacks_vcf]{read_stacks_vcf()}} can read back in
 \code{path}, invisibly.
 }
 \description{
-Serializes \code{H} -- including any changes made by \code{\link[=filter_maf]{filter_maf()}},
-\code{\link[=filter_low_conf_alt]{filter_low_conf_alt()}}, or any other filter in this package -- back into
-a valid VCF file, so it can be re-read with \code{\link[=read_stacks_vcf]{read_stacks_vcf()}} or handed to
-another VCF-based tool.
+Writes \code{H}, including any changes made by the \verb{filter_*()} functions, as a
+VCF file that \code{\link[=read_stacks_vcf]{read_stacks_vcf()}} or other VCF tools can read.
 }
 \details{
-Only the \code{GT} (genotype) values are ever rewritten from \code{H$A1}/\code{H$A2}
-themselves. Everything else in each record (\code{QUAL}, \code{FILTER}, \code{INFO}, and
-the original \code{AD}/\code{DP}/etc. per-sample values) is copied through
-unchanged from the ORIGINAL file, because a filter like
-\code{\link[=filter_low_conf_alt]{filter_low_conf_alt()}} can change which genotype is recorded at a cell
-without knowing (or needing to know) how to update every other per-cell
-value that used to describe the old genotype -- writing them out anyway
-would silently mislead anyone reading them back. For that reason, the
-\code{FORMAT} column in the file this writes is always just \code{GT}.
+Only the genotypes (\code{GT}) are written from \code{H$A1}/\code{H$A2}. \code{QUAL}, \code{FILTER}
+and \code{INFO} are copied from the original file, but per-sample fields such as
+\code{AD} and \code{DP} are NOT: a filter such as \code{\link[=filter_low_conf_alt]{filter_low_conf_alt()}} can change a
+genotype without updating those values, and writing them would mislead
+anyone reading the file. The \code{FORMAT} column is therefore always \code{GT}.
 }
 \examples{
-vcf_lines <- c(
-  "##fileformat=VCFv4.2",
-  "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tind1\tind2",
-  "un\t1\tlocus_1\tA\tC\t.\tPASS\t.\tGT\t0/0\t0/1"
-)
-in_file <- tempfile(fileext = ".vcf")
-writeLines(vcf_lines, in_file)
-H <- read_stacks_vcf(in_file, verbose = FALSE)
+H <- read_stacks_vcf(system.file("extdata", "small.haps.vcf",
+                                 package = "RADdiversity"), verbose = FALSE)
 out_file <- tempfile(fileext = ".vcf")
-write_vcf(H, out_file, verbose = FALSE)
-cat(readLines(out_file), sep = "\n")
+write_vcf(H, out_file)
+head(readLines(out_file), 4)
 }

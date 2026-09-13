@@ -1,18 +1,26 @@
 Package: RADdiversity
 Title: Population Genetic Statistics from RAD-Seq Data
 Version: 0.1.0
-Authors@R: person("Nathan", "Whelan", email = "nathan.whelan@gmail.com", role = c("aut", "cre"))
+Authors@R: c(
+    person("Nathan", "Whelan", email = "nathan.whelan@gmail.com", role = c("aut", "cre")),
+    person("David", "Winter", role = "cph",
+           comment = "author of the 'mmod' code adapted in the internal Jost's D function")
+  )
 Description: Population-genetic summary statistics from RAD-seq data,
     designed around 'Stacks' 2 'populations' VCF output. Computes observed
-    and expected heterozygosity (Nei and Chesser 1983), FIS as a ratio of
-    sums, rarefied allelic and private allelic richness, per-sequenced-site
-    heterozygosity, and Weir and Cockerham FST and Jost's D, with block
+    and expected heterozygosity (Nei and Chesser (1983)
+    <doi:10.1111/j.1469-1809.1983.tb00993.x>), FIS as a ratio of sums,
+    rarefied allelic and private allelic richness (Kalinowski (2004)
+    <doi:10.1023/B:COGE.0000041021.91777.1a>), per-sequenced-site
+    heterozygosity (Schmidt et al. (2021) <doi:10.1111/2041-210X.13659>),
+    and Weir and Cockerham (1984) <doi:10.1111/j.1558-5646.1984.tb05657.x>
+    FST and Jost (2008) <doi:10.1111/j.1365-294X.2008.03887.x> D, with block
     jackknife standard errors and block bootstrap confidence intervals over
     RAD loci. Tests whether populations differ in heterozygosity using the
     individual, not the locus, as the unit of replication. Also provides
     locus and genotype filters, an exact Hardy-Weinberg test, a kinship
-    screen, and export to PLINK, STRUCTURE, Genepop, FSTAT, RADpainter and
-    VCF formats.
+    screen, and export to 'PLINK', 'STRUCTURE', 'Genepop', 'FSTAT',
+    'RADpainter' and VCF formats.
 License: MIT + file LICENSE
 Language: en-US
 Encoding: UTF-8

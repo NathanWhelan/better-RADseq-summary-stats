@@ -4,36 +4,27 @@
 \alias{low_conf_alt_sensitivity}
 \title{Sensitivity table for the low-confidence-ALT threshold}
 \usage{
-low_conf_alt_sensitivity(H, thresholds = c(1, 2, 3, 4, 5, 10), calls = NULL)
+low_conf_alt_sensitivity(H, thresholds = c(1, 2, 3, 4, 5, 10))
 }
 \arguments{
-\item{H}{A list as returned by \code{\link[=read_stacks_vcf]{read_stacks_vcf()}}.}
+\item{H}{The object returned by \code{\link[=read_stacks_vcf]{read_stacks_vcf()}} (optionally filtered).
+It must still contain \verb{$fields}, the raw VCF columns, which hold the AD
+(allele depth) values.}
 
-\item{thresholds}{Which \code{min_alt_reads} values to try. Default
+\item{thresholds}{The \code{min_alt_reads} values to try. Default
 \code{c(1, 2, 3, 4, 5, 10)}.}
-
-\item{calls}{Optionally, a precomputed result from the internal
-\code{.parse_alt_ad()} helper (see \code{\link[=filter_low_conf_alt]{filter_low_conf_alt()}}'s matching
-argument). Left \code{NULL} (the default), it's computed automatically.}
 }
 \value{
-A data frame with one row per threshold: \verb{threshold, n_flagged, pct_flagged, total_usable} (the last two out of every ALT-containing
-call whose AD value could actually be read).
+A data frame with one row per threshold: \code{threshold}, \code{n_flagged},
+\code{pct_flagged} and \code{total_usable} (ALT-containing calls whose AD could be
+read).
 }
 \description{
-Ports the Python script's \code{--sensitivity-table} option: for a range of
-possible \code{min_alt_reads} thresholds, shows how many ALT-containing
-genotype calls would be flagged. Useful for picking a threshold for
-\code{\link[=filter_low_conf_alt]{filter_low_conf_alt()}} before committing to one.
+For a range of \code{min_alt_reads} thresholds, how many ALT-containing genotype
+calls \code{\link[=filter_low_conf_alt]{filter_low_conf_alt()}} would flag. Use it to choose a threshold.
 }
 \examples{
-vcf_lines <- c(
-  "##fileformat=VCFv4.2",
-  "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tind1\tind2",
-  "un\t1\tlocus_1\tA\tC\t.\tPASS\t.\tGT:AD:DP\t0/0:10,0:10\t0/1:9,1:10"
-)
-vcf_file <- tempfile(fileext = ".vcf")
-writeLines(vcf_lines, vcf_file)
-H <- read_stacks_vcf(vcf_file, verbose = FALSE)
+H <- read_stacks_vcf(system.file("extdata", "small.haps.vcf",
+                                 package = "RADdiversity"), verbose = FALSE)
 low_conf_alt_sensitivity(H)
 }

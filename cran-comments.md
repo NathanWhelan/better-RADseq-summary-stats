@@ -49,4 +49,8 @@ the regression test's tolerance for those two columns was loosened
 * `inst/NOTICE` documents that one internal (non-exported) helper,
   `.jost_hsht()` in `R/differentiation_stats.R`, adapts the expression of a
   published formula from the MIT-licensed `mmod` package, with full
-  attribution; `mmod` is not a runtime dependency.
+  attribution; the author of that code is listed in `Authors@R` with the
+  `cph` role. `mmod` is not a runtime dependency.
+* Functions that use random numbers do not set a seed unless the user passes
+  `seed`; when they do, the user's random-number state is restored on exit.
+  Progress messages use `message()` and are silenced by `verbose = FALSE`.

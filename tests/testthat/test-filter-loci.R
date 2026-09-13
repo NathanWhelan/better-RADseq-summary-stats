@@ -92,31 +92,31 @@ test_that("filter_maf()/filter_mac() keep a locus exactly AT the threshold", {
   expect_equal(filter_mac(H, min_mac = 2, verbose = FALSE)$locus, "locus_2")
 })
 
-test_that("filter_maf()/filter_mac() drop a no-data locus and accept a precomputed `stats`", {
+test_that("filter_maf()/filter_mac() drop a no-data locus and accept a precomputed `allele_stats`", {
   H <- make_H(
     A1 = rbind(has_data = c(1L, 2L), no_data = c(NA, NA)),
     A2 = rbind(has_data = c(1L, 2L), no_data = c(NA, NA)),
     samples = c("s1", "s2")
   )
   st <- locus_allele_stats(H)
-  expect_equal(filter_maf(H, min_maf = 0, stats = st, verbose = FALSE)$locus, "has_data")
-  expect_equal(filter_mac(H, min_mac = 0, stats = st, verbose = FALSE)$locus, "has_data")
+  expect_equal(filter_maf(H, min_maf = 0, allele_stats = st, verbose = FALSE)$locus, "has_data")
+  expect_equal(filter_mac(H, min_mac = 0, allele_stats = st, verbose = FALSE)$locus, "has_data")
 })
 
-test_that("filter_maf()/filter_mac() reject a `stats` that doesn't match H, and error when nothing survives", {
+test_that("filter_maf()/filter_mac() reject an `allele_stats` that doesn't match H, and error when nothing survives", {
   H <- make_H(A1 = rbind(c(1L, 1L)), A2 = rbind(c(1L, 1L)), samples = c("s1", "s2"))
   wrong_stats <- locus_allele_stats(H)[0, ]
-  expect_error(filter_maf(H, min_maf = 0, stats = wrong_stats), "line up")
-  expect_error(filter_mac(H, min_mac = 0, stats = wrong_stats), "line up")
-  expect_error(filter_maf(H, min_maf = 0.9, verbose = FALSE), "No locus")
-  expect_error(filter_mac(H, min_mac = 99, verbose = FALSE), "No locus")
+  expect_error(filter_maf(H, min_maf = 0, allele_stats = wrong_stats), "line up")
+  expect_error(filter_mac(H, min_mac = 0, allele_stats = wrong_stats), "line up")
+  expect_error(filter_maf(H, min_maf = 0.9, verbose = FALSE), "No record")
+  expect_error(filter_mac(H, min_mac = 99, verbose = FALSE), "No record")
 })
 
 ## ---------------------------------------------------------------------------
 ## filter_call_rate()
 ## ---------------------------------------------------------------------------
 
-test_that("filter_call_rate() with pops = NULL matches a plain pooled call rate", {
+test_that("filter_call_rate() with popmap = NULL matches a plain pooled call rate", {
   H <- make_H(
     A1 = rbind(well_typed = c(1L, 1L, 1L, NA), poorly_typed = c(1L, NA, NA, NA)),
     A2 = rbind(well_typed = c(1L, 1L, 1L, NA), poorly_typed = c(1L, NA, NA, NA)),
@@ -132,13 +132,13 @@ test_that("filter_call_rate() rule='all' vs 'any' genuinely differ under asymmet
     samples = c("a1", "a2", "b1", "b2")
   )
   pops <- list(A = c("a1", "a2"), B = c("b1", "b2"))
-  expect_length(filter_call_rate(H, min_call = 0.5, pops = pops, rule = "any", verbose = FALSE)$locus, 1L)
-  expect_error(filter_call_rate(H, min_call = 0.5, pops = pops, rule = "all", verbose = FALSE), "No locus")
+  expect_length(filter_call_rate(H, min_call = 0.5, popmap = pops, rule = "any", verbose = FALSE)$locus, 1L)
+  expect_error(filter_call_rate(H, min_call = 0.5, popmap = pops, rule = "all", verbose = FALSE), "No record")
 })
 
 test_that("filter_call_rate() rejects an invalid `rule`", {
   H <- make_H(A1 = rbind(c(1L, 1L)), A2 = rbind(c(1L, 1L)), samples = c("s1", "s2"))
-  expect_error(filter_call_rate(H, min_call = 0.5, rule = "some"), "rule must be")
+  expect_error(filter_call_rate(H, min_call = 0.5, rule = "some"), "`rule` must be one of")
 })
 
 ## ---------------------------------------------------------------------------
@@ -195,21 +195,23 @@ test_that("filter_thin_one_snp() is a documented no-op when locus_raw is already
   expect_equal(out$locus, H$locus)
 })
 
-test_that("filter_thin_one_snp() restores the caller's RNG state", {
+test_that("filter_thin_one_snp() with a seed restores the caller's RNG state", {
   H <- make_H(
     A1 = rbind(c(1L, 1L), c(1L, 1L), c(1L, 1L)),
     A2 = rbind(c(1L, 1L), c(1L, 1L), c(1L, 1L)),
     locus = c("tag1_a", "tag1_b", "tag2"), locus_raw = c("tag1", "tag1", "tag2"),
     samples = c("s1", "s2")
   )
-  set.seed(123); expected <- runif(1)
-  set.seed(123); invisible(filter_thin_one_snp(H, method = "random", seed = 999, verbose = FALSE))
+  set.seed(123)
+  expected <- runif(1)
+  set.seed(123)
+  invisible(filter_thin_one_snp(H, method = "random", seed = 999, verbose = FALSE))
   expect_equal(runif(1), expected)
 })
 
 test_that("filter_thin_one_snp() rejects an inexact `method`", {
   H <- make_H(A1 = rbind(c(1L, 1L)), A2 = rbind(c(1L, 1L)), samples = c("s1", "s2"))
-  expect_error(filter_thin_one_snp(H, method = "firs"), "method must be")
+  expect_error(filter_thin_one_snp(H, method = "firs"), "`method` must be one of")
 })
 
 ## ---------------------------------------------------------------------------
@@ -220,8 +222,7 @@ test_that("filter_thin_one_snp() rejects an inexact `method`", {
 
 test_that("filter_low_conf_alt() flags each fixture row exactly as documented", {
   H <- suppressMessages(read_stacks_vcf(fx("small_ad.haps.vcf")))
-  res <- filter_low_conf_alt(H, min_alt_reads = 2, mode = "mask", verbose = FALSE)
-  ls <- res$locus_summary
+  ls <- low_conf_alt_calls(H, min_alt_reads = 2)$locus_summary
   row <- function(loc) ls[ls$locus == loc, ]
 
   expect_equal(row("locus_ad1")$n_flagged, 1L)   # 1/1, AD_alt = 2 (not double-counted) -- flagged
@@ -240,19 +241,20 @@ test_that("filter_low_conf_alt() flags each fixture row exactly as documented", 
 
 test_that("filter_low_conf_alt() mode='mask' changes only the flagged cells", {
   H <- suppressMessages(read_stacks_vcf(fx("small_ad.haps.vcf")))
-  res <- filter_low_conf_alt(H, min_alt_reads = 2, mode = "mask", verbose = FALSE)
+  masked <- filter_low_conf_alt(H, min_alt_reads = 2, mode = "mask", verbose = FALSE)
   j <- match("locus_ad1", H$locus)
-  expect_true(is.na(res$H$A1[j, "popA_1"]))   # the flagged cell is now missing
-  expect_true(is.na(res$H$A2[j, "popA_1"]))
-  expect_equal(nrow(res$H$A1), nrow(H$A1))    # mask never removes a record
-  expect_true(all(res$locus_summary$kept))
+  expect_true(is.na(masked$A1[j, "popA_1"]))   # the flagged cell is now missing
+  expect_true(is.na(masked$A2[j, "popA_1"]))
+  expect_equal(nrow(masked$A1), nrow(H$A1))    # mask never removes a record
+  expect_equal(sum(is.na(masked$A1)) - sum(is.na(H$A1)),
+               nrow(low_conf_alt_calls(H, min_alt_reads = 2)$flagged_calls))
 })
 
 test_that("filter_low_conf_alt() mode='drop' respects drop_frac at its exact boundary", {
   H <- suppressMessages(read_stacks_vcf(fx("small_ad.haps.vcf")))
   in_result <- function(drop_frac) {
     r <- filter_low_conf_alt(H, min_alt_reads = 2, mode = "drop", drop_frac = drop_frac, verbose = FALSE)
-    "locus_ad8" %in% r$H$locus
+    "locus_ad8" %in% r$locus
   }
   expect_false(in_result(0))
   expect_false(in_result(0.2))
@@ -260,25 +262,61 @@ test_that("filter_low_conf_alt() mode='drop' respects drop_frac at its exact bou
   expect_true(in_result(0.3))
 })
 
-test_that("locus_summary$kept agrees with the drop rule for every locus", {
+test_that("mode = 'drop' keeps exactly the records whose flagged fraction is within drop_frac", {
   H <- suppressMessages(read_stacks_vcf(fx("small_ad.haps.vcf")))
-  res <- filter_low_conf_alt(H, min_alt_reads = 2, mode = "drop", drop_frac = 0.2, verbose = FALSE)
-  expect_equal(res$locus_summary$kept, res$locus_summary$flagged_fraction <= 0.2 + 1e-9)
+  dropped <- filter_low_conf_alt(H, min_alt_reads = 2, mode = "drop", drop_frac = 0.2, verbose = FALSE)
+  summary_table <- low_conf_alt_calls(H, min_alt_reads = 2)$locus_summary
+  expect_equal(dropped$locus, summary_table$locus[summary_table$flagged_fraction <= 0.2 + 1e-9])
 })
 
-test_that("masking then dropping does not reproduce the two independent Python-script views", {
+test_that("masking then dropping finds nothing left to drop", {
   H <- suppressMessages(read_stacks_vcf(fx("small_ad.haps.vcf")))
-  masked <- filter_low_conf_alt(H, min_alt_reads = 2, mode = "mask", verbose = FALSE)$H
+  masked <- filter_low_conf_alt(H, min_alt_reads = 2, mode = "mask", verbose = FALSE)
   ## After masking, the flagged calls are gone -- a further drop pass, even
   ## at drop_frac = 0, has nothing left to drop.
   redrop <- filter_low_conf_alt(masked, min_alt_reads = 2, mode = "drop", drop_frac = 0, verbose = FALSE)
-  expect_equal(nrow(redrop$H$A1), nrow(masked$A1))
+  expect_equal(nrow(redrop$A1), nrow(masked$A1))
 })
 
 test_that("low_conf_alt_sensitivity() is monotonic and agrees with filter_low_conf_alt() at its own threshold", {
   H <- suppressMessages(read_stacks_vcf(fx("small_ad.haps.vcf")))
   sens <- low_conf_alt_sensitivity(H, thresholds = c(1, 2, 3, 4, 5, 10))
   expect_true(all(diff(sens$n_flagged) >= 0))
-  res <- filter_low_conf_alt(H, min_alt_reads = 2, mode = "mask", verbose = FALSE)
-  expect_equal(sens$n_flagged[sens$threshold == 2], sum(res$locus_summary$n_flagged))
+  flagged <- low_conf_alt_calls(H, min_alt_reads = 2)
+  expect_equal(sens$n_flagged[sens$threshold == 2], sum(flagged$locus_summary$n_flagged))
+})
+
+## ---------------------------------------------------------------------------
+## filter_genotype_depth()
+## ---------------------------------------------------------------------------
+
+test_that("filter_genotype_depth() masks by depth alone, whatever the genotype", {
+  vcf_lines <- c(
+    "##fileformat=VCFv4.2",
+    "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tA\tB\tC\tD",
+    ## DP present: a low-depth REF homozygote and a low-depth heterozygote
+    ## are masked alike; the high-depth call is masked by max_dp.
+    "un\t1\tl1\tA\tC\t.\tPASS\t.\tGT:DP:AD\t0/0:3:3,0\t0/1:3:2,1\t0/1:12:6,6\t1/1:50:0,50",
+    ## No DP in FORMAT: depth is the sum of AD.
+    "un\t2\tl2\tA\tG\t.\tPASS\t.\tGT:AD\t0/0:4,0\t0/1:5,5\t1/1:0,2\t./.:.",
+    ## Trailing subfields dropped and a "." depth: depth unknown, call kept.
+    "un\t3\tl3\tA\tT\t.\tPASS\t.\tGT:DP\t0/1\t0/0:.\t0/0:20\t0/1:8")
+  f <- tempfile(fileext = ".vcf")
+  writeLines(vcf_lines, f)
+  H <- read_stacks_vcf(f, verbose = FALSE)
+  expect_equal(RADdiversity:::.genotype_depth(H),
+               matrix(c(3, 3, 12, 50,
+                        4, 10, 2, NA,
+                        NA, NA, 20, 8), 3, 4, byrow = TRUE))
+  expect_message(out <- filter_genotype_depth(H, min_dp = 6, max_dp = 30), "of heterozygous")
+  expected_missing <- matrix(c(TRUE, TRUE, FALSE, TRUE,
+                               TRUE, FALSE, TRUE, TRUE,
+                               FALSE, FALSE, FALSE, FALSE), 3, 4, byrow = TRUE)
+  expect_equal(unname(is.na(out$A1)), expected_missing)
+  expect_equal(is.na(out$A1), is.na(out$A2))
+  expect_error(filter_genotype_depth(H, min_dp = 10, max_dp = 5), "at least `min_dp`")
+
+  ## A GT-only VCF (such as populations.haps.vcf) has no depths to filter on.
+  H_gt <- read_stacks_vcf(fx("small.haps.vcf"), verbose = FALSE)
+  expect_error(filter_genotype_depth(H_gt, min_dp = 6, verbose = FALSE), "readable depth")
 })

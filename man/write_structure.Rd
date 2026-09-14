@@ -38,3 +38,7 @@ popmap <- system.file("extdata", "small_popmap.tsv", package = "RADdiversity")
 out <- tempfile()
 write_structure(H, out, popmap = popmap)
 }
+\references{
+Pritchard, J.K., Stephens, M. & Donnelly, P. (2000) Inference of population
+structure using multilocus genotype data. \emph{Genetics} 155:945-959.
+}

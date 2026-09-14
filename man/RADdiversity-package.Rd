@@ -33,6 +33,34 @@ tables; \code{summary()} shows the full report. Standard errors and confidence
 intervals resample whole RAD loci. The command-line scripts are in
 \code{system.file("scripts", package = "RADdiversity")}; the statistical
 rationale is in \code{vignette("rationale")}.
+
+Genotypes are assumed to be diploid. Each function's help page lists the
+methods it implements; please cite those alongside the package
+(\code{citation("RADdiversity")}).
+}
+\references{
+Nei, M. & Chesser, R.K. (1983) Estimation of fixation indices and gene
+diversities. \emph{Annals of Human Genetics} 47:253-259.
+
+Weir, B.S. & Cockerham, C.C. (1984) Estimating F-statistics for the
+analysis of population structure. \emph{Evolution} 38:1358-1370.
+
+Kalinowski, S.T. (2004) Counting alleles with rarefaction: private alleles
+and hierarchical sampling designs. \emph{Conservation Genetics} 5:539-543.
+
+Jost, L. (2008) GST and its relatives do not measure differentiation.
+\emph{Molecular Ecology} 17:4015-4026.
+
+Schmidt, T.L., Jasper, M.-E., Weeks, A.R. & Hoffmann, A.A. (2021) Unbiased
+population heterozygosity estimates from genome-wide sequence data.
+\emph{Methods in Ecology and Evolution} 12:1888-1898.
+
+Van Dongen, S. (1995) How should we bootstrap allozyme data? \emph{Heredity}
+74:445-447.
+
+Rochette, N.C., Rivera-Colon, A.G. & Catchen, J.M. (2019) Stacks 2:
+analytical methods for paired-end sequencing improve RADseq-based
+population genomics. \emph{Molecular Ecology} 28:4737-4754.
 }
 \seealso{
 Useful links:
@@ -44,11 +72,6 @@ Useful links:
 }
 \author{
 \strong{Maintainer}: Nathan Whelan \email{nathan.whelan@gmail.com}
-
-Other contributors:
-\itemize{
-  \item David Winter (author of the 'mmod' code adapted in the internal Jost's D function) [copyright holder]
-}
 
 }
 \keyword{internal}

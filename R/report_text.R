@@ -58,6 +58,26 @@
     "to quote and its Fis is not (and its Fis carries a second, larger error:",
     "it is a mean of per-locus ratios)."),
 
+  diversity_looks_mac_filtered = c(
+    "No variable record has an allele seen only once or twice, so these data look",
+    "filtered by minor allele count (a common RAD-seq step). State the threshold",
+    "in your methods: removing rare alleles lowers He per sequenced site,",
+    "pct_poly, Ar and privAr, by more in smaller samples, so values are comparable",
+    "only between datasets filtered the same way."),
+
+  diversity_prior_filters = c(
+    "These describe the data as given (an HWE filter cannot be detected). See",
+    "vignette(\"workflow\"), \"If your data were already filtered\"."),
+
+  diversity_fis_by_call_rate = c(
+    "Each population's records grouped by ITS OWN call rate there. Inbreeding",
+    "raises FIS at every record alike; null alleles (restriction-site mutations)",
+    "and allele dropout make heterozygotes look homozygous or go missing, so they",
+    "show up as FIS RISING as call rate falls. If so, report FIS from the",
+    "well-typed records too (complete_case = TRUE, or a higher min_n) and treat",
+    "differences in FIS between populations with care: dropout is more common",
+    "in more diverse populations (Gautier et al. 2013)."),
+
   diversity_sites_on_haplotypes = c(
     "`sites` was supplied but this is a HAPLOTYPE VCF, so the autosomal",
     "conversion was SKIPPED: He here is per-tag gene diversity, not per-site,",
@@ -174,6 +194,12 @@
     "intervals are too narrow for population-level inference: report its",
     "individual-jackknife SEs (se_individuals = TRUE) instead."),
 
+  het_omnibus = c(
+    "Welch's one-way ANOVA (unequal variances allowed) and Kruskal-Wallis ask ONE",
+    "question: do any of the populations differ? Report it first. If it is not",
+    "significant, do not interpret individual pairs; if it is, the pairwise tests",
+    "below (BH-adjusted) say which populations differ."),
+
   het_F_tests = c(
     "The same tests on individual inbreeding, F = 1 - observed/expected",
     "heterozygosity (expected from each individual's own population; see",
@@ -182,9 +208,10 @@
 
   het_interpretation = c(
     "* Power is limited by the NUMBER OF INDIVIDUALS, not the number of loci.",
-    "  Simulation at n = 15 vs 10 with realistic individual variation gave 52%",
-    "  power for a moderate difference, so a non-significant result here is",
-    "  weak evidence of no difference, not evidence of no difference.",
+    "  At n = 15 vs 10, Welch's test detected a difference in mean F of half",
+    "  the among-individual SD 17% of the time, and of 0.8 SD 39% of the time",
+    "  (inst/sims/vignette_sims.R). A non-significant result is weak evidence",
+    "  of no difference, not evidence of no difference.",
     "* If some individuals are relatives, they are not independent units and",
     "  even this test is anti-conservative. Check relatedness first",
     "  (kinship_check()).",

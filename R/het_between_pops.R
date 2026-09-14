@@ -7,13 +7,13 @@
 #  per-locus values, treats LOCI as the replicate. Loci are repeated measures
 #  on the same individuals, so the interval shrinks as 1/sqrt(n_loci) while
 #  the real uncertainty -- which individuals were caught -- does not shrink at
-#  all. In simulations of two populations with identical true
-#  heterozygosity, a locus-based test rejected 5% of the time when
-#  individuals were identical, but 55% and 76% of the time as soon as they
-#  differed (as inbreeding makes them). Welch's t on per-individual
-#  heterozygosity held 5% throughout; het_between_pops_selftest() reproduces
-#  this. The objection is old (Van Dongen 1995). Full discussion in
-#  vignette("rationale"), "Step 3".
+#  all. In het_between_pops_selftest()'s simulations of two populations with
+#  identical true heterozygosity, a locus bootstrap rejected about 8% of the
+#  time when individuals did not differ in inbreeding, but about half the
+#  time when the SD of F among individuals was 0.10 and about 80% at 0.25.
+#  Welch's t on per-individual heterozygosity stayed near 5% throughout. The
+#  objection is old (Van Dongen 1995). Full discussion in
+#  vignette("rationale"), section 5.
 #
 #  WHAT TO READ IN THE REPORT, IN ORDER
 #    1. the missingness confound check -- if call rate correlates with
@@ -50,6 +50,11 @@
 #' full report; `outdir` also writes the tables to TSV files.
 #'
 #' @details
+#' **Three or more populations.** Start with `omnibus`, an overall test of
+#' whether any population differs (Welch's one-way ANOVA, with Kruskal-Wallis
+#' as the distribution-free check). Interpret the pairwise tests only if the
+#' overall test is significant; they then say which pairs differ.
+#'
 #' Two questions, same machinery. `pairwise_tests` compares mean individual
 #' heterozygosity: do the populations differ in diversity?
 #' `pairwise_F_tests` compares the individual inbreeding coefficient `F`
@@ -77,8 +82,8 @@
 #'   loci is excluded (a failed library cannot give a heterozygosity), a pair
 #'   of populations sharing fewer is reported as `NA`, and a warning is given
 #'   if fewer pass the pooled filter. Default `50`.
-#' @param nboot_g2 Bootstrap replicates for the g2 confidence interval.
-#'   Default `200`.
+#' @param nboot_g2 Bootstrap replicates over individuals for the g2
+#'   confidence interval. Default `1000`, as in [identity_disequilibrium()].
 #' @param seed Random seed for the g2 bootstrap. Default `NULL`: use R's
 #'   current random-number stream (call `set.seed()` first for a reproducible
 #'   interval). A number makes the result reproducible on its own and leaves
@@ -89,6 +94,12 @@
 #'       heterozygosity (on the pooled locus set) and individual `F`.}
 #'     \item{population_summary}{Per population: individuals, loci, mean, SD,
 #'       SE, range of individual heterozygosity, and mean `F`.}
+#'     \item{omnibus}{With 3 or more populations: one overall test of whether
+#'       any population differs, for heterozygosity and for `F` -- Welch's
+#'       one-way ANOVA (`welch_F`, `welch_df1`, `welch_df2`, `p_welch`) and
+#'       Kruskal-Wallis (`kruskal_chisq`, `kruskal_df`, `p_kruskal`) -- on the
+#'       loci that clear `min_call` in every population (`n_loci`). `NULL`
+#'       for 2 populations, where the pairwise test is the only test.}
 #'     \item{pairwise_tests}{Heterozygosity, one row per pair of populations:
 #'       means, difference with Welch 95% CI, Welch and Wilcoxon p-values
 #'       (with Benjamini-Hochberg adjusted versions), Hedges' g.}
@@ -107,7 +118,31 @@
 #'   `pairwise_tests` and `pairwise_F_tests` are written to
 #'   `individual_heterozygosity.<stem>.tsv`,
 #'   `het_between_pops_tests.<stem>.tsv` and
-#'   `het_between_pops_F_tests.<stem>.tsv`.
+#'   `het_between_pops_F_tests.<stem>.tsv`, and with 3 or more populations
+#'   `omnibus` to `het_between_pops_omnibus.<stem>.tsv`.
+#' @references
+#' Van Dongen, S. (1995) How should we bootstrap allozyme data? *Heredity*
+#' 74:445-447.
+#'
+#' Welch, B.L. (1947) The generalization of "Student's" problem when several
+#' different population variances are involved. *Biometrika* 34:28-35.
+#'
+#' Welch, B.L. (1951) On the comparison of several mean values: an alternative
+#' approach. *Biometrika* 38:330-336.
+#'
+#' Kruskal, W.H. & Wallis, W.A. (1952) Use of ranks in one-criterion variance
+#' analysis. *Journal of the American Statistical Association* 47:583-621.
+#'
+#' Benjamini, Y. & Hochberg, Y. (1995) Controlling the false discovery rate: a
+#' practical and powerful approach to multiple testing. *Journal of the Royal
+#' Statistical Society B* 57:289-300.
+#'
+#' Hedges, L.V. (1981) Distribution theory for Glass's estimator of effect size
+#' and related estimators. *Journal of Educational Statistics* 6:107-128.
+#'
+#' David, P., Pujol, B., Viard, F., Castella, V. & Goudet, J. (2007) Reliable
+#' selfing rate estimates from imperfect population genetic data. *Molecular
+#' Ecology* 16:2474-2487. (g2.)
 #' @examples
 #' # A toy dataset shipped with the package (4 and 3 individuals -- far too
 #' # few for a real test, which needs individuals, not loci).
@@ -119,7 +154,7 @@
 #' res$individual_heterozygosity
 #' summary(res)              # the full report, with the confound and overdispersion checks
 #' @export
-het_between_pops <- function(vcf, popmap, min_call = 0.9, min_loci = 50L, nboot_g2 = 200L,
+het_between_pops <- function(vcf, popmap, min_call = 0.9, min_loci = 50L, nboot_g2 = 1000L,
                              outdir = NULL, stem = NULL, seed = NULL, verbose = TRUE) {
   ## ---- 1. Check the arguments ----------------------------------------------
   if (!(is.numeric(min_call) && length(min_call) == 1L && !is.na(min_call) &&
@@ -156,7 +191,8 @@ het_between_pops <- function(vcf, popmap, min_call = 0.9, min_loci = 50L, nboot_
   overdispersion <- .overdispersion(H, pops, locus_sets, per_pop$het_by_pop)
   g2 <- .g2_by_population(H, pops, locus_sets, nboot_g2)
 
-  ## ---- 5. Pairwise tests ----------------------------------------------------
+  ## ---- 5. Tests: overall (3+ populations), then pairwise --------------------
+  omnibus <- .omnibus_tests(H, pops, locus_sets, min_call, min_loci, verbose)
   tests <- .pairwise_tests(H, pops, locus_sets, min_call, min_loci, verbose)
 
   ## ---- 6. Files (only with outdir) ------------------------------------------
@@ -165,10 +201,12 @@ het_between_pops <- function(vcf, popmap, min_call = 0.9, min_loci = 50L, nboot_
     stem <- .derive_stem(vcf, stem)
     written <- .write_tables(
       list(individual = .round_het_table(table_ind, "individual_heterozygosity"),
+           omnibus = if (!is.null(omnibus)) .round_het_table(omnibus, "omnibus"),
            tests = .round_het_table(tests$heterozygosity, "pairwise_tests"),
            F_tests = .round_het_table(tests$F, "pairwise_tests")),
       outdir,
       c(individual = sprintf("individual_heterozygosity.%s.tsv", stem),
+        omnibus = sprintf("het_between_pops_omnibus.%s.tsv", stem),
         tests = sprintf("het_between_pops_tests.%s.tsv", stem),
         F_tests = sprintf("het_between_pops_F_tests.%s.tsv", stem)))
   }
@@ -179,6 +217,7 @@ het_between_pops <- function(vcf, popmap, min_call = 0.9, min_loci = 50L, nboot_
                    seed = seed, files = written)
   structure(list(individual_heterozygosity = table_ind,
                  population_summary = per_pop$table,
+                 omnibus = omnibus,
                  pairwise_tests = tests$heterozygosity,
                  pairwise_F_tests = tests$F,
                  overdispersion = overdispersion,
@@ -377,6 +416,77 @@ het_between_pops <- function(vcf, popmap, min_call = 0.9, min_loci = 50L, nboot_
        F = bh_adjust(do.call(rbind, lapply(rows, `[[`, "F"))))
 }
 
+## Not exported. OVERALL TESTS for 3 or more populations: is there any
+## difference among them, before looking at pairs? With k populations there
+## are k(k - 1)/2 pairwise tests; an overall test answers the question once.
+## Both use one number per individual, as the pairwise tests do:
+##   Welch's one-way ANOVA (stats::oneway.test(var.equal = FALSE); Welch
+##   1951), which allows unequal variances and reduces to Welch's t for two
+##   groups;
+##   Kruskal-Wallis (stats::kruskal.test; Kruskal & Wallis 1952), the
+##   distribution-free check.
+## Loci: those that clear min_call in EVERY population (the k-population
+## version of the pairwise rule). Returns NULL for 2 populations, otherwise a
+## data frame with one row for heterozygosity and one for F.
+.omnibus_tests <- function(H, pops, locus_sets, min_call, min_loci, verbose) {
+  if (length(pops) < 3L) return(NULL)
+  loci <- rowSums(locus_sets) == ncol(locus_sets)
+  n_loci <- sum(loci)
+  empty_row <- function(what) {
+    data.frame(statistic = what, n_loci = n_loci, n_individuals = NA_integer_,
+               welch_F = NA_real_, welch_df1 = NA_real_, welch_df2 = NA_real_,
+               p_welch = NA_real_, kruskal_chisq = NA_real_, kruskal_df = NA_real_,
+               p_kruskal = NA_real_)
+  }
+  if (n_loci < min_loci) {
+    .inform(verbose, sprintf(
+      "  Overall test: only %d loci clear %.0f%% call rate in ALL %d populations ",
+      n_loci, 100 * min_call, length(pops)),
+      "(need >= ", min_loci, "); reported as NA. The pairwise tests are unaffected.")
+    return(rbind(empty_row("heterozygosity"), empty_row("F")))
+  }
+  values <- lapply(names(pops), function(p) {
+    a1 <- H$A1[loci, pops[[p]], drop = FALSE]
+    a2 <- H$A2[loci, pops[[p]], drop = FALSE]
+    het <- colMeans(a1 != a2, na.rm = TRUE)
+    list(heterozygosity = het, F = .ind_F(a1, a2)$F)
+  })
+  one_test <- function(what) {
+    y <- unlist(lapply(values, `[[`, what), use.names = FALSE)
+    group <- factor(rep(names(pops), vapply(values, function(v) length(v[[what]]), integer(1))),
+                    levels = names(pops))
+    keep <- is.finite(y)
+    y <- y[keep]
+    group <- droplevels(group[keep])
+    row <- empty_row(what)
+    row$n_individuals <- length(y)
+    if (nlevels(group) < 3L || any(table(group) < 2L)) {
+      .inform(verbose, "  Overall test (", what, "): fewer than 2 individuals with a value ",
+              "in some population; reported as NA.")
+      return(row)
+    }
+    welch <- tryCatch(suppressWarnings(stats::oneway.test(y ~ group, var.equal = FALSE)),
+                      error = function(e) NULL)
+    if (!is.null(welch) && is.finite(welch$p.value)) {
+      row$welch_F <- unname(welch$statistic)
+      row$welch_df1 <- unname(welch$parameter[1])
+      row$welch_df2 <- unname(welch$parameter[2])
+      row$p_welch <- welch$p.value
+    } else {
+      .inform(verbose, "  Overall Welch test (", what, "): not computable, usually because a ",
+              "population has no variation among individuals; reported as NA.")
+    }
+    kw <- tryCatch(stats::kruskal.test(y, group), error = function(e) NULL)
+    if (!is.null(kw) && is.finite(kw$p.value)) {
+      row$kruskal_chisq <- unname(kw$statistic)
+      row$kruskal_df <- unname(kw$parameter)
+      row$p_kruskal <- kw$p.value
+    }
+    row
+  }
+  rbind(one_test("heterozygosity"), one_test("F"))
+}
+
 ## Not exported. One all-NA row of the pairwise test table.
 .na_test_row <- function(p1, p2, n_loci, n1, n2, mean1 = NA_real_, mean2 = NA_real_) {
   data.frame(pop1 = p1, pop2 = p2, n_loci = n_loci, n1 = n1, mean1 = mean1,
@@ -424,7 +534,15 @@ het_between_pops <- function(vcf, popmap, min_call = 0.9, min_loci = 50L, nboot_
                              p1, p2, what), "zero). No variation to test. Reported as NA.")
     welch <- no_test
   }
-  wilcox <- tryCatch(suppressWarnings(stats::wilcox.test(a, b)), error = function(e) no_test)
+  ## `exact` is set explicitly so the p-value does not depend on the R
+  ## version: R 4.6.0 changed the default with tied values from the normal
+  ## approximation to exact conditional inference. This is the rule R used
+  ## before 4.6.0: exact when there are no ties and both groups have fewer
+  ## than 50 values, otherwise the normal approximation with continuity
+  ## correction.
+  exact <- !anyDuplicated(c(a, b)) && length(a) < 50 && length(b) < 50
+  wilcox <- tryCatch(suppressWarnings(stats::wilcox.test(a, b, exact = exact, correct = TRUE)),
+                     error = function(e) no_test)
   if (is.nan(wilcox$p.value)) wilcox <- no_test
 
   ## Hedges' g: the standardised difference with a small-sample correction J.
@@ -450,6 +568,7 @@ het_between_pops <- function(vcf, popmap, min_call = 0.9, min_loci = 50L, nboot_
 .het_rounding <- list(
   individual_heterozygosity = list(digits = 4, round_cols = c(heterozygosity = 5)),
   population_summary = list(digits = 4),
+  omnibus = list(digits = 3, signif_cols = c(p_welch = 3, p_kruskal = 3)),
   pairwise_tests = list(digits = 4, round_cols = c(hedges_g = 2),
                         signif_cols = c(p_welch = 3, p_wilcox = 3, p_welch_BH = 3, p_wilcox_BH = 3)),
   overdispersion = list(digits = 4, round_cols = c(obs_sd = 5, binomial_sd = 5,
@@ -489,6 +608,10 @@ print.raddiv_het <- function(x, ...) {
               100 * st$min_call))
   cat("\n$population_summary\n")
   .print_table(.round_het_table(x$population_summary, "population_summary"))
+  if (!is.null(x$omnibus)) {
+    cat("\n$omnibus (overall test across all populations: look at this before the pairs)\n")
+    .print_table(.round_het_table(x$omnibus, "omnibus"))
+  }
   cat("\n$pairwise_tests (heterozygosity)\n")
   .show_pairwise(x$pairwise_tests, 10, "x$pairwise_tests")
   cat("\n$pairwise_F_tests (individual inbreeding F)\n")
@@ -590,6 +713,13 @@ print.summary.raddiv_het <- function(x, ...) {
   cat("variance in inbreeding among individuals; 0 when individuals do not differ.\n")
   .print_table(.round_het_table(x$g2, "g2"))
   note(.report_text$het_g2)
+
+  if (!is.null(x$omnibus)) {
+    cat(sprintf("\nOverall test across all %d populations (loci that clear min_call in every one)\n",
+                st$n_pops))
+    .print_table(.round_het_table(x$omnibus, "omnibus"))
+    note(.report_text$het_omnibus)
+  }
 
   n_pairs <- nrow(tests)
   cat(sprintf("\nPairwise tests -- %d comparison%s. Welch's t is the primary test;\n",

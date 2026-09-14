@@ -112,6 +112,29 @@ test_that("outdir writes kinship_pairwise.tsv", {
   expect_true(file.exists(file.path(outdir, "kinship_pairwise.tsv")))
 })
 
+test_that("kinship does not depend on which allele numbers a biallelic record uses", {
+  ## Regression: a haplotype record can declare 3 alleles of which only the
+  ## 2nd and 3rd are carried. KING and beta both assumed alleles 1 and 2, so
+  ## 3/3 homozygotes went uncounted and unrelated individuals read ~0.25.
+  set.seed(3)
+  n <- 8; L <- 300
+  A1 <- matrix(sample(1:2, n * L, TRUE), L, n)
+  A2 <- matrix(sample(1:2, n * L, TRUE), L, n)
+  samples <- paste0("s", seq_len(n))
+  H12 <- make_H(A1, A2, samples = samples)
+  H23 <- make_H(A1 + 1L, A2 + 1L, samples = samples, n_alleles = rep(3L, L),
+                alleles = replicate(L, c("A", "C", "G"), simplify = FALSE))
+  k12 <- kinship_check(H12, threshold = NULL, verbose = FALSE)$pairwise$kinship
+  k23 <- kinship_check(H23, threshold = NULL, verbose = FALSE)$pairwise$kinship
+  expect_equal(k23, k12)
+  expect_lt(abs(mean(k23)), 0.05)          # unrelated: near 0, not ~0.25
+
+  skip_if_not_installed("hierfstat")
+  b12 <- kinship_check(H12, method = "beta", threshold = NULL, verbose = FALSE)$pairwise$kinship
+  b23 <- kinship_check(H23, method = "beta", threshold = NULL, verbose = FALSE)$pairwise$kinship
+  expect_equal(b23, b12)
+})
+
 test_that("a pair with no heterozygous locus between them gets NA, not NaN/-Inf", {
   ## Regression: KING's denominator is the pair's heterozygous-locus count;
   ## when it is 0 the ratio is 0/0 or -x/0, which is no information at all.

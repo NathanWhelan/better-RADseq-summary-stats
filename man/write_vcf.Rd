@@ -28,6 +28,11 @@ and \code{INFO} are copied from the original file, but per-sample fields such as
 \code{AD} and \code{DP} are NOT: a filter such as \code{\link[=filter_low_conf_alt]{filter_low_conf_alt()}} can change a
 genotype without updating those values, and writing them would mislead
 anyone reading the file. The \code{FORMAT} column is therefore always \code{GT}.
+
+The original file's \verb{##} meta-information lines (\verb{##contig}, \verb{##INFO},
+\verb{##FORMAT}, ...) are not kept: \code{\link[=read_stacks_vcf]{read_stacks_vcf()}} does not store them. Some
+tools (e.g. \code{bcftools}) warn about INFO keys with no \verb{##INFO} definition;
+copy the header lines from the original file if a tool needs them.
 }
 \examples{
 H <- read_stacks_vcf(system.file("extdata", "small.haps.vcf",
@@ -35,4 +40,8 @@ H <- read_stacks_vcf(system.file("extdata", "small.haps.vcf",
 out_file <- tempfile(fileext = ".vcf")
 write_vcf(H, out_file)
 head(readLines(out_file), 4)
+}
+\references{
+Danecek, P., Auton, A., Abecasis, G., et al. (2011) The variant call format
+and VCFtools. \emph{Bioinformatics} 27:2156-2158.
 }

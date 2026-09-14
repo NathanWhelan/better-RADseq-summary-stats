@@ -28,9 +28,24 @@ Keeps only records whose minor allele frequency (MAF) is at least
 genotyping errors, so a MAF filter is a common first quality-control step
 for SNP data.
 }
+\details{
+\strong{What it changes.} MAF and MAC filters are routine for RAD-seq data, but
+rare variants are also real diversity. Removing them lowers He per
+sequenced site, pct_poly, allelic richness and especially private allelic
+richness, by an amount that depends on sample size. The threshold also
+affects inferences of population structure (Linck & Battey 2019). Report
+the threshold used, and compare diversity values only between datasets
+filtered the same way. \code{\link[=diversity_stats]{diversity_stats()}}'s \code{summary()} shows the lowest
+allele count remaining in the data.
+}
 \examples{
 H <- read_stacks_vcf(system.file("extdata", "small.snps.vcf",
                                  package = "RADdiversity"), verbose = FALSE)
 H_common <- filter_maf(H, min_maf = 0.1)
 H_common
+}
+\references{
+Linck, E. & Battey, C.J. (2019) Minor allele frequency thresholds strongly
+affect population structure inference with genomic data sets. \emph{Molecular
+Ecology Resources} 19:639-647.
 }

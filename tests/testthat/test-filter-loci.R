@@ -304,7 +304,7 @@ test_that("filter_genotype_depth() masks by depth alone, whatever the genotype",
   f <- tempfile(fileext = ".vcf")
   writeLines(vcf_lines, f)
   H <- read_stacks_vcf(f, verbose = FALSE)
-  expect_equal(RADdiversity:::.genotype_depth(H),
+  expect_equal(unname(RADdiversity:::.genotype_depth(H)),
                matrix(c(3, 3, 12, 50,
                         4, 10, 2, NA,
                         NA, NA, 20, 8), 3, 4, byrow = TRUE))

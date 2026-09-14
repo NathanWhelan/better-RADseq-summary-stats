@@ -26,8 +26,20 @@ above it is the classic sign of an undetected paralog or collapsed repeat,
 where two similar genomic regions are read as one locus and their
 differences look like two alleles.
 }
+\details{
+This is a crude screen. A threshold on Ho alone also removes genuinely
+variable loci, and it misses paralogs at low frequency. HDplot (McKinney et
+al. 2017), which combines heterozygosity with read-ratio deviation, is the
+more specific tool.
+}
 \examples{
 H <- read_stacks_vcf(system.file("extdata", "small.haps.vcf",
                                  package = "RADdiversity"), verbose = FALSE)
 filter_max_het(H, max_ho = 0.7)
+}
+\references{
+McKinney, G.J., Waples, R.K., Seeb, L.W. & Seeb, J.E. (2017) Paralogs are
+revealed by proportion of heterozygotes and deviations in read ratios in
+genotyping-by-sequencing data from natural populations. \emph{Molecular Ecology
+Resources} 17:656-669.
 }

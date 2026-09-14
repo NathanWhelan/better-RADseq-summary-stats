@@ -35,8 +35,13 @@
 #  Jost's D follows the five-step formula of the mmod package's HsHt()
 #  function (Winter 2012; MIT license, see inst/NOTICE), rewritten for this
 #  package's genotype matrices. Several loci are combined by averaging Hs and
-#  Ht over loci FIRST and computing one D from the averages, as mmod does by
-#  default (rather than averaging per-locus D values).
+#  Ht over loci FIRST and computing one D from the averages -- mmod's
+#  `global.het` summary; mmod also offers the harmonic mean of per-locus D
+#  (`global.harm_mean`), which is not computed here. Jost's bias-corrected Hs
+#  uses the 2N/(2N - 1) factor, which assumes random mating within
+#  populations (the same assumption behind Stacks' `Pi`; see R/estimators.R).
+#  With a heterozygote deficit Hs is underestimated by about F/(2N - 1), so D
+#  is biased upward, most noticeably when Ht - Hs is small.
 #
 #  PRECISION: a bootstrap over whole RAD loci (the locus_raw groups) for a 95%
 #  interval, and a delete-one-locus jackknife for a standard error, both from
@@ -262,6 +267,13 @@
 #' population are handled by the estimator itself and are not affected. The
 #' number of skipped records is in `settings$fst_records_skipped`.
 #'
+#' **Combining loci for D.** Hs and Ht are averaged over loci and one D is
+#' computed from the averages (mmod's `global.het`), not averaged over
+#' per-locus D values. Jost's bias correction of Hs, 2N/(2N - 1), assumes
+#' random mating within each population (the same assumption behind Stacks'
+#' `Pi`), so with a heterozygote deficit Hs is slightly underestimated. D is
+#' then biased upward, most noticeably when differentiation is weak.
+#'
 #' **References.** Weir, B.S. & Cockerham, C.C. (1984) Estimating
 #' F-statistics for the analysis of population structure. *Evolution*
 #' 38:1358-1370. \doi{10.1111/j.1558-5646.1984.tb05657.x} --
@@ -272,11 +284,17 @@
 #' 17:4015-4026. \doi{10.1111/j.1365-294X.2008.03887.x} --
 #' Winter, D.J. (2012) mmod: an R library for the calculation of population
 #' differentiation statistics. *Molecular Ecology Resources* 12:1158-1160.
-#' \doi{10.1111/j.1755-0998.2012.03174.x}
+#' \doi{10.1111/j.1755-0998.2012.03174.x} --
+#' Goudet, J. (2005) HIERFSTAT, a package for R to compute and test
+#' hierarchical F-statistics. *Molecular Ecology Notes* 5:184-186.
 #'
 #' @inheritParams diversity_stats
 #' @param nboot Bootstrap replicates over RAD loci. Default `10000`; `0` for
 #'   none (the jackknife standard errors are always computed).
+#' @param beta Also compute Weir & Goudet's pairwise beta with
+#'   `hierfstat::pairwise.betas()`, when hierfstat is installed. Default
+#'   `TRUE`. On large datasets this one call takes most of the run time (about
+#'   95% at 100,000 SNPs); set `FALSE` to skip it. FST and D do not need it.
 #' @param hierfstat_check If `TRUE` and `hierfstat` is installed, also run
 #'   `hierfstat::wc()` and report how far its global FST is from this
 #'   package's. Default `FALSE` (the package tests make this comparison, and
@@ -289,7 +307,8 @@
 #'       standard errors and bootstrap intervals.}
 #'     \item{pairwise_fst, pairwise_beta, pairwise_D}{The pairwise point
 #'       estimates as symmetric matrices (`NA` on the diagonal).
-#'       `pairwise_beta` is `NULL` when hierfstat is not installed.}
+#'       `pairwise_beta` is `NULL` when hierfstat is not installed or
+#'       `beta = FALSE`.}
 #'     \item{settings}{The settings of this run.}
 #'   }
 #'   Values are stored at full precision. With `outdir`, `global` and
@@ -303,10 +322,12 @@
 #' res
 #' res$global$D
 #' @export
-differentiation_stats <- function(vcf, popmap, nboot = 10000L, hierfstat_check = FALSE,
-                                  outdir = NULL, stem = NULL, seed = NULL, verbose = TRUE) {
+differentiation_stats <- function(vcf, popmap, nboot = 10000L, beta = TRUE,
+                                  hierfstat_check = FALSE, outdir = NULL, stem = NULL,
+                                  seed = NULL, verbose = TRUE) {
   ## ---- 1. Check the arguments ----------------------------------------------
   nboot <- .check_count(nboot, "nboot")
+  .check_flag(beta, "beta")
   .check_flag(hierfstat_check, "hierfstat_check")
   .check_flag(verbose, "verbose")
   .check_seed(seed)
@@ -435,9 +456,8 @@ differentiation_stats <- function(vcf, popmap, nboot = 10000L, hierfstat_check =
   ci <- .percentile_ci(boot_matrix, stat_names)
 
   ## ---- 6. hierfstat: beta, and the optional cross-check ---------------------
-  beta <- NULL
-  if (.hierfstat_available()) {
-    dat <- .to_hierfstat_df(H, pops)
+  beta_matrix <- NULL
+  if (.hierfstat_available() && (beta || hierfstat_check)) {
     if (hierfstat_check) {
       ## Compared on the records this package's global FST uses (>= 2
       ## populations typed); see "Records typed in only one population" in
@@ -453,13 +473,18 @@ differentiation_stats <- function(vcf, popmap, nboot = 10000L, hierfstat_check =
         if (d_fst > 1e-6) warning("This run's FST disagrees with hierfstat::wc().", call. = FALSE)
       }
     }
-    beta <- tryCatch(as.matrix(hierfstat::pairwise.betas(dat)), error = function(e) NULL)
-    if (is.null(beta)) {
-      .inform(verbose, "  hierfstat::pairwise.betas() failed on this dataset; pairwise_beta will be NULL.")
-    } else {
-      dimnames(beta) <- list(pop_names, pop_names)
+    if (beta) {
+      .inform(verbose, "Computing Weir & Goudet's beta with hierfstat::pairwise.betas() ",
+              "(slow on large datasets; beta = FALSE skips it) ...")
+      beta_matrix <- tryCatch(as.matrix(hierfstat::pairwise.betas(.to_hierfstat_df(H, pops))),
+                              error = function(e) NULL)
+      if (is.null(beta_matrix)) {
+        .inform(verbose, "  hierfstat::pairwise.betas() failed on this dataset; pairwise_beta will be NULL.")
+      } else {
+        dimnames(beta_matrix) <- list(pop_names, pop_names)
+      }
     }
-  } else {
+  } else if (beta) {
     .inform(verbose, "Install hierfstat for Weir & Goudet's beta: install.packages(\"hierfstat\")")
   }
 
@@ -475,7 +500,7 @@ differentiation_stats <- function(vcf, popmap, nboot = 10000L, hierfstat_check =
     p2 <- pairs[[k]][2]
     cbind(data.frame(pop1 = p1, pop2 = p2),
           with_uncertainty(paste0("pFST_", pair_labels[k]), "FST"),
-          data.frame(beta = if (is.null(beta)) NA_real_ else beta[p1, p2]),
+          data.frame(beta = if (is.null(beta_matrix)) NA_real_ else beta_matrix[p1, p2]),
           with_uncertainty(paste0("pD_", pair_labels[k]), "D"))
   }))
   matrix_of <- function(prefix) {
@@ -506,9 +531,9 @@ differentiation_stats <- function(vcf, popmap, nboot = 10000L, hierfstat_check =
                                    collapse = ", ")))
   settings <- list(n_pops = n_pops, n_records = n_rec, n_loci = n_loci, nboot = nboot,
                    is_haplotype = .is_haplotype_H(H), fst_records_skipped = fst_records_skipped,
-                   seed = seed, files = written)
+                   beta = beta, seed = seed, files = written)
   structure(list(global = global, pairwise = pairwise, pairwise_fst = matrix_of("pFST_"),
-                 pairwise_beta = beta, pairwise_D = matrix_of("pD_"), settings = settings),
+                 pairwise_beta = beta_matrix, pairwise_D = matrix_of("pD_"), settings = settings),
             class = "raddiv_differentiation")
 }
 
@@ -536,7 +561,9 @@ print.raddiv_differentiation <- function(x, ...) {
   }
   cat("\n")
   if (st$is_haplotype) cat("NOTE: haplotype VCF -- prefer D (or beta) over FST (see summary()).\n")
-  if (is.null(x$pairwise_beta)) cat("NOTE: beta needs the hierfstat package.\n")
+  if (is.null(x$pairwise_beta))
+    cat(if (isFALSE(st$beta)) "NOTE: beta not computed (beta = FALSE).\n"
+        else "NOTE: beta needs the hierfstat package.\n")
   cat("summary() prints the full report.\n")
   invisible(x)
 }
@@ -575,7 +602,8 @@ print.summary.raddiv_differentiation <- function(x, ...) {
   if (!is.null(res$pairwise_beta))
     note("beta = Weir & Goudet (2017), via hierfstat::pairwise.betas() -- a point estimate only.")
   else
-    note("beta not available (hierfstat not installed).")
+    note(if (isFALSE(st$beta)) "beta not computed (beta = FALSE)."
+         else "beta not available (hierfstat not installed).")
   cat("\n")
   rule("-")
   if (st$is_haplotype) note(.report_text$differentiation_haplotype)

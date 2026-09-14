@@ -106,6 +106,35 @@
   H
 }
 
+## Not exported. Renumbers each record's observed alleles as 1 and 2. Both
+## methods below assume a biallelic record uses allele numbers 1 and 2 (KING
+## looks for homozygotes of allele 1 and of allele 2; beta counts copies of
+## allele 2). A record kept by .restrict_biallelic() can still use other
+## numbers: in a haplotype VCF a record may declare three alleles of which
+## only the 2nd and 3rd are carried by the screened samples, so its genotypes
+## are 2/2, 2/3 and 3/3. Without renumbering, a 3/3 homozygote is neither
+## "allele 1" nor "allele 2", opposite homozygotes go uncounted, and every
+## pair reads as related. The smaller observed allele number becomes 1 and
+## the larger becomes 2; a monomorphic record becomes all 1.
+.recode_biallelic <- function(H) {
+  if (!nrow(H$A1)) return(H)
+  counts <- .allele_counts(H$A1, H$A2)                             # records x alleles
+  observed <- counts > 0L
+  ## Records with no genotype at all keep their (all-NA) genotypes.
+  none <- rowSums(observed) == 0L
+  observed[none, 1L] <- TRUE
+  first <- max.col(observed, ties.method = "first")
+  recode <- function(A) {
+    out <- ifelse(A == first, 1L, 2L)      # `first` recycles down each column
+    storage.mode(out) <- "integer"
+    dimnames(out) <- dimnames(A)
+    out
+  }
+  H$A1 <- recode(H$A1)
+  H$A2 <- recode(H$A2)
+  H
+}
+
 ## Not exported. KING-robust (Manichaikul et al. 2010), vectorised over every
 ## pair of samples at once via matrix multiplication rather than an
 ## individual-by-individual loop (which would be needlessly slow once a
@@ -122,34 +151,45 @@
 ## is the same computation as a triple loop over (locus, sample_i, sample_j)
 ## would do, just handed to R's fast underlying matrix-multiply routine
 ## instead of looping row by row in R itself.
-.king_kinship <- function(H) {
-  A1 <- H$A1
-  A2 <- H$A2
-  n_rec <- nrow(A1)
-  n_samp <- ncol(A1)
-  called <- !is.na(A1)                    # TRUE where this sample IS genotyped here
-  het    <- called & (A1 != A2)           # TRUE where genotyped AND heterozygous
-  ## Biallelic, so a homozygote is for allele 1 (REF) or allele 2 (ALT) --
-  ## nothing else is possible once multiallelic loci have been excluded.
-  hom1 <- called & (A1 == A2) & (A1 == 1L)
-  hom2 <- called & (A1 == A2) & (A1 == 2L)
+.king_kinship <- function(H, chunk_rows = 20000L) {
+  n_rec <- nrow(H$A1)
+  n_samp <- ncol(H$A1)
+  zero <- matrix(0, n_samp, n_samp)
+  n_loci_used <- N11 <- N20 <- HetOtherCalled <- zero
 
-  ## Coerce logical -> 0/1 numeric for matrix multiplication (R's %*% needs a
-  ## numeric matrix, not TRUE/FALSE directly).
-  Called <- matrix(as.numeric(called), n_rec, n_samp)
-  Het    <- matrix(as.numeric(het),    n_rec, n_samp)
-  Hom1   <- matrix(as.numeric(hom1),   n_rec, n_samp)
-  Hom2   <- matrix(as.numeric(hom2),   n_rec, n_samp)
+  ## The counts are sums over loci, so they are accumulated a block of
+  ## `chunk_rows` records at a time: the 0/1 matrices below then never exceed
+  ## that many rows, which keeps memory bounded on large datasets.
+  for (start in seq.int(1L, n_rec, by = chunk_rows)) {
+    rows <- start:min(n_rec, start + chunk_rows - 1L)
+    A1 <- H$A1[rows, , drop = FALSE]
+    A2 <- H$A2[rows, , drop = FALSE]
+    called <- !is.na(A1)                  # TRUE where this sample IS genotyped here
+    het    <- called & (A1 != A2)         # TRUE where genotyped AND heterozygous
+    ## Biallelic, renumbered 1/2 (.recode_biallelic()), so a homozygote is
+    ## for allele 1 or allele 2 -- nothing else is possible.
+    hom1 <- called & (A1 == A2) & (A1 == 1L)
+    hom2 <- called & (A1 == A2) & (A1 == 2L)
 
-  n_loci_used <- crossprod(Called)                    # [i,j] = both-called locus count
-  N11 <- crossprod(Het)                                # [i,j] = both-heterozygous locus count
-  N20 <- crossprod(Hom1, Hom2) + crossprod(Hom2, Hom1) # [i,j] = opposite-homozygote locus count
-  ## HetOtherCalled[i, j] = loci where i is heterozygous AND j is (separately)
-  ## called there -- i's own heterozygous-locus count, restricted to the
-  ## shared both-called set with j. Its TRANSPOSE gives the same thing from
-  ## j's side, so adding a matrix to its own transpose gives the symmetric
-  ## "N1_i + N1_j" KING's denominator needs.
-  HetOtherCalled <- crossprod(Het, Called)
+    ## Coerce logical -> 0/1 numeric for matrix multiplication (R's %*% needs
+    ## a numeric matrix, not TRUE/FALSE directly).
+    as_01 <- function(x) matrix(as.numeric(x), length(rows), n_samp)
+    Called <- as_01(called)
+    Het    <- as_01(het)
+    Hom1   <- as_01(hom1)
+    Hom2   <- as_01(hom2)
+
+    n_loci_used <- n_loci_used + crossprod(Called)                  # both-called loci
+    N11 <- N11 + crossprod(Het)                                      # both heterozygous
+    N20 <- N20 + crossprod(Hom1, Hom2) + crossprod(Hom2, Hom1)       # opposite homozygotes
+    ## HetOtherCalled[i, j] = loci where i is heterozygous AND j is
+    ## (separately) called there -- i's own heterozygous-locus count,
+    ## restricted to the shared both-called set with j.
+    HetOtherCalled <- HetOtherCalled + crossprod(Het, Called)
+  }
+  ## The TRANSPOSE of HetOtherCalled gives the same count from j's side, so
+  ## adding the matrix to its own transpose gives the symmetric "N1_i + N1_j"
+  ## KING's denominator needs.
   denom <- HetOtherCalled + t(HetOtherCalled)
 
   kinship <- (N11 - 2 * N20) / denom
@@ -259,7 +299,16 @@
 #' Ecology* 28:35-48. \doi{10.1111/mec.14954} -- McMaster, E.S. et al. (2025)
 #' Evaluating kinship estimation methods for reduced-representation SNP data
 #' in non-model species. *Molecular Ecology Resources*.
-#' \doi{10.1111/1755-0998.70038}
+#' \doi{10.1111/1755-0998.70038} --
+#' Goudet, J., Kay, T. & Weir, B.S. (2018) How to estimate kinship.
+#' *Molecular Ecology* 27:4121-4135. (`method = "beta"`,
+#' `hierfstat::beta.dosage()`.) --
+#' Weir, B.S. & Goudet, J. (2017) A unified characterization of population
+#' structure and relatedness. *Genetics* 206:2085-2103.
+#' \doi{10.1534/genetics.116.198424} --
+#' Chang, C.C., Chow, C.C., Tellier, L.C.A.M., Vattikuti, S., Purcell, S.M. &
+#' Lee, J.J. (2015) Second-generation PLINK: rising to the challenge of larger
+#' and richer datasets. *GigaScience* 4:7. (PLINK 2's `--make-king`.)
 #'
 #' @param vcf Path to a VCF file, or the object returned by [read_stacks_vcf()]
 #'   (optionally filtered).
@@ -328,6 +377,7 @@ kinship_check <- function(vcf, popmap = NULL, method = "king", threshold = 0.044
   if (!nrow(H$A1))
     stop("No biallelic record remains after excluding multiallelic records -- kinship ",
          "can't be computed.", call. = FALSE)
+  H <- .recode_biallelic(H)
 
   if (method == "king") {
     king <- .king_kinship(H)

@@ -1,27 +1,31 @@
 # RADdiversity
 
-This package provides several methods for calculating population-genetic 
-statistics from RAD-seq data. The package was built with output from STACKS2
-in mind, but data generated with other assembly approaches should work. 
-</br></br>
+This package provides several methods for calculating population-genetic
+statistics from RAD-seq data. It was built with output from Stacks 2 in mind,
+but VCFs from other assembly pipelines work too. Genotypes are assumed to be
+diploid.
+
 The motivation for this package was a desire to calculate statistics more
-robustly than is done by STACKS. For instance, STACKS calculates F<sub>IS</sub>
-as a mean of ratios, rather than a mean of averages. Thus, F<sub>IS</sub> calculated
-by STACKS has issues when missing genotypes are present in a dataset.
+robustly than Stacks does. For instance, Stacks calculates F<sub>IS</sub> as
+a mean of per-site ratios rather than a ratio of sums (1 −
+ΣH<sub>o</sub>/ΣH<sub>e</sub>), so every site counts equally however little
+information it carries, including sites typed in only a few individuals.
 
 ## Why use it
 
 Three things routine RAD-seq summaries tend to get wrong:
 
-1. **F<sub>IS</sub>.** Stacks averages per-locus F<sub>IS</sub> ratios and
+1. **F<sub>IS</sub>.** Stacks averages per-site F<sub>IS</sub> ratios and
    divides by an expected heterozygosity that assumes F<sub>IS</sub> = 0.
    Here, H<sub>e</sub> is Nei & Chesser's (1983) estimator, unbiased at any
    F<sub>IS</sub>, and F<sub>IS</sub> = 1 − ΣH<sub>o</sub>/ΣH<sub>e</sub>
    over loci.
 2. **Comparing populations.** Bootstrapping or testing over loci treats loci
    as independent replicates of a population mean. They are repeated
-   measurements on the same animals: when individuals differ in inbreeding,
-   such tests reject a true null 55–76% of the time at a nominal 5%
+   measurements on the same animals: in simulations of two populations with
+   identical diversity, a locus bootstrap rejected the null about half the
+   time when individuals differed moderately in inbreeding, and about 80% of
+   the time when they differed more, at a nominal 5%
    (`het_between_pops_selftest()`). Here, populations are compared on one
    number per individual -- heterozygosity, or individual F.
 3. **Uncertainty.** SNPs on one RAD tag are linked, so standard errors and
@@ -44,23 +48,23 @@ R ≥ 3.5; base R is enough. Optional: `hierfstat` (Weir & Goudet's beta in
 
 ## Quick start
 
-On the toy dataset that ships with the package (80 RAD loci; populations of
-4 and 3 individuals -- far too few for real inference):
+On the simulated example dataset that ships with the package (two
+populations of 15 and 10 individuals, 1,000 RAD loci):
 
 ```r
 library(RADdiversity)
-haps   <- system.file("extdata", "small.haps.vcf",   package = "RADdiversity")
-snps   <- system.file("extdata", "small.snps.vcf",   package = "RADdiversity")
-popmap <- system.file("extdata", "small_popmap.tsv", package = "RADdiversity")
-sumstats <- system.file("extdata", "populations.sumstats_summary.tsv", package = "RADdiversity")
+haps     <- system.file("extdata", "example.haps.vcf.gz", package = "RADdiversity")
+snps     <- system.file("extdata", "example.snps.vcf.gz", package = "RADdiversity")
+popmap   <- system.file("extdata", "example_popmap.tsv", package = "RADdiversity")
+sumstats <- system.file("extdata", "example.sumstats_summary.tsv", package = "RADdiversity")
 
 set.seed(2024)                              # reproducible bootstrap intervals
-div_haps <- diversity_stats(haps, popmap, g = 4)                     # FIS, Ar, privAr
-div_snps <- diversity_stats(snps, popmap, g = 4, sites = sumstats)   # Ho, He, per-site values
+div_haps <- diversity_stats(haps, popmap, g = 16)                    # FIS, Ar, privAr
+div_snps <- diversity_stats(snps, popmap, g = 16, sites = sumstats)  # Ho, He, per-site values
 div_haps                                    # the main tables
 summary(div_haps)                           # the full report, with notes on interpretation
-het <- het_between_pops(haps, popmap, min_call = 0.5)                # do populations differ?
-het$pairwise_F_tests
+het <- het_between_pops(snps, popmap)       # do populations differ?
+het$pairwise_tests
 ```
 
 Every result is a list of tables (`div_haps$per_population`,
@@ -90,33 +94,38 @@ package = "RADdiversity")` walks through a whole analysis.
 
 ```bash
 populations --in-path ./stacks_out --popmap popmap.tsv -O ./out \
-            --min-gt-depth 6 -r 0.8 -p 2 \
-            --max-obs-het 0.70 --fstats --vcf --genepop --fasta-samples -t 8
+            -p 2 -r 0.8 --min-gt-depth 6 --max-obs-het 0.70 \
+            --vcf --vcf-all -t 8
 ```
 
 * `--min-gt-depth 6` (Stacks ≥ 2.67): a heterozygote seen in only a few
   reads is sometimes called a confident homozygote. This does not mean the
-  allele call is wrong, but it could be. The --min-gt-depth # makes such genotypes
-  missing data instead. Values of 6 or 10 could be justified. Not filtering by gt-depth
-  seems unlikely to have a meaningful effect on results based on internal tests. 
-* Use both -r and -p flags, not a global -R: A global -R can result in whole loci missing
-  from any given population. This might produce undesirable genetic diversity estimates.
-  A missing-data filter applied within each population (i.e., -p #numberOfPopulations) ensures each locus that passes the
-  missing data filters will be present in each genotype. This is particularly important when sampling is uneven among
-  populations as -R lets the larger population's coverage carry the
-  smaller one, which then carries more missing data -- an artificial
-  difference between exactly the two samples you mean to compare.
-* No `--min-mac` or `--min-maf` for the diversity run. Stacks turns a SNP that
-  fails them into a fixed site that still counts in `Sites`, so its diversity
-  is simply lost. Rare variants carry a lot of it: under a neutral site
-  frequency spectrum, sites with a minor allele count of 2 or less hold about
-  21% of π at 10 diploids and 10% at 20 -- a bias that depends on sample size.
-  If STRUCTURE, PCA or kinship need a MAC/MAF filter, make a second, filtered
-  run for those.
+  allele call is wrong, but it could be. `--min-gt-depth` makes such
+  genotypes missing data instead. Values of 6 or 10 could be justified. In the
+  author's tests, not filtering by genotype depth made little difference to
+  the final statistics, so this is a reasonable precaution rather than a
+  requirement.
+* Use both `-r` and `-p`, not a global `-R`. A global `-R` can leave a locus
+  mostly missing in one population while it passes on the others' coverage.
+  A missing-data filter applied within each population (`-r`, with `-p` set
+  to your number of populations) ensures each locus that passes is well
+  genotyped in every population. This matters most when sampling is uneven:
+  `-R` lets the larger population's coverage carry the smaller one, which
+  then carries more missing data -- an artificial difference between exactly
+  the two samples you mean to compare.
+* Minor allele count or frequency filters (`--min-mac`, `--min-maf`) are
+  common, and fine for many analyses, but they remove rare variants, which
+  are real diversity: under a neutral site frequency spectrum, sites with a
+  minor allele count of 2 or less hold about 21% of π at 10 diploids and 10%
+  at 20. If you use one, report the threshold and compare diversity values
+  only with data filtered the same way; if you can, a separate run without it
+  for diversity statistics avoids the issue.
+* `--vcf-all` (Stacks ≥ 2.62) writes an all-sites VCF, which `pi_allsites()`
+  uses to compute nucleotide diversity directly.
 
-
-Add `--vcf-all` for an all-sites VCF (Stacks ≥ 2.62), which `pi_allsites()`
-uses to compute nucleotide diversity directly.
+Data filtered elsewhere, or with other settings, work too:
+`vignette("workflow")` has a table of what common upstream filters change and
+what to report.
 
 ## What each function answers
 
@@ -203,8 +212,8 @@ way, never compare populations by overlapping intervals -- use
 | left out | why |
 |---|---|
 | HWE filtering | a heterozygote deficit is the signal. `hwe_test()` reports departures; nothing removes loci on them. |
-| null-allele correction | restriction-site null alleles cannot be removed by depth filtering; `vignette("reviewer-faq")` has the sentence to write instead. |
-| paralog detection beyond an excess-heterozygosity screen | `filter_max_het()` is that screen; dedicated tools (e.g. HDplot) go further. |
+| null-allele correction | restriction-site null alleles cannot be removed by depth filtering; `diversity_stats()` reports `fis_by_call_rate` to detect them, and `vignette("reviewer-faq")` has text for the methods. |
+| paralog detection beyond an excess-heterozygosity screen | `filter_max_het()` is that screen; dedicated tools (e.g. HDplot; McKinney et al. 2017) go further. |
 | N<sub>e</sub>, AMOVA, neutrality tests | different questions. |
 
 ## How it relates to other tools
@@ -263,6 +272,11 @@ SNP data sets with categorical metadata. *Molecular Ecology Resources*
 
 Kalinowski, S.T. (2004) Counting alleles with rarefaction: private alleles
 and hierarchical sampling designs. *Conservation Genetics* 5:539–543.
+
+McKinney, G.J., Waples, R.K., Seeb, L.W. & Seeb, J.E. (2017) Paralogs are
+revealed by proportion of heterozygotes and deviations in read ratios in
+genotyping-by-sequencing data from natural populations. *Molecular Ecology
+Resources* 17:656–669.
 
 Korunes, K.L. & Samuk, K. (2021) pixy: Unbiased estimation of nucleotide
 diversity and divergence in the presence of missing data. *Molecular Ecology

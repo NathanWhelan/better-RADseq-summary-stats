@@ -26,8 +26,20 @@ counted over every genotyped individual. The count-based version of
 \code{\link[=filter_maf]{filter_maf()}}: a fixed count (e.g. "at least 3 copies") behaves more
 predictably than a frequency when sample sizes are small or uneven.
 }
+\details{
+See \code{\link[=filter_maf]{filter_maf()}} for what the filter changes. For scale: under a neutral
+site frequency spectrum, sites with a minor allele count of 2 or less carry
+about 4/(N - 1) of nucleotide diversity for N gene copies (21\% at 10
+diploids, 10\% at 20), so \code{min_mac = 3} lowers per-site diversity by about
+that much.
+}
 \examples{
 H <- read_stacks_vcf(system.file("extdata", "small.snps.vcf",
                                  package = "RADdiversity"), verbose = FALSE)
 filter_mac(H, min_mac = 3)
+}
+\references{
+Linck, E. & Battey, C.J. (2019) Minor allele frequency thresholds strongly
+affect population structure inference with genomic data sets. \emph{Molecular
+Ecology Resources} 19:639-647.
 }

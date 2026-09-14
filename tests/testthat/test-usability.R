@@ -65,14 +65,18 @@ test_that("filters chain, including filter_low_conf_alt()", {
     filter_max_het(max_ho = 1, verbose = FALSE) |>
     filter_thin_one_snp(verbose = FALSE)
   expect_s3_class(out, "raddiv_vcf")
-  expect_true(all(c("A1", "A2", "locus", "locus_raw", "fields") %in% names(out)))
+  expect_true(all(c("A1", "A2", "locus", "locus_raw", "fields", "ad_ref", "ad_alt", "depth")
+                  %in% names(out)))
 })
 
-test_that("filter_low_conf_alt() explains that it needs the raw VCF columns", {
-  H <- haps()
-  H$fields <- NULL
-  expect_error(filter_low_conf_alt(H, verbose = FALSE), "H\\$fields")
-  expect_error(low_conf_alt_calls(H), "H\\$fields")
+test_that("filter_low_conf_alt() flags nothing without AD, and explains a hand-built H", {
+  H <- haps()                                   # GT-only VCF: no AD
+  expect_null(H$ad_ref)
+  expect_equal(nrow(low_conf_alt_calls(H)$flagged_calls), 0L)
+  expect_identical(filter_low_conf_alt(H, verbose = FALSE)$A1, H$A1)
+  H$fields <- NULL                              # as if built by hand
+  expect_error(filter_low_conf_alt(H, verbose = FALSE), "H\\$ad_ref")
+  expect_error(low_conf_alt_calls(H), "H\\$ad_ref")
 })
 
 test_that("a sample in the data but not in the popmap is named when writing FSTAT", {

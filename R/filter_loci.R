@@ -54,8 +54,9 @@
   H$locus_raw <- H$locus_raw[keep]
   H$alleles   <- H$alleles[keep]
   H$n_alleles <- H$n_alleles[keep]
-  ## `fields` (the raw VCF text) is absent from a hand-built H.
-  if (!is.null(H$fields)) H$fields <- H$fields[keep, , drop = FALSE]
+  ## `fields` and the depth matrices are absent from a hand-built H.
+  for (name in c("fields", "depth", "ad_ref", "ad_alt"))
+    if (!is.null(H[[name]])) H[[name]] <- H[[name]][keep, , drop = FALSE]
   H
 }
 
@@ -129,6 +130,51 @@ locus_allele_stats <- function(H) {
              mac = as.integer(mac), row.names = NULL)
 }
 
+## Not exported. What the data look filtered at, for data that may have been
+## filtered before they reached this package (a Stacks run with --min-mac,
+## -R, --max-obs-het; vcftools; dDocent). Returns a list:
+##   n_variable        records with at least 2 observed alleles
+##   min_allele_count  over variable records, copies of the rarest observed
+##                     allele (for a SNP, the minor allele count)
+##   rare_share        share of variable records whose rarest allele has 1 or
+##                     2 copies
+##   looks_mac_filtered  TRUE when there are at least 200 variable records and
+##                     none has an allele with 1 or 2 copies
+##   min_call_pooled   lowest call rate of any record, all samples pooled
+##   min_call_by_pop   lowest call rate of any record within each population
+##   max_ho            highest observed heterozygosity of any record (pooled)
+## WHY 200 AND "NONE". Under a neutral site frequency spectrum a site whose
+## minor allele is a singleton is the most common kind of SNP: about
+## (1 + 1/(N - 1)) / sum_{i<N} 1/i of SNPs among N gene copies, 23% at N = 50.
+## Bottlenecks and structure lower that share, but a dataset with hundreds of
+## SNPs and not one allele seen once or twice has almost certainly had rare
+## alleles removed. Nothing here can detect an HWE filter.
+.prior_filter_signals <- function(H, pops) {
+  counts <- .allele_counts(H$A1, H$A2)
+  observed <- counts > 0L
+  n_observed <- rowSums(observed)
+  variable <- n_observed >= 2L
+  ## Copies of the rarest observed allele of each variable record: a loop over
+  ## the (few) allele columns rather than over the (many) records.
+  rarest <- rep(.Machine$integer.max, sum(variable))
+  for (a in seq_len(ncol(counts))) {
+    column <- counts[variable, a]
+    rarest <- ifelse(column > 0L, pmin(rarest, column), rarest)
+  }
+  n_variable <- sum(variable)
+  call_rate_pooled <- rowMeans(!is.na(H$A1))
+  typed <- .typed_by_pop(H, pops)
+  call_by_pop <- vapply(names(pops), function(p) min(typed[, p]) / length(pops[[p]]), numeric(1))
+  ho <- rowMeans(H$A1 != H$A2, na.rm = TRUE)
+  list(n_variable = n_variable,
+       min_allele_count = if (n_variable) min(rarest) else NA_integer_,
+       rare_share = if (n_variable) mean(rarest <= 2L) else NA_real_,
+       looks_mac_filtered = n_variable >= 200L && all(rarest > 2L),
+       min_call_pooled = min(call_rate_pooled),
+       min_call_by_pop = call_by_pop,
+       max_ho = suppressWarnings(max(ho, na.rm = TRUE)))
+}
+
 ## Not exported. Used by filter_maf() and filter_mac(): checks that a
 ## user-supplied `allele_stats` belongs to this exact H (same records, same
 ## order), or computes it when not supplied.
@@ -149,6 +195,20 @@ locus_allele_stats <- function(H) {
 #' `min_maf`. Rare variants are the ones most likely to be sequencing or
 #' genotyping errors, so a MAF filter is a common first quality-control step
 #' for SNP data.
+#'
+#' **What it changes.** MAF and MAC filters are routine for RAD-seq data, but
+#' rare variants are also real diversity. Removing them lowers He per
+#' sequenced site, pct_poly, allelic richness and especially private allelic
+#' richness, by an amount that depends on sample size. The threshold also
+#' affects inferences of population structure (Linck & Battey 2019). Report
+#' the threshold used, and compare diversity values only between datasets
+#' filtered the same way. [diversity_stats()]'s `summary()` shows the lowest
+#' allele count remaining in the data.
+#'
+#' @references
+#' Linck, E. & Battey, C.J. (2019) Minor allele frequency thresholds strongly
+#' affect population structure inference with genomic data sets. *Molecular
+#' Ecology Resources* 19:639-647.
 #'
 #' @param H The object returned by [read_stacks_vcf()] (optionally filtered).
 #' @param min_maf Minimum minor allele frequency to keep a record, a number
@@ -187,6 +247,17 @@ filter_maf <- function(H, min_maf, allele_stats = NULL, verbose = TRUE) {
 #' counted over every genotyped individual. The count-based version of
 #' [filter_maf()]: a fixed count (e.g. "at least 3 copies") behaves more
 #' predictably than a frequency when sample sizes are small or uneven.
+#'
+#' See [filter_maf()] for what the filter changes. For scale: under a neutral
+#' site frequency spectrum, sites with a minor allele count of 2 or less carry
+#' about 4/(N - 1) of nucleotide diversity for N gene copies (21% at 10
+#' diploids, 10% at 20), so `min_mac = 3` lowers per-site diversity by about
+#' that much.
+#'
+#' @references
+#' Linck, E. & Battey, C.J. (2019) Minor allele frequency thresholds strongly
+#' affect population structure inference with genomic data sets. *Molecular
+#' Ecology Resources* 19:639-647.
 #'
 #' @inheritParams filter_maf
 #' @param min_mac Minimum minor allele count to keep a record (e.g. `3`).
@@ -281,6 +352,17 @@ filter_call_rate <- function(H, min_call, popmap = NULL, rule = "all", verbose =
 #' above it is the classic sign of an undetected paralog or collapsed repeat,
 #' where two similar genomic regions are read as one locus and their
 #' differences look like two alleles.
+#'
+#' This is a crude screen. A threshold on Ho alone also removes genuinely
+#' variable loci, and it misses paralogs at low frequency. HDplot (McKinney et
+#' al. 2017), which combines heterozygosity with read-ratio deviation, is the
+#' more specific tool.
+#'
+#' @references
+#' McKinney, G.J., Waples, R.K., Seeb, L.W. & Seeb, J.E. (2017) Paralogs are
+#' revealed by proportion of heterozygotes and deviations in read ratios in
+#' genotyping-by-sequencing data from natural populations. *Molecular Ecology
+#' Resources* 17:656-669.
 #'
 #' @inheritParams filter_maf
 #' @param max_ho Maximum observed heterozygosity at a record, a number from 0
@@ -380,44 +462,16 @@ filter_thin_one_snp <- function(H, method = "first", seed = NULL, verbose = TRUE
 ## a FORMAT name such as "DP". Returns a records x samples character matrix,
 ## NA where the record's FORMAT lacks the tag or the cell is too short (the
 ## VCF specification lets trailing subfields be dropped) or holds ".".
-.genotype_subfield <- function(H, tag) {
-  sample_column <- match(H$samples, colnames(H$fields))
-  cells <- H$fields[, sample_column, drop = FALSE]
-  out <- matrix(NA_character_, nrow(cells), ncol(cells))
-  formats <- H$fields[, "FORMAT"]
-  for (f in unique(formats)) {
-    k <- match(tag, strsplit(f, ":", fixed = TRUE)[[1]])
-    if (is.na(k)) next
-    rows <- which(formats == f)
-    block <- cells[rows, , drop = FALSE]
-    ## The k-th colon-separated field: skip k - 1 fields and their colons.
-    pattern <- paste0("^(?:[^:]*:){", k - 1L, "}([^:]*)")
-    has_field <- grepl(pattern, block, perl = TRUE)
-    value <- rep(NA_character_, length(block))
-    value[has_field] <- sub(paste0(pattern, ".*$"), "\\1", block[has_field], perl = TRUE)
-    out[rows, ] <- value
-  }
-  out[out %in% c(".", "")] <- NA_character_
-  out
-}
-
 ## Not exported. Read depth of every genotype call of H: the DP subfield, or
-## the sum of AD where DP is absent. A records x samples numeric matrix, NA
-## where neither can be read.
+## the sum of AD where DP is absent, as read_stacks_vcf() stored it in
+## H$depth (see .parse_vcf_chunk() in R/vcf_io.R). A records x samples
+## matrix, NA where neither could be read.
 .genotype_depth <- function(H) {
-  if (is.null(H$fields))
-    stop("This needs the raw VCF columns (H$fields) to read genotype depths, but this H ",
-         "has none -- for example because it was built by hand. Read the data with ",
-         "read_stacks_vcf() instead.", call. = FALSE)
-  depth <- suppressWarnings(matrix(as.numeric(.genotype_subfield(H, "DP")), nrow(H$A1)))
-  no_dp <- which(is.na(depth))
-  if (length(no_dp)) {
-    ad <- .genotype_subfield(H, "AD")[no_dp]
-    has_ad <- !is.na(ad)
-    depth[no_dp[has_ad]] <- vapply(strsplit(ad[has_ad], ",", fixed = TRUE), function(counts)
-      sum(suppressWarnings(as.numeric(counts)), na.rm = TRUE), numeric(1))
-  }
-  depth
+  if (is.null(H$depth))
+    stop("No genotype call in H has a readable depth (DP or AD): H$depth is empty. ",
+         "A Stacks haplotype VCF holds genotypes only; filter populations.snps.vcf ",
+         "instead, and read it with read_stacks_vcf().", call. = FALSE)
+  H$depth
 }
 
 #' Set genotypes with too few or too many reads to missing
@@ -442,6 +496,11 @@ filter_thin_one_snp <- function(H, method = "first", seed = NULL, verbose = TRUE
 #' same minimum-depth rule when the VCF is written. The haplotype VCF
 #' (`populations.haps.vcf`) holds genotypes only, without depths, so this
 #' filter needs the SNP VCF.
+#'
+#' @references
+#' Rochette, N.C., Rivera-Colon, A.G. & Catchen, J.M. (2019) Stacks 2:
+#' analytical methods for paired-end sequencing improve RADseq-based
+#' population genomics. *Molecular Ecology* 28:4737-4754.
 #'
 #' @inheritParams filter_maf
 #' @param H The object returned by [read_stacks_vcf()] (optionally filtered).
@@ -505,22 +564,28 @@ filter_genotype_depth <- function(H, min_dp, max_dp = Inf, verbose = TRUE) {
 ###############################################################################
 
 ## Not exported. Shared by filter_low_conf_alt(), low_conf_alt_calls() and
-## low_conf_alt_sensitivity(): reads AD and DP back out of the raw VCF text.
+## low_conf_alt_sensitivity(): the allele depths read_stacks_vcf() stored in
+## H$ad_ref, H$ad_alt and H$depth (see .parse_vcf_chunk() in R/vcf_io.R).
 ## Returns one row per genotype call that is fully called and carries at
 ## least one ALT allele -- every call that COULD be flagged:
 ##   record, sample   row and column of the call in H
-##   GT               the genotype text, e.g. "0/1"
+##   GT               the genotype, e.g. "0/1" (VCF allele numbers)
 ##   AD_ref, AD_alt   reads supporting REF, and the ALT allele(s) of the call
+##                    (each distinct ALT allele counted once)
 ##   DP               read depth (sum of AD when DP is absent)
 ##   alt_fraction     AD_alt / DP
 ##   usable           TRUE if AD could be read. The VCF specification allows
 ##                    trailing FORMAT fields to be dropped, so a call can have
 ##                    no AD; such a call is never flagged.
 .parse_alt_ad <- function(H) {
-  if (is.null(H$fields))
-    stop("This needs the raw VCF columns (H$fields) to read the AD (allele depth) field, ",
-         "but this H has none -- for example because it was built by hand. Read the ",
-         "data with read_stacks_vcf() instead.", call. = FALSE)
+  ## A VCF with no AD field (such as a Stacks haplotype VCF) has no allele
+  ## depths to read: every call is then "not usable" and nothing is flagged.
+  ## Only an H built by hand, without read_stacks_vcf()'s columns, is an error.
+  if ((is.null(H$ad_ref) || is.null(H$ad_alt)) && is.null(H$fields))
+    stop("This needs the AD (allele depth) values that read_stacks_vcf() stores in ",
+         "H$ad_ref and H$ad_alt, but this H has neither those nor H$fields -- for ",
+         "example because it was built by hand. Read the data with read_stacks_vcf().",
+         call. = FALSE)
   A1 <- H$A1
   A2 <- H$A2
   n_rec <- nrow(A1)
@@ -537,51 +602,12 @@ filter_genotype_depth <- function(H, min_dp, max_dp = Inf, verbose = TRUE) {
   record <- ((cell - 1L) %% n_rec) + 1L
   sample <- ((cell - 1L) %/% n_rec) + 1L
 
-  ## FORMAT (e.g. "GT:AD:DP") says where AD and DP sit in each genotype's text.
-  ## Parse each distinct FORMAT once, then look up each call's record.
-  formats <- unique(H$fields[, "FORMAT"])
-  format_parts <- strsplit(formats, ":", fixed = TRUE)
-  position_of <- function(tag) vapply(format_parts, function(f) {
-    at <- which(f == tag)
-    if (length(at)) at[1] else NA_integer_
-  }, integer(1))
-  format_of_call <- match(H$fields[record, "FORMAT"], formats)
-  ad_position <- position_of("AD")[format_of_call]
-  dp_position <- position_of("DP")[format_of_call]
-
-  ## The raw genotype text of each call, found by sample NAME.
-  sample_column <- match(H$samples, colnames(H$fields))
-  parts <- strsplit(H$fields[cbind(record, sample_column[sample])], ":", fixed = TRUE)
-  n_calls <- length(cell)
-  gt_text <- vapply(parts, `[`, character(1), 1L)          # GT is always first
-
-  subfield <- function(position) {
-    out <- rep(NA_character_, n_calls)
-    present <- !is.na(position) & lengths(parts) >= position
-    out[present] <- vapply(which(present), function(k) parts[[k]][position[k]], character(1))
-    out[out %in% c(".", "")] <- NA_character_
-    out
-  }
-  ad_text <- subfield(ad_position)
-  dp_text <- subfield(dp_position)
-  usable <- !is.na(ad_text)
-
-  AD_ref <- AD_alt <- DP <- rep(NA_integer_, n_calls)
-  allele_1 <- A1[cell]
-  allele_2 <- A2[cell]
-  for (k in which(usable)) {
-    ## AD is one read count per allele, in REF,ALT order; "." inside it means 0.
-    ad <- suppressWarnings(as.integer(strsplit(ad_text[k], ",", fixed = TRUE)[[1]]))
-    ad[is.na(ad)] <- 0L
-    ## Reads for each DISTINCT ALT allele in the call: a 1/1 homozygote has
-    ## one ALT allele, whose reads are counted once, not twice.
-    alts <- unique(c(allele_1[k], allele_2[k]))
-    alts <- alts[alts > 1L]
-    AD_alt[k] <- sum(ad[alts[alts <= length(ad)]])
-    AD_ref[k] <- if (length(ad)) ad[1L] else 0L
-    dp <- suppressWarnings(as.integer(dp_text[k]))
-    DP[k] <- if (is.na(dp)) sum(ad) else dp
-  }
+  AD_ref <- if (is.null(H$ad_ref)) rep(NA_integer_, length(cell)) else H$ad_ref[cell]
+  AD_alt <- if (is.null(H$ad_alt)) rep(NA_integer_, length(cell)) else H$ad_alt[cell]
+  usable <- !is.na(AD_ref)
+  DP <- if (is.null(H$depth)) rep(NA_integer_, length(cell)) else H$depth[cell]
+  DP[!usable] <- NA_integer_
+  gt_text <- paste0(A1[cell] - 1L, "/", A2[cell] - 1L)
 
   data.frame(record = record, sample = sample, GT = gt_text,
              AD_ref = AD_ref, AD_alt = AD_alt, DP = DP,

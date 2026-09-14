@@ -9,6 +9,33 @@ test_that("read_stacks_vcf() parses the small fixture", {
   expect_true(all(H$n_alleles %in% c(2L, 3L)))
 })
 
+test_that("reading in chunks gives exactly the same object as reading in one pass", {
+  for (file in c("small.haps.vcf", "small_ad.haps.vcf", "small.snps.vcf")) {
+    whole <- read_stacks_vcf(fx(file), verbose = FALSE)
+    chunked <- read_stacks_vcf(fx(file), chunk_lines = 3, verbose = FALSE)
+    expect_identical(chunked, whole, info = file)
+  }
+})
+
+test_that("read_stacks_vcf() stores depths and allele depths instead of genotype text", {
+  f <- tempfile(fileext = ".vcf")
+  writeLines(c(
+    "##fileformat=VCFv4.2",
+    "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tA\tB\tC",
+    "un\t1\tl1\tA\tC,T\t.\tPASS\t.\tGT:DP:AD\t1/2:9:2,3,4\t1/1:.:1,5,0\t0/0:4",
+    "un\t2\tl2\tA\tG\t.\tPASS\t.\tGT\t0/1\t0/0\t./."), f)
+  H <- read_stacks_vcf(f, chunk_lines = 1, verbose = FALSE)
+  expect_equal(colnames(H$fields), c("CHROM", "POS", "ID", "REF", "ALT", "QUAL", "FILTER",
+                                     "INFO", "FORMAT"))
+  ## A: DP 9; B: DP "." so sum of AD = 6; C: DP 4, AD dropped.
+  expect_equal(unname(H$depth), rbind(c(9L, 6L, 4L), c(NA, NA, NA)))
+  expect_equal(unname(H$ad_ref), rbind(c(2L, 1L, NA), c(NA, NA, NA)))
+  ## A is 1/2: reads for ALT 1 and ALT 2 (3 + 4); B is 1/1: ALT 1 once (5).
+  expect_equal(unname(H$ad_alt), rbind(c(7L, 5L, NA), c(NA, NA, NA)))
+  ## Subsetting records keeps the depth matrices lined up.
+  expect_equal(nrow(filter_call_rate(H, 0.5, verbose = FALSE)$depth), 2L)
+})
+
 test_that("read_popmap() splits samples by population", {
   H <- suppressMessages(read_stacks_vcf(fx("small.haps.vcf"), verbose = FALSE))
   pops <- suppressMessages(read_popmap(fx("small_popmap.tsv"), H$samples))

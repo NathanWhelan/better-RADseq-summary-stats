@@ -40,8 +40,10 @@ stand-alone scripts:
 * `kinship_check()` returns its result visibly, and `threshold = NULL` lists
   every pair with a kinship value.
 * Former fixed limits are now arguments: `het_between_pops(min_loci = 50,
-  nboot_g2 = 200)` and `kinship_check(min_shared_loci = 30,
-  low_confidence_loci = 200)`.
+  nboot_g2 = 1000)` and `kinship_check(min_shared_loci = 30,
+  low_confidence_loci = 200)`. `nboot_g2` defaults to 1000, the same as
+  `identity_disequilibrium(nboot = )`; 200 replicates gave a noisy 95%
+  interval.
 * `diversity_stats(sites = NULL)` is the new default meaning "no per-site
   conversion" (`0` still works).
 * `write_fstat()` always writes the file itself, so the output no longer
@@ -96,6 +98,25 @@ Found in a review of every estimator against the literature and the Stacks
 
 ## New
 
+* `het_between_pops()` returns `omnibus` for 3 or more populations: one
+  overall test of whether any population differs in heterozygosity or F
+  (Welch's one-way ANOVA and Kruskal-Wallis), to report before the pairwise
+  tests. Written to `het_between_pops_omnibus.<stem>.tsv` with `outdir`.
+* `diversity_stats()` returns `fis_by_call_rate`: FIS and He within groups of
+  records by each population's call rate. FIS rising as call rate falls is
+  the signature of null alleles or allele dropout (Gautier et al. 2013)
+  rather than inbreeding.
+* `diversity_stats()`'s `summary()` describes what the data look filtered
+  at (the rarest allele count left, the lowest record call rates, the
+  highest record Ho), for data filtered before they reached the package.
+* `differentiation_stats(beta = )`: `beta = FALSE` skips
+  `hierfstat::pairwise.betas()`, which takes about 95% of the run time on
+  large datasets.
+* `read_stacks_vcf()` reads the VCF in chunks (`chunk_lines`) and keeps
+  depths and allele depths as integer matrices (`$depth`, `$ad_ref`,
+  `$ad_alt`) instead of the genotype text, so `$fields` now holds only the
+  nine fixed columns. Memory use on large VCFs drops several-fold (see
+  `inst/sims/benchmark.R`); every result is unchanged.
 * `filter_genotype_depth()`: masks genotype calls below a minimum (and above
   a maximum) read depth, whatever the genotype. `filter_low_conf_alt()` masks
   only calls carrying an ALT allele, which removes heterozygotes
@@ -126,6 +147,20 @@ Found in a review of every estimator against the literature and the Stacks
 
 ## Bug fixes
 
+* `kinship_check()`: at a biallelic record whose two observed alleles are not
+  numbered 1 and 2 (a haplotype record declaring three alleles of which only
+  the 2nd and 3rd are carried), KING missed opposite homozygotes and beta
+  miscounted allele dosage, so unrelated individuals read as related (mean
+  KING kinship 0.25 instead of 0.03 in a test). Observed alleles are now
+  renumbered 1 and 2 first.
+* `write_fstat()`: the header's third number is now the highest allele number
+  used, as FSTAT requires, not the number of distinct alleles observed.
+* `het_between_pops()`: the Wilcoxon p-value now uses the same rule on every
+  R version (exact without ties and with fewer than 50 per group, otherwise
+  the normal approximation). R 4.6.0 changed `wilcox.test()`'s default for
+  tied values, which made `p_wilcox` depend on the R version.
+* `write_plink()` stops with a clear message when a sample or population
+  name contains a space, which would shift the `.ped` columns.
 * A popmap with all-numeric sample IDs such as `001` was read as numbers, so
   the IDs no longer matched the VCF.
 * `--sites=N` on the command line failed with "file not found".

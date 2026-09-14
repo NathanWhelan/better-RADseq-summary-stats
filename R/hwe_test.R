@@ -37,18 +37,15 @@
 #                observed. Guo & Thompson (1992) proposed TWO Monte Carlo
 #                methods for this -- this package implements their DIRECT
 #                one (repeatedly draw a fresh random permutation and count),
-#                not the Markov-chain ("switching") one GENEPOP uses. That
-#                choice was made deliberately, not by default: each direct
-#                draw is an EXACT, independent sample from the true null
-#                distribution (no burn-in, no "has the chain mixed yet?"
-#                question, unlike a Markov chain, whose own original paper
-#                describes its mixing time as "guessed at but never fully
-#                determined" -- Huber et al. 2006), and its per-draw cost
-#                (linear in sample size) is irrelevant at the sample sizes
-#                RADseq studies actually have (tens to low hundreds of
-#                individuals) -- GENEPOP's own switching method exists to
-#                help at the much larger sample sizes typical of human
-#                genetics, not the setting this package targets.
+#                not the Markov-chain one GENEPOP uses (Raymond & Rousset
+#                1995). Each direct draw is an exact, independent sample
+#                from the null distribution, so there is no burn-in and no
+#                question of whether a chain has mixed (Huber et al. 2006
+#                discuss this trade-off). A direct draw costs time
+#                proportional to the sample size, which is small at the
+#                tens to low hundreds of individuals RAD-seq studies
+#                typically have. pegas::hw.test() uses the same direct
+#                method.
 #
 #  VALIDATION. The formula both branches share (.levene_log_weight() below)
 #  was checked two ways before being used anywhere in this file, directly in
@@ -59,8 +56,8 @@
 #  copy arrangement to machine precision (max difference 1.1e-16, and they
 #  also summed to 1). See tests/testthat/test-hwe-test.R for the equivalent
 #  checks kept as permanent regression tests, plus a cross-check against
-#  pegas::hw.test() (which implements Guo & Thompson's OTHER, Markov-chain
-#  method) where installed.
+#  pegas::hw.test() (an independent implementation of the same direct Monte
+#  Carlo method) where installed.
 #
 #  REFERENCES
 #    Levene, H. (1949) On a matching problem arising in genetics. Annals of
@@ -334,7 +331,8 @@
 #'
 #' `method = "exact"` (the default) is Levene (1949)/Haldane (1954)'s exact
 #' conditional-probability test, computed exactly (no Monte Carlo error) for
-#' biallelic loci via full enumeration, and via Guo & Thompson's (1992)
+#' biallelic loci via full enumeration (the same test PLINK and VCFtools
+#' report for SNPs; Wigginton et al. 2005), and via Guo & Thompson's (1992)
 #' direct Monte Carlo method for loci with 3+ observed alleles (RAD
 #' haplotypes). `method = "chisq"` is the older, approximate chi-square
 #' goodness-of-fit test, kept available as a fast first pass. See
@@ -372,6 +370,11 @@
 #' 48:361-372. -- Huber, M., Chen, Y., Dinwoodie, I., Dobra, A. & Nicholas,
 #' M. (2006) Monte Carlo algorithms for Hardy-Weinberg proportions.
 #' *Biometrics* 62:49-53. \doi{10.1111/j.1541-0420.2005.00418.x}
+#' -- Raymond, M. & Rousset, F. (1995) GENEPOP (version 1.2): population
+#' genetics software for exact tests and ecumenicism. *Journal of Heredity*
+#' 86:248-249. -- Wigginton, J.E., Cutler, D.J. & Abecasis, G.R. (2005) A note
+#' on exact tests of Hardy-Weinberg equilibrium. *American Journal of Human
+#' Genetics* 76:887-893. \doi{10.1086/429864}
 #' -- Pearman, W.S., Urban, L. & Alexander, A. (2022) Commonly used
 #' Hardy-Weinberg equilibrium filtering schemes impact population structure
 #' inferences using RADseq data. *Molecular Ecology Resources* 22:2599-2613.

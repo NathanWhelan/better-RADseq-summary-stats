@@ -184,7 +184,7 @@ diversity_core_selftest <- function(verbose = TRUE) {
   }
   check("summary row: Exp_Het 0.4 at N=2 -> Pi", 0.4 * 4 / 3, 0.53333, 1e-5)
   say("  So: Stacks divides FIS by Pi (which assumes FIS = 0), and averages\n")
-  say("  per-locus ratios. Two independent errors. See vignette(\"rationale\").\n")
+  say("  per-locus ratios; see vignette(\"rationale\"), section 2.\n")
 
   say("\n--- 11. FIS ratio-of-sums stays unbiased under LOCUS-DRIVEN missingness ---\n")
   ## Real RAD data lose loci in clusters (a locus fails broadly), not
@@ -286,7 +286,7 @@ het_between_pops_selftest <- function(verbose = TRUE) {
 
   say("\n--- and what the LOCUS bootstrap does on the same data, for contrast ---\n")
   set.seed(202)
-  for (sd_F in c(0.00, 0.10)) {
+  for (sd_F in c(0.00, 0.10, 0.25)) {
     rejected <- replicate(120, {
       p <- stats::runif(n_loci, 0.05, 0.95)
       het_matrix <- function(F_values) {

@@ -3,7 +3,7 @@
 #  R/read_sumstats_summary.R -- parser for Stacks' populations.sumstats_summary.tsv
 #
 #  WHAT THIS IS FOR. This package's Ho, He and FIS estimators deliberately
-#  differ from Stacks' (vignette("rationale"), "Formulas"), so NOTHING here
+#  differ from Stacks' (vignette("rationale"), section 2), so NOTHING here
 #  uses sumstats_summary.tsv as a source of Ho, He, pi or FIS. The one column
 #  that is a plain count rather than an estimate is `Sites` in the "All
 #  positions (variant and fixed)" block: how many nucleotide positions Stacks
@@ -111,7 +111,7 @@
 #' data frame per block, one row per population.
 #'
 #' This package's own Ho, He and FIS estimators deliberately differ from
-#' Stacks' -- see `vignette("rationale")` ("Formulas"): Nei & Chesser's He instead of
+#' Stacks' -- see `vignette("rationale")` (section 2): Nei & Chesser's He instead of
 #' Stacks' `Pi` (which assumes FIS = 0), and FIS as a ratio of sums instead
 #' of Stacks' mean of per-locus ratios. **Nothing in this package uses the
 #' values this function returns as an estimate of Ho, He, pi or FIS** --

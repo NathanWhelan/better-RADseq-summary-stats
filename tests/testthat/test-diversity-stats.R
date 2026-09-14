@@ -9,7 +9,7 @@ test_that("diversity_stats() returns the expected structure on a small fixture",
                                g = 4, nboot = 50, outdir = outdir)
   ))
   expect_named(result, c("per_population", "richness", "autosomal", "estimator_comparison",
-                         "he_difference", "settings"))
+                         "he_difference", "fis_by_call_rate", "settings"))
   expect_setequal(result$per_population$population, c("popA", "popB"))
   expect_true(all(c("Ho", "He", "Fis", "pct_poly") %in% names(result$per_population)))
   expect_true(all(c("Ar", "privAr", "priv_total") %in% names(result$richness)))
@@ -253,6 +253,62 @@ test_that("per-site values warn when records were removed after reading", {
   expect_no_warning(diversity_stats(H, pm, g = 4, nboot = 0, sites = sumstats, verbose = FALSE))
 })
 
+test_that("fis_by_call_rate is flat without dropout and rises with it", {
+  sim <- function(dropout, seed) {
+    set.seed(seed)
+    L <- 3000; n <- 30
+    g <- sim_genotypes(stats::runif(L, 0.1, 0.9), n)
+    A1 <- g$A1; A2 <- g$A2
+    samp <- c(paste0("a", 1:15), paste0("b", 1:15))
+    dimnames(A1) <- dimnames(A2) <- list(NULL, samp)
+    if (dropout) {
+      ## Half the loci carry a null allele: heterozygotes there are called
+      ## homozygous half the time, and 30% of genotypes go missing.
+      bad <- matrix(rep(stats::runif(L) < 0.5, n), L, n)
+      het <- A1 != A2
+      to_hom <- bad & het & matrix(stats::runif(L * n) < 0.5, L, n)
+      A2[to_hom] <- A1[to_hom]
+      gone <- bad & matrix(stats::runif(L * n) < 0.3, L, n)
+    } else {
+      gone <- matrix(stats::runif(L * n) < 0.1, L, n)      # missing at random
+    }
+    A1[gone] <- NA; A2[gone] <- NA
+    pops <- list(popA = samp[1:15], popB = samp[16:30])
+    diversity_stats(sim_H(A1, A2), pops, g = 20, nboot = 0, verbose = FALSE)$fis_by_call_rate
+  }
+  clean <- sim(FALSE, 1)
+  expect_true(all(c("population", "call_rate", "n_records", "He", "Fis", "Fis_se") %in% names(clean)))
+  expect_lt(max(abs(clean$Fis[clean$n_records > 100])), 0.05)
+
+  dirty <- sim(TRUE, 2)
+  a <- dirty[dirty$population == "popA", ]
+  expect_gt(a$Fis[a$call_rate == "<75%"], a$Fis[a$call_rate == "100%"] + 0.1)
+})
+
+test_that("diversity_stats() notices data that were filtered by minor allele count", {
+  set.seed(5)
+  L <- 2000; n <- 30
+  ## Neutral-like frequencies: many rare variants.
+  g <- sim_genotypes(pmin(stats::rbeta(L, 0.2, 2), 0.5), n)
+  samp <- c(paste0("a", 1:15), paste0("b", 1:15))
+  dimnames(g$A1) <- dimnames(g$A2) <- list(NULL, samp)
+  H <- sim_H(g$A1, g$A2)
+  H <- filter_mac(H, min_mac = 1, verbose = FALSE)          # variable records only
+  pops <- list(popA = samp[1:15], popB = samp[16:30])
+
+  raw <- diversity_stats(H, pops, g = 20, nboot = 0, verbose = FALSE)$settings$prior_filters
+  expect_false(raw$looks_mac_filtered)
+  expect_gt(raw$rare_share, 0.1)
+
+  filtered_H <- filter_mac(H, min_mac = 3, verbose = FALSE)
+  res <- diversity_stats(filtered_H, pops, g = 20, nboot = 0, verbose = FALSE)
+  pf <- res$settings$prior_filters
+  expect_true(pf$looks_mac_filtered)
+  expect_equal(pf$min_allele_count, 3L)
+  ## Described in summary() as information, not raised as a warning.
+  expect_true(any(grepl("filtered by minor allele count", capture.output(summary(res)))))
+})
+
 test_that("het_between_pops() returns the expected structure on a small fixture", {
   outdir <- tempfile("raddiversity-test-")
   dir.create(outdir)
@@ -263,9 +319,10 @@ test_that("het_between_pops() returns the expected structure on a small fixture"
                         min_call = 0.5, outdir = outdir)
     )
   ))
-  expect_named(result, c("individual_heterozygosity", "population_summary", "pairwise_tests",
-                         "pairwise_F_tests", "overdispersion", "g2", "missingness_confound",
-                         "settings"))
+  expect_named(result, c("individual_heterozygosity", "population_summary", "omnibus",
+                         "pairwise_tests", "pairwise_F_tests", "overdispersion", "g2",
+                         "missingness_confound", "settings"))
+  expect_null(result$omnibus)                      # two populations: no overall test
   expect_equal(nrow(result$individual_heterozygosity), 7L)
   expect_true(all(c("p_welch", "p_wilcox", "hedges_g") %in% names(result$pairwise_tests)))
   expect_true(file.exists(file.path(outdir, "individual_heterozygosity.haps.tsv")))

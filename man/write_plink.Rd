@@ -41,6 +41,12 @@ column layout and missing-data code (\code{0}).
 PLINK's \code{.ped} format has exactly two allele columns per locus, so it
 cannot represent a record with more than two alleles, which haplotype VCFs
 often have. Such records stop the function unless \code{drop_multiallelic = TRUE}.
+
+\code{.ped} columns are separated by white space, so a sample or population
+name containing a space stops the function. The \code{.map} chromosome column
+is the VCF's \code{CHROM}. Stacks de novo output uses names such as \code{un} or
+locus numbers, which PLINK 1.9 and 2 reject unless run with
+\code{--allow-extra-chr}.
 }
 \examples{
 H <- read_stacks_vcf(system.file("extdata", "small.snps.vcf",
@@ -49,4 +55,13 @@ popmap <- system.file("extdata", "small_popmap.tsv", package = "RADdiversity")
 out <- tempfile()
 write_plink(H, out, popmap = popmap)
 readLines(paste0(out, ".map"))[1:3]
+}
+\references{
+Purcell, S., Neale, B., Todd-Brown, K., et al. (2007) PLINK: a tool set for
+whole-genome association and population-based linkage analyses. \emph{American
+Journal of Human Genetics} 81:559-575.
+
+Chang, C.C., Chow, C.C., Tellier, L.C.A.M., Vattikuti, S., Purcell, S.M. &
+Lee, J.J. (2015) Second-generation PLINK: rising to the challenge of larger
+and richer datasets. \emph{GigaScience} 4:7.
 }

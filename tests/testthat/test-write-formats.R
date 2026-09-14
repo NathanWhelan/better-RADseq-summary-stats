@@ -172,6 +172,19 @@ test_that("write_fstat() writes the same file whether or not hierfstat is instal
   expect_equal(lines[4], "1 0101 0101")  # a1 is (1,1) at both loci -> "0101" each
 })
 
+test_that("write_fstat()'s header gives the highest allele number used, not the count observed", {
+  ## A 3-allele record where only alleles 2 and 3 are carried: two alleles are
+  ## observed, but the file contains allele code 03, so the header must say 3.
+  H <- make_H(A1 = rbind(c(2L, 3L)), A2 = rbind(c(2L, 3L)), samples = c("a1", "b1"),
+              n_alleles = 3L, alleles = list(c("A", "C", "G")))
+  out <- tempfile()
+  write_fstat(H, out, popmap = list(popA = "a1", popB = "b1"), verbose = FALSE)
+  lines <- readLines(out)
+  header <- as.integer(strsplit(lines[1], " ")[[1]])
+  expect_equal(header[3], 3L)
+  expect_equal(lines[3:4], c("1 0202", "2 0303"))
+})
+
 ## ---------------------------------------------------------------------------
 ## write_radpainter()
 ## ---------------------------------------------------------------------------

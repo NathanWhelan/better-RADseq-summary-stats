@@ -113,7 +113,16 @@ relationships from genotypes or low-depth sequencing data. \emph{Molecular
 Ecology} 28:35-48. \doi{10.1111/mec.14954} -- McMaster, E.S. et al. (2025)
 Evaluating kinship estimation methods for reduced-representation SNP data
 in non-model species. \emph{Molecular Ecology Resources}.
-\doi{10.1111/1755-0998.70038}
+\doi{10.1111/1755-0998.70038} --
+Goudet, J., Kay, T. & Weir, B.S. (2018) How to estimate kinship.
+\emph{Molecular Ecology} 27:4121-4135. (\code{method = "beta"},
+\code{hierfstat::beta.dosage()}.) --
+Weir, B.S. & Goudet, J. (2017) A unified characterization of population
+structure and relatedness. \emph{Genetics} 206:2085-2103.
+\doi{10.1534/genetics.116.198424} --
+Chang, C.C., Chow, C.C., Tellier, L.C.A.M., Vattikuti, S., Purcell, S.M. &
+Lee, J.J. (2015) Second-generation PLINK: rising to the challenge of larger
+and richer datasets. \emph{GigaScience} 4:7. (PLINK 2's \code{--make-king}.)
 }
 \examples{
 H <- read_stacks_vcf(system.file("extdata", "small.snps.vcf",

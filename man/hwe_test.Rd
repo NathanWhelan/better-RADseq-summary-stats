@@ -64,7 +64,8 @@ output -- see \verb{@details} for why.
 \details{
 \code{method = "exact"} (the default) is Levene (1949)/Haldane (1954)'s exact
 conditional-probability test, computed exactly (no Monte Carlo error) for
-biallelic loci via full enumeration, and via Guo & Thompson's (1992)
+biallelic loci via full enumeration (the same test PLINK and VCFtools
+report for SNPs; Wigginton et al. 2005), and via Guo & Thompson's (1992)
 direct Monte Carlo method for loci with 3+ observed alleles (RAD
 haplotypes). \code{method = "chisq"} is the older, approximate chi-square
 goodness-of-fit test, kept available as a fast first pass. See
@@ -101,6 +102,11 @@ test of Hardy-Weinberg proportion for multiple alleles. \emph{Biometrics}
 48:361-372. -- Huber, M., Chen, Y., Dinwoodie, I., Dobra, A. & Nicholas,
 M. (2006) Monte Carlo algorithms for Hardy-Weinberg proportions.
 \emph{Biometrics} 62:49-53. \doi{10.1111/j.1541-0420.2005.00418.x}
+-- Raymond, M. & Rousset, F. (1995) GENEPOP (version 1.2): population
+genetics software for exact tests and ecumenicism. \emph{Journal of Heredity}
+86:248-249. -- Wigginton, J.E., Cutler, D.J. & Abecasis, G.R. (2005) A note
+on exact tests of Hardy-Weinberg equilibrium. \emph{American Journal of Human
+Genetics} 76:887-893. \doi{10.1086/429864}
 -- Pearman, W.S., Urban, L. & Alexander, A. (2022) Commonly used
 Hardy-Weinberg equilibrium filtering schemes impact population structure
 inferences using RADseq data. \emph{Molecular Ecology Resources} 22:2599-2613.

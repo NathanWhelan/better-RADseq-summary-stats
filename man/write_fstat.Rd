@@ -35,3 +35,10 @@ out <- tempfile()
 write_fstat(H, out, popmap = popmap)
 readLines(out)[1:3]
 }
+\references{
+Goudet, J. (1995) FSTAT (version 1.2): a computer program to calculate
+F-statistics. \emph{Journal of Heredity} 86:485-486.
+
+Goudet, J. (2005) HIERFSTAT, a package for R to compute and test
+hierarchical F-statistics. \emph{Molecular Ecology Notes} 5:184-186.
+}

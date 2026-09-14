@@ -44,3 +44,7 @@ out <- tempfile()
 write_genepop(H, out, popmap = popmap)
 readLines(out)[1:3]
 }
+\references{
+Rousset, F. (2008) GENEPOP'007: a complete re-implementation of the GENEPOP
+software for Windows and Linux. \emph{Molecular Ecology Resources} 8:103-106.
+}

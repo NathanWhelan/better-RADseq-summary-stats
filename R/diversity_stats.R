@@ -8,14 +8,15 @@
 #  vignette("rationale").
 #
 #    He     Nei & Chesser (1983), not Stacks' `Pi`, whose correction assumes
-#           FIS = 0. Both are reported side by side.     [-> "Formulas"]
+#           FIS = 0. Both are reported side by side.     [-> section 2]
 #    FIS    a ratio of sums over loci, not Stacks' mean of per-locus ratios,
-#           and not divided by Pi.                       [-> "Formulas"]
+#           and not divided by Pi.                       [-> section 2]
 #    CIs    a bootstrap over RAD LOCI (boot = "loci", the default), not over
 #           SNP rows, because SNPs on one RAD tag are linked. boot =
 #           "individuals"/"both" are for comparison only (see
-#           vignette("rationale"), "Bootstrap mode"). None of these intervals
-#           is a test between populations; that is het_between_pops().
+#           vignette("rationale"), "Why not bootstrap individuals?"). None of
+#           these intervals is a test between populations; that is
+#           het_between_pops().
 #    records  by default a population uses a record once it has >= min_n
 #           genotyped individuals there (available data, per population).
 #           complete_case = TRUE uses only records genotyped in every
@@ -41,7 +42,7 @@
 #' Run it twice: `populations.snps.vcf` gives Ho, He, `pct_poly` and the
 #' per-sequenced-site values; `populations.haps.vcf` gives FIS, Ar and
 #' privAr. The printed result says which numbers to take from each file. See
-#' `vignette("rationale")` ("Which file for which statistic").
+#' `vignette("rationale")`, section 3.
 #'
 #' @param vcf Path to `populations.snps.vcf` or `populations.haps.vcf`
 #'   (optionally gzip-compressed), or the object returned by
@@ -56,9 +57,9 @@
 #'   default), `"individuals"` (within each population, as diveRsity does) or
 #'   `"both"` (Owen & Eckles 2012). Matched exactly. `"individuals"` and
 #'   `"both"` are for comparison only: in a coverage simulation their
-#'   intervals badly missed the true He, FIS, Ar and privAr
-#'   (`vignette("rationale")`, "Bootstrap mode"). For uncertainty over
-#'   individuals use `se_individuals = TRUE` instead.
+#'   intervals badly missed the true He and FIS (`vignette("rationale")`,
+#'   "Why not bootstrap individuals?"). For uncertainty over individuals use
+#'   `se_individuals = TRUE` instead.
 #' @param sites Total sequenced sites, to convert Ho and He to per-site values
 #'   (`Ho_autosomal`, `He_autosomal`; SNP VCF only). Default `NULL`: no
 #'   conversion. One of:
@@ -80,11 +81,12 @@
 #'
 #'   Per-site values assume the variant records are all the variant sites
 #'   inside `sites`. Records removed in R with a `filter_*()` function are
-#'   still counted in `sites`: pass the `populations.sumstats_summary.tsv` path (whose `Variant_Sites`
-#'   is unfiltered) and a warning is given. Allele-frequency filters
-#'   ([filter_maf()], [filter_mac()], Stacks' `--min-mac`/`--min-maf`) remove
-#'   exactly the low-diversity sites and bias per-site values low, by an
-#'   amount that grows as samples get smaller; do not use them for this run.
+#'   still counted in `sites`: pass the `populations.sumstats_summary.tsv`
+#'   path (whose `Variant_Sites` is unfiltered) and a warning is given.
+#'   Allele-frequency filters ([filter_maf()], [filter_mac()], Stacks'
+#'   `--min-mac`/`--min-maf`) remove rare variants, which lowers per-site
+#'   values by an amount that grows as samples get smaller; report the
+#'   threshold used (see `vignette("rationale")`, section 1).
 #' @param min_n Minimum genotyped individuals a population needs at a record
 #'   to use that record. Default `2`, the smallest number for which He and
 #'   FIS are defined. Ignored when `complete_case = TRUE`.
@@ -134,11 +136,64 @@
 #'     \item{he_difference}{For two populations with `nboot > 0`: the He
 #'       difference with its locus-bootstrap interval (not a test; see
 #'       [het_between_pops()]). Otherwise `NULL`.}
+#'     \item{fis_by_call_rate}{A check for null alleles and allele dropout:
+#'       each population's records grouped by that population's call rate
+#'       (`100%`, `90-99%`, `75-89%`, `<75%`), with the number of records, He,
+#'       FIS and FIS's locus-jackknife SE in each group. FIS that rises as
+#'       call rate falls points to null alleles or dropout rather than
+#'       inbreeding (Gautier et al. 2013).}
 #'     \item{settings}{The settings and record counts of this run.}
 #'   }
 #'   Values are stored at full precision; `print()`, `summary()` and the TSV
 #'   files round them. With `outdir`, `per_population`, `richness` and
 #'   `autosomal` are written to `diversity_<table>.<stem>.tsv`.
+#' @references
+#' Nei, M. & Chesser, R.K. (1983) Estimation of fixation indices and gene
+#' diversities. *Annals of Human Genetics* 47:253-259.
+#' \doi{10.1111/j.1469-1809.1983.tb00993.x}
+#'
+#' Weir, B.S. & Cockerham, C.C. (1984) Estimating F-statistics for the
+#' analysis of population structure. *Evolution* 38:1358-1370.
+#' \doi{10.1111/j.1558-5646.1984.tb05657.x}
+#'
+#' Hurlbert, S.H. (1971) The nonconcept of species diversity: a critique and
+#' alternative parameters. *Ecology* 52:577-586.
+#'
+#' El Mousadik, A. & Petit, R.J. (1996) High level of genetic differentiation
+#' for allelic richness among populations of the argan tree. *Theoretical and
+#' Applied Genetics* 92:832-839.
+#'
+#' Kalinowski, S.T. (2004) Counting alleles with rarefaction: private alleles
+#' and hierarchical sampling designs. *Conservation Genetics* 5:539-543.
+#' \doi{10.1023/B:COGE.0000041021.91777.1a}
+#'
+#' Szpiech, Z.A., Jakobsson, M. & Rosenberg, N.A. (2008) ADZE: a rarefaction
+#' approach for counting alleles private to combinations of populations.
+#' *Bioinformatics* 24:2498-2504.
+#'
+#' Schmidt, T.L., Jasper, M.-E., Weeks, A.R. & Hoffmann, A.A. (2021) Unbiased
+#' population heterozygosity estimates from genome-wide sequence data.
+#' *Methods in Ecology and Evolution* 12:1888-1898.
+#' \doi{10.1111/2041-210X.13659}
+#'
+#' Weir, B.S. (1996) *Genetic Data Analysis II*. Sinauer, Sunderland, MA.
+#' (Delete-one jackknife over loci.)
+#'
+#' Owen, A.B. & Eckles, D. (2012) Bootstrapping data arrays of arbitrary
+#' order. *Annals of Applied Statistics* 6:895-927. (`boot = "both"`.)
+#'
+#' Keenan, K., McGinnity, P., Cross, T.F., Crozier, W.W. & Prodohl, P.A.
+#' (2013) diveRsity: an R package for the estimation and exploration of
+#' population genetics parameters and their associated errors. *Methods in
+#' Ecology and Evolution* 4:782-788. (`boot = "individuals"`.)
+#'
+#' Goudet, J. (2005) HIERFSTAT, a package for R to compute and test
+#' hierarchical F-statistics. *Molecular Ecology Notes* 5:184-186.
+#' (`hierfstat_check`.)
+#'
+#' Gautier, M., Gharbi, K., Cezard, T., et al. (2013) The effect of RAD
+#' allele dropout on the estimation of genetic variation within and between
+#' populations. *Molecular Ecology* 22:3165-3178. (`fis_by_call_rate`.)
 #' @examples
 #' # A toy dataset shipped with the package: 80 RAD loci, 2 populations of 4
 #' # and 3 individuals (real studies need far more individuals).
@@ -215,6 +270,10 @@ diversity_stats <- function(vcf, popmap, g, nboot = 10000L, boot = "loci", sites
     stop("g = ", g, " gene copies exceeds the smallest population's ",
          2L * min(pop_sizes), ". g is in GENE COPIES: 10 diploids = 20.", call. = FALSE)
   sites_by_pop <- .resolve_sites(sites, pop_names)
+
+  ## Data may have been filtered before reaching this package; say what it
+  ## looks filtered at (see .prior_filter_signals() in R/filter_loci.R).
+  prior_filters <- .prior_filter_signals(H, pops)
 
   is_haplotype <- .is_haplotype_H(H)
   .inform(verbose, sprintf("  record type: %s", if (is_haplotype)
@@ -314,6 +373,7 @@ diversity_stats <- function(vcf, popmap, g, nboot = 10000L, boot = "loci", sites
                               sites = sites_by_pop, ok_sites = ok_sites,
                               variant_records = variant_records,
                               is_haplotype = is_haplotype, boot_matrix = boot_matrix)
+  tables$fis_by_call_rate <- .fis_by_call_rate(rs, n_typed, pop_sizes, locus_index)
 
   ## ---- 10. Files (only with outdir) -----------------------------------------
   ## A non-default boot mode is in the file name, so a comparison run cannot
@@ -337,7 +397,7 @@ diversity_stats <- function(vcf, popmap, g, nboot = 10000L, boot = "loci", sites
                    nboot = nboot, boot = boot, se_individuals = se_individuals,
                    is_haplotype = is_haplotype, sites = as.vector(sites_by_pop),
                    variant_records = variant_records, ok_sites = ok_sites,
-                   seed = seed, files = written)
+                   prior_filters = prior_filters, seed = seed, files = written)
   names(settings$sites) <- pop_names
   structure(c(tables, list(settings = settings)), class = "raddiv_diversity")
 }
@@ -442,7 +502,7 @@ print.summary.raddiv_diversity <- function(x, ...) {
   }
   if (st$nboot > 0)
     cat("  95% CI from ", .big(st$nboot), " replicates, boot=\"", st$boot,
-        "\" (see vignette(\"rationale\"), \"Bootstrap mode\")\n", sep = "")
+        "\" (see vignette(\"rationale\"), \"Why not bootstrap individuals?\")\n", sep = "")
   rule()
   cat("\n")
 
@@ -481,7 +541,27 @@ print.summary.raddiv_diversity <- function(x, ...) {
        sprintf("Compare against `Pi`, never `Exp_Het`: Pi = Exp_Het * 2n/(2n-1) = %s.",
                paste(sprintf("x%.3f at n=%d", (2 * n_ind) / (2 * n_ind - 1), n_ind),
                      collapse = ", ")))
-  see("Formulas, and what maps onto what in Stacks")
+  see("Appendix A. Stacks columns and RADdiversity")
+
+  pf <- st$prior_filters
+  if (!is.null(pf)) {
+    cat("\nWhat the data look filtered at (before or during this run)\n")
+    note(sprintf("rarest allele in any variable record: %s copies; %.1f%% of %s variable records have an allele seen once or twice",
+                 pf$min_allele_count, 100 * pf$rare_share, .big(pf$n_variable)),
+         sprintf("lowest record call rate: %.2f pooled; within populations %s",
+                 pf$min_call_pooled,
+                 paste(sprintf("%s %.2f", names(pf$min_call_by_pop), pf$min_call_by_pop),
+                       collapse = ", ")),
+         sprintf("highest record Ho (pooled): %.2f", pf$max_ho))
+    if (isTRUE(pf$looks_mac_filtered)) note(.report_text$diversity_looks_mac_filtered)
+    note(.report_text$diversity_prior_filters)
+  }
+
+  if (!is.null(x$fis_by_call_rate)) {
+    cat("\nFIS by call rate -- a check for null alleles and allele dropout\n")
+    .print_table(.round_diversity_table(x$fis_by_call_rate, "fis_by_call_rate"))
+    note(.report_text$diversity_fis_by_call_rate)
+  }
 
   cat("\nWhat the Ho and He numbers are\n")
   sites <- st$sites
@@ -489,7 +569,7 @@ print.summary.raddiv_diversity <- function(x, ...) {
   mode_text <- if (st$complete_case) "complete-case" else sprintf("available-data, min_n = %d", st$min_n)
   if (any(ok_sites) && st$is_haplotype) {
     note(.report_text$diversity_sites_on_haplotypes)
-    see("Which file for which statistic")
+    see("3. Which Stacks file for which statistic")
   } else if (any(ok_sites)) {
     retained <- n_used / n_rec
     ## Older result objects (before per-population counts) have no
@@ -514,7 +594,7 @@ print.summary.raddiv_diversity <- function(x, ...) {
     }
     .print_table(.round_diversity_table(x$autosomal, "autosomal"))
     note(.report_text$diversity_autosomal_meaning)
-    see("Formulas, and what maps onto what in Stacks")
+    see("Appendix A. Stacks columns and RADdiversity")
     if (st$complete_case && retained < 0.5)
       note(sprintf("NOTE: only %.0f%% of variant records have complete data, so this rests on",
                    100 * retained),
@@ -525,14 +605,14 @@ print.summary.raddiv_diversity <- function(x, ...) {
            .report_text$diversity_sites_implausible)
     else
       note(.report_text$diversity_per_ascertained_record)
-    see("Denominators, and where nucleotide diversity fits")
+    see("Heterozygosity per sequenced site")
   }
 
   cat("\n")
   rule("-")
   note(if (st$is_haplotype) .report_text$diversity_take_haplotype else .report_text$diversity_take_snp)
   note("", .report_text$diversity_take_common)
-  see("Which file for which statistic")
+  see("3. Which Stacks file for which statistic")
   rule("-")
 
   cat("\nFor Weir & Cockerham FST, Jost's D and Weir & Goudet's beta between these\n")

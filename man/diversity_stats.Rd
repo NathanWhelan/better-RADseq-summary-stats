@@ -44,9 +44,9 @@ jackknife standard errors are always computed).}
 default), \code{"individuals"} (within each population, as diveRsity does) or
 \code{"both"} (Owen & Eckles 2012). Matched exactly. \code{"individuals"} and
 \code{"both"} are for comparison only: in a coverage simulation their
-intervals badly missed the true He, FIS, Ar and privAr
-(\code{vignette("rationale")}, "Bootstrap mode"). For uncertainty over
-individuals use \code{se_individuals = TRUE} instead.}
+intervals badly missed the true He and FIS (\code{vignette("rationale")},
+"Why not bootstrap individuals?"). For uncertainty over individuals use
+\code{se_individuals = TRUE} instead.}
 
 \item{sites}{Total sequenced sites, to convert Ho and He to per-site values
 (\code{Ho_autosomal}, \code{He_autosomal}; SNP VCF only). Default \code{NULL}: no
@@ -71,11 +71,12 @@ genotyped individual (column \code{variant_records} of the result).
 
 Per-site values assume the variant records are all the variant sites
 inside \code{sites}. Records removed in R with a \verb{filter_*()} function are
-still counted in \code{sites}: pass the \code{populations.sumstats_summary.tsv} path (whose \code{Variant_Sites}
-is unfiltered) and a warning is given. Allele-frequency filters
-(\code{\link[=filter_maf]{filter_maf()}}, \code{\link[=filter_mac]{filter_mac()}}, Stacks' \code{--min-mac}/\code{--min-maf}) remove
-exactly the low-diversity sites and bias per-site values low, by an
-amount that grows as samples get smaller; do not use them for this run.}
+still counted in \code{sites}: pass the \code{populations.sumstats_summary.tsv}
+path (whose \code{Variant_Sites} is unfiltered) and a warning is given.
+Allele-frequency filters (\code{\link[=filter_maf]{filter_maf()}}, \code{\link[=filter_mac]{filter_mac()}}, Stacks'
+\code{--min-mac}/\code{--min-maf}) remove rare variants, which lowers per-site
+values by an amount that grows as samples get smaller; report the
+threshold used (see \code{vignette("rationale")}, section 1).}
 
 \item{min_n}{Minimum genotyped individuals a population needs at a record
 to use that record. Default \code{2}, the smallest number for which He and
@@ -140,6 +141,12 @@ estimator behind Stacks' \code{Pi}, side by side.}
 \item{he_difference}{For two populations with \code{nboot > 0}: the He
 difference with its locus-bootstrap interval (not a test; see
 \code{\link[=het_between_pops]{het_between_pops()}}). Otherwise \code{NULL}.}
+\item{fis_by_call_rate}{A check for null alleles and allele dropout:
+each population's records grouped by that population's call rate
+(\verb{100\%}, \verb{90-99\%}, \verb{75-89\%}, \verb{<75\%}), with the number of records, He,
+FIS and FIS's locus-jackknife SE in each group. FIS that rises as
+call rate falls points to null alleles or dropout rather than
+inbreeding (Gautier et al. 2013).}
 \item{settings}{The settings and record counts of this run.}
 }
 Values are stored at full precision; \code{print()}, \code{summary()} and the TSV
@@ -158,7 +165,7 @@ on interpretation; \code{outdir} also writes the tables to TSV files.
 Run it twice: \code{populations.snps.vcf} gives Ho, He, \code{pct_poly} and the
 per-sequenced-site values; \code{populations.haps.vcf} gives FIS, Ar and
 privAr. The printed result says which numbers to take from each file. See
-\code{vignette("rationale")} ("Which file for which statistic").
+\code{vignette("rationale")}, section 3.
 }
 \examples{
 # A toy dataset shipped with the package: 80 RAD loci, 2 populations of 4
@@ -183,4 +190,52 @@ res_snps$autosomal
 
 # The full report, with notes on interpreting each number:
 summary(res_snps)
+}
+\references{
+Nei, M. & Chesser, R.K. (1983) Estimation of fixation indices and gene
+diversities. \emph{Annals of Human Genetics} 47:253-259.
+\doi{10.1111/j.1469-1809.1983.tb00993.x}
+
+Weir, B.S. & Cockerham, C.C. (1984) Estimating F-statistics for the
+analysis of population structure. \emph{Evolution} 38:1358-1370.
+\doi{10.1111/j.1558-5646.1984.tb05657.x}
+
+Hurlbert, S.H. (1971) The nonconcept of species diversity: a critique and
+alternative parameters. \emph{Ecology} 52:577-586.
+
+El Mousadik, A. & Petit, R.J. (1996) High level of genetic differentiation
+for allelic richness among populations of the argan tree. \emph{Theoretical and
+Applied Genetics} 92:832-839.
+
+Kalinowski, S.T. (2004) Counting alleles with rarefaction: private alleles
+and hierarchical sampling designs. \emph{Conservation Genetics} 5:539-543.
+\doi{10.1023/B:COGE.0000041021.91777.1a}
+
+Szpiech, Z.A., Jakobsson, M. & Rosenberg, N.A. (2008) ADZE: a rarefaction
+approach for counting alleles private to combinations of populations.
+\emph{Bioinformatics} 24:2498-2504.
+
+Schmidt, T.L., Jasper, M.-E., Weeks, A.R. & Hoffmann, A.A. (2021) Unbiased
+population heterozygosity estimates from genome-wide sequence data.
+\emph{Methods in Ecology and Evolution} 12:1888-1898.
+\doi{10.1111/2041-210X.13659}
+
+Weir, B.S. (1996) \emph{Genetic Data Analysis II}. Sinauer, Sunderland, MA.
+(Delete-one jackknife over loci.)
+
+Owen, A.B. & Eckles, D. (2012) Bootstrapping data arrays of arbitrary
+order. \emph{Annals of Applied Statistics} 6:895-927. (\code{boot = "both"}.)
+
+Keenan, K., McGinnity, P., Cross, T.F., Crozier, W.W. & Prodohl, P.A.
+(2013) diveRsity: an R package for the estimation and exploration of
+population genetics parameters and their associated errors. \emph{Methods in
+Ecology and Evolution} 4:782-788. (\code{boot = "individuals"}.)
+
+Goudet, J. (2005) HIERFSTAT, a package for R to compute and test
+hierarchical F-statistics. \emph{Molecular Ecology Notes} 5:184-186.
+(\code{hierfstat_check}.)
+
+Gautier, M., Gharbi, K., Cezard, T., et al. (2013) The effect of RAD
+allele dropout on the estimation of genetic variation within and between
+populations. \emph{Molecular Ecology} 22:3165-3178. (\code{fis_by_call_rate}.)
 }

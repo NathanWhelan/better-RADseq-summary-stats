@@ -37,3 +37,8 @@ out <- tempfile()
 write_radpainter(H, out)
 readLines(out)[1:2]
 }
+\references{
+Malinsky, M., Trucchi, E., Lawson, D.J. & Falush, D. (2018) RADpainter and
+fineRADstructure: population inference from RADseq data. \emph{Molecular Biology
+and Evolution} 35:1284-1290.
+}

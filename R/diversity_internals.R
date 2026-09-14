@@ -269,6 +269,57 @@
 }
 
 ## ---------------------------------------------------------------------------
+## Diagnostic: FIS by call rate (null alleles and allele dropout)
+## ---------------------------------------------------------------------------
+
+## Not exported. For each population, the records it uses are split by that
+## population's own call rate there (100%, 90-99%, 75-89%, below 75%), and
+## FIS (ratio of sums) and mean He are computed within each group, with a
+## delete-one-locus jackknife SE.
+##
+## WHY. A null allele (e.g. a mutation in the restriction site) or allele
+## dropout at low depth turns heterozygotes into apparent homozygotes, and
+## when both copies drop out, into missing genotypes. Records affected this
+## way have both more missing data and fewer heterozygotes, so FIS rising as
+## call rate falls is their signature. Real inbreeding raises FIS at every
+## record alike. Dropout is also more common in more diverse populations
+## (Gautier et al. 2013), so it can create a FIS difference between
+## populations as well as inflate FIS.
+##   rs           per-record statistics from .record_stats() (records x pops)
+##   n_typed      records x populations, genotyped individuals
+##   pop_sizes    individuals per population
+##   locus_index  RAD locus of each record, as 1..n_loci
+## Returns a data frame: population, call_rate, n_records, He, Fis, Fis_se;
+## only groups with at least one record are listed.
+.fis_by_call_rate <- function(rs, n_typed, pop_sizes, locus_index) {
+  pop_names <- colnames(n_typed)
+  breaks <- c("100%" = 1, "90-99%" = 0.9, "75-89%" = 0.75, "<75%" = 0)
+  one_pop <- function(p) {
+    call_rate <- n_typed[, p] / pop_sizes[[p]]
+    group <- ifelse(call_rate >= 1 - .threshold_tol, "100%",
+             ifelse(call_rate >= 0.9 - .threshold_tol, "90-99%",
+             ifelse(call_rate >= 0.75 - .threshold_tol, "75-89%", "<75%")))
+    pieces <- .diversity_pieces(lapply(rs, function(m) m[, p]))
+    rows <- lapply(names(breaks), function(g) {
+      in_group <- group == g
+      n_records <- sum(in_group & pieces[, 1] > 0)
+      if (!n_records) return(NULL)
+      S <- rowsum(pieces * in_group, locus_index, reorder = TRUE)
+      f <- function(totals) .diversity_from_sums(totals, "x")
+      point <- f(colSums(S))[1L, ]
+      se <- .jack_block_sums(S, f)
+      data.frame(population = p, call_rate = g, n_records = n_records,
+                 He = unname(point["He_x"]), Fis = unname(point["Fis_x"]),
+                 Fis_se = unname(se["Fis_x"]))
+    })
+    do.call(rbind, rows)
+  }
+  out <- do.call(rbind, lapply(pop_names, one_pop))
+  rownames(out) <- NULL
+  out
+}
+
+## ---------------------------------------------------------------------------
 ## Uncertainty over individuals
 ## ---------------------------------------------------------------------------
 
@@ -280,7 +331,7 @@
 ## p's per-record counts, and p's statistics are recomputed with the same
 ## functions as the point estimate. The other populations do not change.
 ## Nobody is duplicated, so this avoids the small-sample bias that rules out
-## a bootstrap over individuals (vignette("rationale"), "Bootstrap mode").
+## a bootstrap over individuals (vignette("rationale"), "Why not bootstrap individuals?").
 ##   SE = sqrt( (n - 1)/n * sum_i (theta_(-i) - mean_i theta_(-i))^2 )
 ## Inputs are for the records `rows` of H (see the SHAPES note at the top).
 ## Returns list(se = named SEs, full = the same statistics recomputed from
@@ -329,7 +380,7 @@
 ##   3. for "both", also resamples RAD loci (as boot = "loci" does).
 ## Why this is not the default: a duplicated individual biases He, FIS, Ar and
 ## privAr low, because their small-sample corrections assume n DISTINCT
-## individuals (vignette("rationale"), "Bootstrap mode").
+## individuals (vignette("rationale"), "Why not bootstrap individuals?").
 ## Returns an nboot x (statistics) matrix.
 .boot_individuals <- function(H, pops, rows, locus_index, n_loci, min_n, g, nboot,
                               resample_loci) {
@@ -368,7 +419,8 @@
                                              priv_total_lo = 1, priv_total_hi = 1)),
   autosomal = list(digits = 4, signif_cols = c(Ho_autosomal = 4, He_autosomal = 4)),
   estimator_comparison = list(digits = 4, round_cols = c(pct_diff = 2)),
-  he_difference = list(digits = 4)
+  he_difference = list(digits = 4),
+  fis_by_call_rate = list(digits = 4)
 )
 
 ## Not exported. Applies .diversity_rounding to one table, for printing or

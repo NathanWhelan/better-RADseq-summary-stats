@@ -26,17 +26,12 @@ run_div <- function(vcf, popmap = "popmap.tsv", g = 20, ...) {
 }
 
 ## Same rule as the old check_golden.R: identical columns and rows, numbers
-## within 1e-6 (the files are already rounded to 4-5 decimals), NA where NA --
-## except p_wilcox/p_wilcox_BH, which get a looser tolerance (below). Those
-## come straight out of stats::wilcox.test() with its default exact/normal-
-## approximation selection; when the pooled sample has ties, R's own tie
-## handling there has shifted slightly between R versions (observed: R 4.5.3
-## vs 4.6.1, same input `a`/`b` -- mean1/mean2/diff/p_welch/hedges_g all
-## matched exactly, only p_wilcox moved by ~0.004-0.006). That is an R
-## implementation detail this package does not control, not a computation
-## bug, so asserting it to 1e-6 makes the suite fail on R updates rather than
-## on package regressions.
-wide_tol_cols <- c("p_wilcox", "p_wilcox_BH")
+## within 1e-6 (the files are already rounded to 4-5 decimals), NA where NA.
+## p_wilcox once needed a looser tolerance: R 4.6.0 changed wilcox.test()'s
+## default for tied values from the normal approximation to exact
+## conditional inference, which moved these p-values by ~0.005 on
+## win-builder. .two_sample() now passes `exact` explicitly (the pre-4.6
+## rule), so the golden values should hold on every R version.
 expect_golden <- function(actual_file, golden_name) {
   a <- utils::read.delim(actual_file, check.names = FALSE, stringsAsFactors = FALSE)
   g <- utils::read.delim(lg(file.path("golden", golden_name)), check.names = FALSE,
@@ -48,8 +43,7 @@ expect_golden <- function(actual_file, golden_name) {
   expect_true(all(setdiff(names(a), names(g)) %in% added_since), info = golden_name)
   expect_identical(nrow(a), nrow(g), info = golden_name)
   for (col in names(g)) {
-    tol <- if (col %in% wide_tol_cols) 0.02 else 1e-6
-    expect_equal(a[[col]], g[[col]], tolerance = tol, info = paste0(golden_name, ": ", col))
+    expect_equal(a[[col]], g[[col]], tolerance = 1e-6, info = paste0(golden_name, ": ", col))
   }
 }
 
@@ -146,6 +140,50 @@ test_that("het_between_pops() edge cases", {
   msgs <- capture_messages(invisible(capture.output(
     het_between_pops(lg("one_dead_ind.vcf.gz"), lg("popmap.tsv"), min_call = 0.9, outdir = od))))
   expect_true(any(grepl("EXCLUDED", msgs)))
+})
+
+test_that("the Wilcoxon p-value uses the same exact/approximate rule on every R version", {
+  ## No ties, small groups: the exact p-value.
+  a <- c(0.31, 0.29, 0.35, 0.33, 0.30)
+  b <- c(0.25, 0.27, 0.24, 0.28)
+  row <- RADdiversity:::.two_sample(a, b, "A", "B", 100, "heterozygosity", verbose = FALSE)
+  expect_equal(row$p_wilcox, stats::wilcox.test(a, b, exact = TRUE)$p.value)
+  ## Ties: the normal approximation with continuity correction (R >= 4.6.0
+  ## would otherwise switch to exact conditional inference).
+  b_tied <- c(0.25, 0.29, 0.24, 0.28)
+  row <- RADdiversity:::.two_sample(a, b_tied, "A", "B", 100, "heterozygosity", verbose = FALSE)
+  expect_equal(row$p_wilcox,
+               suppressWarnings(stats::wilcox.test(a, b_tied, exact = FALSE, correct = TRUE))$p.value)
+})
+
+test_that("het_between_pops() gives an overall test for 3 or more populations", {
+  res <- suppressMessages(het_between_pops(lg("sim.allsnps.vcf.gz"), lg("pm_three.tsv"),
+                                           min_call = 0.9, nboot_g2 = 0, verbose = FALSE))
+  om <- res$omnibus
+  expect_equal(om$statistic, c("heterozygosity", "F"))
+  expect_true(all(is.finite(om$p_welch)) && all(is.finite(om$p_kruskal)))
+
+  ## The same numbers as oneway.test() and kruskal.test() on per-individual
+  ## heterozygosity over the loci every population clears.
+  H <- read_stacks_vcf(lg("sim.allsnps.vcf.gz"), verbose = FALSE)
+  pops <- read_popmap(lg("pm_three.tsv"), H$samples, verbose = FALSE)
+  sets <- RADdiversity:::.population_locus_sets(H, pops, 0.9)
+  loci <- rowSums(sets) == ncol(sets)
+  het <- unlist(lapply(pops, function(ids)
+    colMeans(H$A1[loci, ids, drop = FALSE] != H$A2[loci, ids, drop = FALSE], na.rm = TRUE)))
+  group <- factor(rep(names(pops), lengths(pops)), levels = names(pops))
+  expect_equal(om$n_loci[1], sum(loci))
+  expect_equal(om$p_welch[1], stats::oneway.test(het ~ group, var.equal = FALSE)$p.value)
+  expect_equal(om$p_kruskal[1], stats::kruskal.test(het, group)$p.value)
+
+  ## Too few loci shared by every population: NA rows, not an error.
+  none <- RADdiversity:::.omnibus_tests(H, pops, sets, 0.9, sum(loci) + 1L, verbose = FALSE)
+  expect_true(all(is.na(none$p_welch)))
+  ## Written to its own file with outdir.
+  od <- tempfile("legacy-")
+  suppressMessages(het_between_pops(lg("sim.allsnps.vcf.gz"), lg("pm_three.tsv"), min_call = 0.9,
+                                    nboot_g2 = 0, outdir = od, verbose = FALSE))
+  expect_true(file.exists(file.path(od, "het_between_pops_omnibus.allsnps.tsv")))
 })
 
 test_that("the full report never names a column it does not print", {

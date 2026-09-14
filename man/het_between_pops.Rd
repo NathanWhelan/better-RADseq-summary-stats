@@ -11,7 +11,7 @@ het_between_pops(
   popmap,
   min_call = 0.9,
   min_loci = 50L,
-  nboot_g2 = 200L,
+  nboot_g2 = 1000L,
   outdir = NULL,
   stem = NULL,
   seed = NULL,
@@ -39,8 +39,8 @@ loci is excluded (a failed library cannot give a heterozygosity), a pair
 of populations sharing fewer is reported as \code{NA}, and a warning is given
 if fewer pass the pooled filter. Default \code{50}.}
 
-\item{nboot_g2}{Bootstrap replicates for the g2 confidence interval.
-Default \code{200}.}
+\item{nboot_g2}{Bootstrap replicates over individuals for the g2
+confidence interval. Default \code{1000}, as in \code{\link[=identity_disequilibrium]{identity_disequilibrium()}}.}
 
 \item{outdir}{Directory to write the result tables to as TSV files
 (created if needed). Default \code{NULL}: write nothing.}
@@ -70,6 +70,12 @@ An object of class \code{raddiv_het}, a list of:
 heterozygosity (on the pooled locus set) and individual \code{F}.}
 \item{population_summary}{Per population: individuals, loci, mean, SD,
 SE, range of individual heterozygosity, and mean \code{F}.}
+\item{omnibus}{With 3 or more populations: one overall test of whether
+any population differs, for heterozygosity and for \code{F} -- Welch's
+one-way ANOVA (\code{welch_F}, \code{welch_df1}, \code{welch_df2}, \code{p_welch}) and
+Kruskal-Wallis (\code{kruskal_chisq}, \code{kruskal_df}, \code{p_kruskal}) -- on the
+loci that clear \code{min_call} in every population (\code{n_loci}). \code{NULL}
+for 2 populations, where the pairwise test is the only test.}
 \item{pairwise_tests}{Heterozygosity, one row per pair of populations:
 means, difference with Welch 95\% CI, Welch and Wilcoxon p-values
 (with Benjamini-Hochberg adjusted versions), Hedges' g.}
@@ -88,7 +94,8 @@ files round them. With \code{outdir}, \code{individual_heterozygosity},
 \code{pairwise_tests} and \code{pairwise_F_tests} are written to
 \verb{individual_heterozygosity.<stem>.tsv},
 \verb{het_between_pops_tests.<stem>.tsv} and
-\verb{het_between_pops_F_tests.<stem>.tsv}.
+\verb{het_between_pops_F_tests.<stem>.tsv}, and with 3 or more populations
+\code{omnibus} to \verb{het_between_pops_omnibus.<stem>.tsv}.
 }
 \description{
 Uses the INDIVIDUAL, not the locus, as the unit of replication (Welch's t,
@@ -99,6 +106,11 @@ population. Printing the result shows the main tables; \code{summary()} shows th
 full report; \code{outdir} also writes the tables to TSV files.
 }
 \details{
+\strong{Three or more populations.} Start with \code{omnibus}, an overall test of
+whether any population differs (Welch's one-way ANOVA, with Kruskal-Wallis
+as the distribution-free check). Interpret the pairwise tests only if the
+overall test is significant; they then say which pairs differ.
+
 Two questions, same machinery. \code{pairwise_tests} compares mean individual
 heterozygosity: do the populations differ in diversity?
 \code{pairwise_F_tests} compares the individual inbreeding coefficient \code{F}
@@ -124,4 +136,28 @@ res <- het_between_pops(vcf, popmap, min_call = 0.5)
 res                       # the main tables
 res$individual_heterozygosity
 summary(res)              # the full report, with the confound and overdispersion checks
+}
+\references{
+Van Dongen, S. (1995) How should we bootstrap allozyme data? \emph{Heredity}
+74:445-447.
+
+Welch, B.L. (1947) The generalization of "Student's" problem when several
+different population variances are involved. \emph{Biometrika} 34:28-35.
+
+Welch, B.L. (1951) On the comparison of several mean values: an alternative
+approach. \emph{Biometrika} 38:330-336.
+
+Kruskal, W.H. & Wallis, W.A. (1952) Use of ranks in one-criterion variance
+analysis. \emph{Journal of the American Statistical Association} 47:583-621.
+
+Benjamini, Y. & Hochberg, Y. (1995) Controlling the false discovery rate: a
+practical and powerful approach to multiple testing. \emph{Journal of the Royal
+Statistical Society B} 57:289-300.
+
+Hedges, L.V. (1981) Distribution theory for Glass's estimator of effect size
+and related estimators. \emph{Journal of Educational Statistics} 6:107-128.
+
+David, P., Pujol, B., Viard, F., Castella, V. & Goudet, J. (2007) Reliable
+selfing rate estimates from imperfect population genetic data. \emph{Molecular
+Ecology} 16:2474-2487. (g2.)
 }

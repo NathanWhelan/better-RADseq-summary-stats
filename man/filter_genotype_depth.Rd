@@ -57,3 +57,8 @@ H <- read_stacks_vcf(vcf_file, verbose = FALSE)
 H_depth <- filter_genotype_depth(H, min_dp = 6, max_dp = 30)
 H_depth$A1          # ind1 (3 reads) and ind3 (40 reads) are now missing
 }
+\references{
+Rochette, N.C., Rivera-Colon, A.G. & Catchen, J.M. (2019) Stacks 2:
+analytical methods for paired-end sequencing improve RADseq-based
+population genomics. \emph{Molecular Ecology} 28:4737-4754.
+}

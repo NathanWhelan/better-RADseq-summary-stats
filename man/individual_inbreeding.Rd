@@ -30,10 +30,13 @@ A method-of-moments inbreeding coefficient for every individual:
 heterozygous and \code{E} the heterozygosity expected at those same loci under
 random mating in its own population -- the sum of Nei & Chesser's (1983)
 unbiased gene diversity over the loci the individual is typed at. This is
-the statistic PLINK's \code{--het} reports, with an expectation that stays
-unbiased when F is not 0; as a result, when every individual is typed at
-every locus the population mean of \code{F} equals that population's FIS from
-\code{\link[=diversity_stats]{diversity_stats()}}.
+the statistic PLINK's \code{--het} reports, with two differences in the
+expectation. PLINK takes allele frequencies from the whole sample (or a
+file you supply), whereas here they come from each individual's own
+population. And PLINK uses the plug-in 1 - sum(p^2), whereas here the
+estimator stays unbiased when F is not 0. As a result, when every
+individual is typed at every locus, the population mean of \code{F} equals that
+population's FIS from \code{\link[=diversity_stats]{diversity_stats()}}.
 }
 \details{
 \code{F} is relative to each individual's own population. Comparing it between

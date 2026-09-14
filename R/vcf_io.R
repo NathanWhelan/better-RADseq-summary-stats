@@ -15,8 +15,14 @@
 #    alleles    for each record, the allele sequences (REF first)
 #    n_alleles  for each record, how many alleles it declares
 #    samples    sample names, in column order
-#    fields     the VCF's text columns (CHROM ... FORMAT and genotypes),
-#               kept for filter_low_conf_alt() and write_vcf()
+#    fields     the VCF's nine fixed text columns (CHROM ... FORMAT), kept for
+#               write_vcf() and write_plink()
+#    depth      integer matrix like A1: read depth of each call (DP, or the
+#               sum of AD); NULL when the VCF has neither
+#    ad_ref, ad_alt  integer matrices like A1: reads for REF and for the
+#               call's own ALT allele(s), from AD; NULL without AD. Used by
+#               filter_genotype_depth() and filter_low_conf_alt(), so the
+#               genotype text itself is never kept (it dominated memory)
 #    n_records_read  how many records the file had; filters leave it alone,
 #               so it records whether records were removed after reading
 #
@@ -48,6 +54,30 @@
 #' the same way, provided GT is the first FORMAT field; `locus_from` says how
 #' their records are grouped into RAD loci.
 #'
+#' **Assumptions to check on data from other pipelines.**
+#' * Diploid calls only. Haploid (`0`) and polyploid (`0/0/1`) calls are read
+#'   as missing, and the message lists them.
+#' * A record with multi-base alleles (an indel or MNP) makes the object look
+#'   like a haplotype VCF, which switches off the per-site conversion in
+#'   [diversity_stats()]. Remove indels from a SNP VCF first.
+#' * With `locus_from = "auto"`, a VCF whose ID column is unique per SNP
+#'   (e.g. `rs` numbers) makes every SNP its own locus, so linked SNPs are
+#'   resampled as if independent. The message says how many records share each
+#'   locus; if it is 1.00 for RAD data, use `locus_from = "window"` or
+#'   `"CHROM"`.
+#'
+#' @references
+#' Danecek, P., Auton, A., Abecasis, G., et al. (2011) The variant call format
+#' and VCFtools. *Bioinformatics* 27:2156-2158.
+#'
+#' Catchen, J., Hohenlohe, P.A., Bassham, S., Amores, A. & Cresko, W.A. (2013)
+#' Stacks: an analysis tool set for population genomics. *Molecular Ecology*
+#' 22:3124-3140.
+#'
+#' Rochette, N.C., Rivera-Colon, A.G. & Catchen, J.M. (2019) Stacks 2:
+#' analytical methods for paired-end sequencing improve RADseq-based
+#' population genomics. *Molecular Ecology* 28:4737-4754.
+#'
 #' @param path Path to the VCF file (`.vcf` or `.vcf.gz`).
 #' @param locus_from How to tell which RAD locus each record belongs to. RAD
 #'   loci are the unit that standard errors and bootstrap intervals resample,
@@ -65,14 +95,24 @@
 #'     VCF whose IDs are unique per SNP (e.g. dbSNP rs numbers).
 #' @param window_bp Largest gap, in base pairs, between consecutive records of
 #'   one locus under `locus_from = "window"`. Default `1000`.
+#' @param chunk_lines Records read and parsed at a time. Default `20000`.
+#'   Lower it if reading a very large VCF runs out of memory; the result does
+#'   not depend on it.
 #' @param verbose Print a short summary of what was read. Default `TRUE`.
 #' @return An object of class `raddiv_vcf`: a list with elements `A1`, `A2`
 #'   (allele-number matrices, one row per record, one column per sample;
 #'   1 = REF, 2 = first ALT, ...; `NA` = missing), `locus` (unique record
 #'   names), `locus_raw` (the RAD locus of each record), `alleles` (allele
-#'   sequences per record), `n_alleles`, `samples`, `fields` (the raw VCF
-#'   columns) and `n_records_read` (records in the file, unchanged by the
-#'   `filter_*()` functions). Printing it shows a short summary.
+#'   sequences per record), `n_alleles`, `samples`, `fields` (the VCF's nine
+#'   fixed columns, CHROM ... FORMAT), `depth` (read depth of each call, from
+#'   DP or the sum of AD; `NULL` if the VCF has neither), `ad_ref` and `ad_alt`
+#'   (reads supporting REF and the call's ALT allele(s), from AD; `NULL` if
+#'   the VCF has no AD) and `n_records_read` (records in the file, unchanged
+#'   by the `filter_*()` functions). Printing it shows a short summary.
+#'
+#'   **Memory.** The genotype text is not kept, only integer matrices: about
+#'   20 bytes per genotype call with depths, or 8 without. For example,
+#'   100,000 SNPs x 200 samples is about 400 MB.
 #' @examples
 #' H <- read_stacks_vcf(system.file("extdata", "small.haps.vcf",
 #'                                  package = "RADdiversity"))
@@ -81,7 +121,8 @@
 #' H$alleles[[1]]     # the haplotype alleles of the first RAD locus
 #' H$A1[1:3, 1:4]     # first allele of each genotype (1 = REF, 2 = first ALT, ...)
 #' @export
-read_stacks_vcf <- function(path, locus_from = "auto", window_bp = 1000, verbose = TRUE) {
+read_stacks_vcf <- function(path, locus_from = "auto", window_bp = 1000, chunk_lines = 20000L,
+                            verbose = TRUE) {
   .check_string(path, "path")
   .check_choice(locus_from, "locus_from", c("auto", "ID", "CHROM", "window"))
   .check_number(window_bp, "window_bp", min = 0)
@@ -89,42 +130,43 @@ read_stacks_vcf <- function(path, locus_from = "auto", window_bp = 1000, verbose
   if (!file.exists(path))
     stop("VCF file not found: ", path, "\n  Check the path and try again.", call. = FALSE)
 
-  ## readLines() decompresses .gz files by itself.
-  lines <- readLines(path)
-  header_line <- grep("^#CHROM", lines)
-  if (length(header_line) != 1L)
-    stop("Expected exactly one '#CHROM' header line; found ", length(header_line), ".",
-         call. = FALSE)
-  header <- strsplit(sub("^#", "", lines[header_line]), "\t", fixed = TRUE)[[1]]
+  chunk_lines <- .check_count(chunk_lines, "chunk_lines", min = 1)
+
+  ## The file is read `chunk_lines` records at a time. Each chunk's genotype
+  ## text is turned into integer matrices (alleles, read depth, allele
+  ## depths) and then discarded, so the whole text of a large VCF is never
+  ## held in memory at once.
+  vcf <- .open_vcf(path)
+  on.exit(close(vcf$con), add = TRUE)
+  header <- vcf$header
   if (length(header) < 10L)
     stop("The #CHROM header line has ", length(header), " columns, but a VCF with ",
          "genotypes needs at least 10 (CHROM ... FORMAT, then one per sample). ",
          "This file has no sample columns.", call. = FALSE)
-
-  ## Everything after the header line, without blank lines. (Indexing with
-  ## -seq_len() rather than (header_line + 1):length(lines), which counts
-  ## DOWN when the header is the last line.)
-  body <- lines[-seq_len(header_line)]
-  body <- body[nzchar(body)]
-  if (!length(body)) stop("No variant records found.", call. = FALSE)
-
-  ## Every record must have exactly as many tab-separated fields as the
-  ## header. rbind() of unequal-length vectors silently RECYCLES the short
-  ## ones, which would shift every later column without any warning.
-  split_body <- strsplit(body, "\t", fixed = TRUE)
-  n_fields <- lengths(split_body)
-  bad_len <- which(n_fields != length(header))
-  if (length(bad_len))
-    stop(sprintf(
-      "Malformed VCF: record %d of %d has %d tab-separated field(s), expected %d ",
-      bad_len[1], length(body), n_fields[bad_len[1]], length(header)),
-      "to match the #CHROM header line. The file is truncated, corrupted, or ",
-      "not a VCF. Fix or regenerate the file and re-run.", call. = FALSE)
-  fields <- do.call(rbind, split_body)
-  colnames(fields) <- header
   samples <- header[-(1:9)]
 
-  .check_gt_first(fields[, "FORMAT"])
+  parts <- list()
+  n_read <- 0L
+  lines <- vcf$pending
+  repeat {
+    lines <- lines[nzchar(lines)]
+    if (length(lines)) {
+      parts[[length(parts) + 1L]] <- .parse_vcf_chunk(lines, header, first_record = n_read + 1L)
+      n_read <- n_read + length(lines)
+    }
+    lines <- readLines(vcf$con, n = chunk_lines)
+    if (!length(lines)) break
+  }
+  if (!n_read) stop("No variant records found.", call. = FALSE)
+
+  fields <- do.call(rbind, lapply(parts, `[[`, "fixed"))
+  gt <- list(A1 = .bind_chunks(parts, "A1", length(samples)),
+             A2 = .bind_chunks(parts, "A2", length(samples)),
+             unrecognised = unique(unlist(lapply(parts, `[[`, "unrecognised"))))
+  depth <- .bind_chunks(parts, "depth", length(samples))
+  ad_ref <- .bind_chunks(parts, "ad_ref", length(samples))
+  ad_alt <- .bind_chunks(parts, "ad_alt", length(samples))
+  rm(parts)
 
   ## Which RAD locus each record belongs to. See `locus_from` above. Getting
   ## this wrong is silent (linked SNPs would be resampled as if independent),
@@ -150,9 +192,9 @@ read_stacks_vcf <- function(path, locus_from = "auto", window_bp = 1000, verbose
   }, fields[, "REF"], alt, USE.NAMES = FALSE)
   n_alleles <- lengths(alleles)
 
-  ## Genotypes -> two allele-number matrices.
-  gt <- .parse_gt(fields[, -(1:9), drop = FALSE])
   dimnames(gt$A1) <- dimnames(gt$A2) <- list(NULL, samples)
+  if (!is.null(depth)) dimnames(depth) <- list(NULL, samples)
+  if (!is.null(ad_ref)) dimnames(ad_ref) <- dimnames(ad_alt) <- list(NULL, samples)
 
   ## An allele number above the number of declared alleles means the record
   ## and its genotypes disagree: stop rather than compute nonsense. (Matrix
@@ -178,7 +220,8 @@ read_stacks_vcf <- function(path, locus_from = "auto", window_bp = 1000, verbose
   ## per-site check in diversity_stats()).
   structure(list(A1 = gt$A1, A2 = gt$A2, locus = locus, locus_raw = locus_raw,
                  alleles = alleles, n_alleles = n_alleles, samples = samples,
-                 fields = fields, n_records_read = nrow(fields)),
+                 fields = fields, depth = depth, ad_ref = ad_ref, ad_alt = ad_alt,
+                 n_records_read = nrow(fields)),
             class = "raddiv_vcf")
 }
 
@@ -198,8 +241,10 @@ print.raddiv_vcf <- function(x, ...) {
   }
   cat("  samples:", paste(utils::head(x$samples, 6), collapse = ", "),
       if (length(x$samples) > 6) "..." else "", "\n")
-  cat("  elements: $A1 $A2 (allele matrices), $locus, $locus_raw, $alleles,",
-      "$n_alleles, $samples, $fields\n")
+  cat("  elements: $A1 $A2 (allele matrices), $locus, $locus_raw, $alleles, ",
+      "$n_alleles, $samples, $fields",
+      if (!is.null(x$depth)) ", $depth" else "",
+      if (!is.null(x$ad_ref)) ", $ad_ref, $ad_alt" else "", "\n", sep = "")
   invisible(x)
 }
 
@@ -228,13 +273,162 @@ print.raddiv_vcf <- function(x, ...) {
 ## half-missing call) becomes NA in both matrices. `unrecognised` lists the
 ## distinct rejected values other than the usual missing codes.
 .parse_gt <- function(genotype_text) {
-  gt <- sub(":.*$", "", genotype_text)          # GT is the first subfield
-  ok <- grepl("^[0-9]+[/|][0-9]+$", gt)
+  ## perl = TRUE: the same matches, several times faster on millions of cells.
+  gt <- sub(":.*$", "", genotype_text, perl = TRUE)      # GT is the first subfield
+  ok <- grepl("^[0-9]+[/|][0-9]+$", gt, perl = TRUE)
   A1 <- A2 <- matrix(NA_integer_, nrow(genotype_text), ncol(genotype_text))
-  A1[ok] <- as.integer(sub("[/|].*$", "", gt[ok])) + 1L
-  A2[ok] <- as.integer(sub("^.*[/|]", "", gt[ok])) + 1L
+  A1[ok] <- as.integer(sub("[/|].*$", "", gt[ok], perl = TRUE)) + 1L
+  A2[ok] <- as.integer(sub("^.*[/|]", "", gt[ok], perl = TRUE)) + 1L
   unrecognised <- setdiff(unique(gt[!ok]), c("./.", ".|.", ".", "", "./", "/."))
   list(A1 = A1, A2 = A2, unrecognised = unrecognised)
+}
+
+## Not exported. Opens a VCF (plain or gzip-compressed; file() handles both)
+## and reads up to its #CHROM line. Returns list(con = the open connection,
+## header = the #CHROM line's column names, pending = any record lines read
+## along with the header). The caller closes `con`.
+.open_vcf <- function(path) {
+  con <- file(path, "r")
+  header <- NULL
+  pending <- character(0)
+  repeat {
+    lines <- readLines(con, n = 1000L)
+    if (!length(lines)) break
+    header_line <- grep("^#CHROM", lines)
+    if (length(header_line)) {
+      header <- strsplit(sub("^#", "", lines[header_line[1]]), "\t", fixed = TRUE)[[1]]
+      pending <- lines[-seq_len(header_line[1])]
+      break
+    }
+  }
+  if (is.null(header)) {
+    close(con)
+    stop("No '#CHROM' header line found. Is this a VCF?", call. = FALSE)
+  }
+  list(con = con, header = header, pending = pending)
+}
+
+## Not exported. The `position`-th colon-separated subfield of each cell of
+## `cells` (a character vector). NA where the cell has fewer subfields (the VCF
+## specification lets trailing subfields be dropped) or the subfield is "."
+## or empty.
+.subfield_at <- function(cells, position) {
+  if (position < 2L) stop(".subfield_at() is for subfields after GT.", call. = FALSE)
+  ## One pass: a cell with enough subfields loses at least "GT:" and so
+  ## changes; a cell with too few does not match and comes back unchanged.
+  out <- sub(paste0("^(?:[^:]*:){", position - 1L, "}([^:]*).*$"), "\\1", cells, perl = TRUE)
+  out[out == cells | out %in% c(".", "")] <- NA_character_
+  out
+}
+
+## Not exported. Parses one chunk of VCF record lines (`lines`, blank lines
+## already removed). `first_record` is the number of the chunk's first record
+## in the file, for error messages. Returns list(fixed = the 9 fixed columns,
+## A1, A2, unrecognised (see .parse_gt()), depth, ad_ref, ad_alt), where:
+##   depth   read depth of each call: its DP, or the sum of its AD where DP is
+##           absent; NA when neither can be read
+##   ad_ref  reads supporting REF (first AD value; "." inside AD counts as 0);
+##           NA when the call has no AD
+##   ad_alt  reads supporting the call's own ALT allele(s), each distinct ALT
+##           allele counted once (a 1/1 call counts allele 1's reads once);
+##           NA when the call has no AD
+## depth, ad_ref and ad_alt are NULL when no FORMAT in the chunk has DP or AD.
+## These are what filter_genotype_depth() and filter_low_conf_alt() use, so
+## the genotype text itself need not be kept.
+.parse_vcf_chunk <- function(lines, header, first_record) {
+  second_header <- which(startsWith(lines, "#CHROM"))
+  if (length(second_header))
+    stop("Expected exactly one '#CHROM' header line; found a second one after record ",
+         first_record + second_header[1] - 2L, ".", call. = FALSE)
+  split_lines <- strsplit(lines, "\t", fixed = TRUE)
+  n_fields <- lengths(split_lines)
+  bad_len <- which(n_fields != length(header))
+  if (length(bad_len)) {
+    ## Filling a matrix from unequal-length records would shift every later
+    ## column without any warning, so this must stop.
+    stop(sprintf("Malformed VCF: record %d has %d tab-separated field(s), expected %d ",
+                 first_record + bad_len[1] - 1L, n_fields[bad_len[1]], length(header)),
+         "to match the #CHROM header line. The file is truncated, corrupted, or ",
+         "not a VCF. Fix or regenerate the file and re-run.", call. = FALSE)
+  }
+  all_fields <- matrix(unlist(split_lines, use.names = FALSE), nrow = length(lines),
+                       byrow = TRUE)
+  rm(split_lines)
+  fixed <- all_fields[, 1:9, drop = FALSE]
+  colnames(fixed) <- header[1:9]
+  .check_gt_first(fixed[, "FORMAT"], first_record)
+  cells <- all_fields[, -(1:9), drop = FALSE]
+  rm(all_fields)
+  gt <- .parse_gt(cells)
+
+  n_rec <- nrow(cells)
+  n_samp <- ncol(cells)
+  formats <- fixed[, "FORMAT"]
+  unique_formats <- unique(formats)
+  format_parts <- strsplit(unique_formats, ":", fixed = TRUE)
+  has_tag <- function(tag) any(vapply(format_parts, function(f) tag %in% f, logical(1)))
+  if (!has_tag("DP") && !has_tag("AD"))
+    return(list(fixed = fixed, A1 = gt$A1, A2 = gt$A2, unrecognised = gt$unrecognised,
+                depth = NULL, ad_ref = NULL, ad_alt = NULL))
+
+  depth <- ad_ref <- ad_alt <- matrix(NA_integer_, n_rec, n_samp)
+  for (f in seq_along(format_parts)) {
+    rows <- which(formats == unique_formats[f])
+    block <- cells[rows, , drop = FALSE]
+    dp_pos <- match("DP", format_parts[[f]])
+    ad_pos <- match("AD", format_parts[[f]])
+    dp <- if (is.na(dp_pos)) rep(NA_integer_, length(block))
+          else suppressWarnings(as.integer(.subfield_at(block, dp_pos)))
+    if (!is.na(ad_pos)) {
+      ad <- .subfield_at(block, ad_pos)
+      usable <- !is.na(ad)
+      ## One column per allele: the reads for allele a at each call; "." or
+      ## a missing value inside AD counts as 0.
+      n_values <- ifelse(usable, nchar(gsub("[^,]", "", ad)) + 1L, 0L)
+      a1 <- gt$A1[rows, , drop = FALSE]
+      a2 <- gt$A2[rows, , drop = FALSE]
+      k <- max(1L, n_values)
+      reads <- matrix(0L, length(ad), k)
+      for (a in seq_len(k)) {
+        at <- usable & n_values >= a
+        if (!any(at)) next
+        value <- sub(paste0("^(?:[^,]*,){", a - 1L, "}([^,]*).*$"), "\\1", ad[at], perl = TRUE)
+        value <- suppressWarnings(as.integer(value))
+        value[is.na(value)] <- 0L
+        reads[at, a] <- value
+      }
+      reads_of <- function(allele) {
+        out <- integer(length(allele))
+        ok <- !is.na(allele) & allele >= 1L & allele <= k
+        out[ok] <- reads[cbind(which(ok), allele[ok])]
+        out
+      }
+      first_alt <- ifelse(!is.na(a1) & a1 > 1L, reads_of(a1), 0L)
+      second_alt <- ifelse(!is.na(a2) & a2 > 1L & a2 != a1, reads_of(a2), 0L)
+      ref_reads <- reads[, 1L]
+      ref_reads[!usable] <- NA_integer_
+      alt_reads <- first_alt + second_alt
+      alt_reads[!usable] <- NA_integer_
+      ad_ref[rows, ] <- ref_reads
+      ad_alt[rows, ] <- alt_reads
+      ad_total <- as.integer(rowSums(reads))
+      dp <- ifelse(is.na(dp) & usable, ad_total, dp)
+    }
+    depth[rows, ] <- dp
+  }
+  if (!has_tag("AD")) ad_ref <- ad_alt <- NULL
+  list(fixed = fixed, A1 = gt$A1, A2 = gt$A2, unrecognised = gt$unrecognised,
+       depth = depth, ad_ref = ad_ref, ad_alt = ad_alt)
+}
+
+## Not exported. Stacks the records x samples matrix `name` of every chunk.
+## A chunk without it (e.g. no DP or AD in its FORMAT) contributes NA rows;
+## NULL when no chunk has it.
+.bind_chunks <- function(parts, name, n_samp) {
+  present <- !vapply(parts, function(p) is.null(p[[name]]), logical(1))
+  if (!any(present)) return(NULL)
+  do.call(rbind, lapply(parts, function(p)
+    if (is.null(p[[name]])) matrix(NA_integer_, nrow(p$fixed), n_samp) else p[[name]]))
 }
 
 ## Not exported. Resolves `locus_from = "auto"` to a concrete rule, and stops

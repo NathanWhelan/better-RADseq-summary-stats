@@ -189,25 +189,15 @@ pi_allsites <- function(vcf, popmap, locus_from = "auto", window_bp = 1000,
   }
 
   ## ---- 2. Header ------------------------------------------------------------
-  ## file() reads .gz files transparently.
-  con <- file(vcf, "r")
-  on.exit(close(con), add = TRUE)
   .inform(verbose, "Reading ", vcf, " ...")
   ## Skip the ## lines; the #CHROM line names the samples. Records read along
-  ## with the header are processed as the first chunk.
-  header <- NULL
-  chunk <- character(0)
-  repeat {
-    lines <- readLines(con, n = 1000L)
-    if (!length(lines)) break
-    header_line <- grep("^#CHROM", lines)
-    if (length(header_line)) {
-      header <- strsplit(sub("^#", "", lines[header_line[1]]), "\t", fixed = TRUE)[[1]]
-      chunk <- lines[-seq_len(header_line[1])]
-      break
-    }
-  }
-  if (is.null(header)) stop("No '#CHROM' header line found. Is this a VCF?", call. = FALSE)
+  ## with the header are processed as the first chunk (see .open_vcf() in
+  ## R/vcf_io.R).
+  opened <- .open_vcf(vcf)
+  con <- opened$con
+  on.exit(close(con), add = TRUE)
+  header <- opened$header
+  chunk <- opened$pending
   if (length(header) < 10L)
     stop("The #CHROM header line has no sample columns.", call. = FALSE)
   samples <- header[-(1:9)]

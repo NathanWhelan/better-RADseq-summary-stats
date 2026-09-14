@@ -80,6 +80,15 @@
 #' genotype without updating those values, and writing them would mislead
 #' anyone reading the file. The `FORMAT` column is therefore always `GT`.
 #'
+#' The original file's `##` meta-information lines (`##contig`, `##INFO`,
+#' `##FORMAT`, ...) are not kept: [read_stacks_vcf()] does not store them. Some
+#' tools (e.g. `bcftools`) warn about INFO keys with no `##INFO` definition;
+#' copy the header lines from the original file if a tool needs them.
+#'
+#' @references
+#' Danecek, P., Auton, A., Abecasis, G., et al. (2011) The variant call format
+#' and VCFtools. *Bioinformatics* 27:2156-2158.
+#'
 #' @param H The object returned by [read_stacks_vcf()] (optionally filtered).
 #'   It must still contain `$fields`, the original VCF columns.
 #' @param path Output file path. A name ending in `.gz` writes a
@@ -140,6 +149,21 @@ write_vcf <- function(H, path, verbose = TRUE) {
 #' often have. Such records stop the function unless `drop_multiallelic =
 #' TRUE`.
 #'
+#' `.ped` columns are separated by white space, so a sample or population
+#' name containing a space stops the function. The `.map` chromosome column
+#' is the VCF's `CHROM`. Stacks de novo output uses names such as `un` or
+#' locus numbers, which PLINK 1.9 and 2 reject unless run with
+#' `--allow-extra-chr`.
+#'
+#' @references
+#' Purcell, S., Neale, B., Todd-Brown, K., et al. (2007) PLINK: a tool set for
+#' whole-genome association and population-based linkage analyses. *American
+#' Journal of Human Genetics* 81:559-575.
+#'
+#' Chang, C.C., Chow, C.C., Tellier, L.C.A.M., Vattikuti, S., Purcell, S.M. &
+#' Lee, J.J. (2015) Second-generation PLINK: rising to the challenge of larger
+#' and richer datasets. *GigaScience* 4:7.
+#'
 #' @inheritParams write_vcf
 #' @param path_prefix Output files are `<path_prefix>.map` and
 #'   `<path_prefix>.ped`.
@@ -164,6 +188,14 @@ write_plink <- function(H, path_prefix, popmap = NULL, drop_multiallelic = FALSE
   .check_flag(drop_multiallelic, "drop_multiallelic")
   .check_flag(verbose, "verbose")
   pops <- .writer_pops(H, popmap, required = FALSE, "PLINK")
+  ## .ped fields are whitespace-separated: a space inside a name would shift
+  ## every later column.
+  ids <- c(H$samples, names(pops))
+  spaced <- unique(ids[grepl("[[:space:]]", ids)])
+  if (length(spaced))
+    stop("PLINK .ped files separate columns by white space, so these sample or population ",
+         "names can't be written: ", paste0("\"", spaced, "\"", collapse = ", "),
+         ". Rename them without spaces (in the VCF header or popmap) and re-run.", call. = FALSE)
 
   multiallelic <- locus_allele_stats(H)$n_observed_alleles > 2L
   if (any(multiallelic)) {
@@ -220,6 +252,9 @@ write_plink <- function(H, path_prefix, popmap = NULL, drop_multiallelic = FALSE
 #'   population column, so the STRUCTURE run's `mainparams` should set
 #'   `MARKERNAMES=1`, `LABEL=1` and `POPDATA=1`. Without `popmap` the
 #'   population column is a placeholder `1` for everyone.
+#' @references
+#' Pritchard, J.K., Stephens, M. & Donnelly, P. (2000) Inference of population
+#' structure using multilocus genotype data. *Genetics* 155:945-959.
 #' @inheritParams write_vcf
 #' @param popmap Optional: a popmap file path or the list returned by
 #'   [read_popmap()]. Default `NULL`: every individual gets population `1`.
@@ -268,6 +303,10 @@ write_structure <- function(H, path, popmap = NULL, verbose = TRUE) {
 #' individual (`name ,` then its genotypes). Missing genotypes are all zeros
 #' (e.g. `0000`), as in the Genepop manual.
 #'
+#' @references
+#' Rousset, F. (2008) GENEPOP'007: a complete re-implementation of the GENEPOP
+#' software for Windows and Linux. *Molecular Ecology Resources* 8:103-106.
+#'
 #' @inheritParams write_vcf
 #' @param popmap A popmap file path or the list returned by [read_popmap()].
 #'   Required: Genepop files are organized by population.
@@ -311,6 +350,13 @@ write_genepop <- function(H, path, popmap = NULL, title = "RADdiversity export",
 #' number of alleles, digits per allele), one locus name per line, then one
 #' line per individual with its population number and genotype codes.
 #'
+#' @references
+#' Goudet, J. (1995) FSTAT (version 1.2): a computer program to calculate
+#' F-statistics. *Journal of Heredity* 86:485-486.
+#'
+#' Goudet, J. (2005) HIERFSTAT, a package for R to compute and test
+#' hierarchical F-statistics. *Molecular Ecology Notes* 5:184-186.
+#'
 #' @inheritParams write_genepop
 #' @param popmap A popmap file path or the list returned by [read_popmap()].
 #'   Required: FSTAT's first data column is the population number.
@@ -332,7 +378,10 @@ write_fstat <- function(H, path, popmap = NULL, verbose = TRUE) {
   n_rec <- nrow(H$A1)
   width <- .digit_width(H)
   codes <- .genotype_codes(H, width)
-  max_alleles <- max(locus_allele_stats(H)$n_observed_alleles, 1L, na.rm = TRUE)
+  ## FSTAT's third header number is the HIGHEST allele number used in the
+  ## file, not how many alleles were observed: with alleles 2 and 3 present
+  ## but not 1, it must be 3.
+  max_alleles <- max(c(1L, H$A1, H$A2), na.rm = TRUE)
   data_lines <- vapply(seq_len(ncol(H$A1)), function(i)
     paste(pop_id[i], paste(codes[, i], collapse = " ")), character(1))
   writeLines(c(sprintf("%d %d %d %d", length(pops), n_rec, max_alleles, width),
@@ -353,6 +402,11 @@ write_fstat <- function(H, path, popmap = NULL, verbose = TRUE) {
 #'
 #' RADpainter uses haplotypes, so this is meant for a haplotype `H` (one
 #' multi-allelic record per RAD tag, from `populations.haps.vcf`).
+#'
+#' @references
+#' Malinsky, M., Trucchi, E., Lawson, D.J. & Falush, D. (2018) RADpainter and
+#' fineRADstructure: population inference from RADseq data. *Molecular Biology
+#' and Evolution* 35:1284-1290.
 #'
 #' @inheritParams write_vcf
 #' @param H The object returned by [read_stacks_vcf()], ideally from a

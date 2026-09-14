@@ -5,7 +5,13 @@
 \alias{print.raddiv_vcf}
 \title{Read a Stacks haplotype or SNP VCF}
 \usage{
-read_stacks_vcf(path, locus_from = "auto", window_bp = 1000, verbose = TRUE)
+read_stacks_vcf(
+  path,
+  locus_from = "auto",
+  window_bp = 1000,
+  chunk_lines = 20000L,
+  verbose = TRUE
+)
 
 \method{print}{raddiv_vcf}(x, ...)
 }
@@ -32,6 +38,10 @@ VCF whose IDs are unique per SNP (e.g. dbSNP rs numbers).
 \item{window_bp}{Largest gap, in base pairs, between consecutive records of
 one locus under \code{locus_from = "window"}. Default \code{1000}.}
 
+\item{chunk_lines}{Records read and parsed at a time. Default \code{20000}.
+Lower it if reading a very large VCF runs out of memory; the result does
+not depend on it.}
+
 \item{verbose}{Print a short summary of what was read. Default \code{TRUE}.}
 
 \item{x}{A \code{raddiv_vcf} object, as returned by \code{read_stacks_vcf()}.}
@@ -43,9 +53,16 @@ An object of class \code{raddiv_vcf}: a list with elements \code{A1}, \code{A2}
 (allele-number matrices, one row per record, one column per sample;
 1 = REF, 2 = first ALT, ...; \code{NA} = missing), \code{locus} (unique record
 names), \code{locus_raw} (the RAD locus of each record), \code{alleles} (allele
-sequences per record), \code{n_alleles}, \code{samples}, \code{fields} (the raw VCF
-columns) and \code{n_records_read} (records in the file, unchanged by the
-\verb{filter_*()} functions). Printing it shows a short summary.
+sequences per record), \code{n_alleles}, \code{samples}, \code{fields} (the VCF's nine
+fixed columns, CHROM ... FORMAT), \code{depth} (read depth of each call, from
+DP or the sum of AD; \code{NULL} if the VCF has neither), \code{ad_ref} and \code{ad_alt}
+(reads supporting REF and the call's ALT allele(s), from AD; \code{NULL} if
+the VCF has no AD) and \code{n_records_read} (records in the file, unchanged
+by the \verb{filter_*()} functions). Printing it shows a short summary.
+
+\strong{Memory.} The genotype text is not kept, only integer matrices: about
+20 bytes per genotype call with depths, or 8 without. For example,
+100,000 SNPs x 200 samples is about 400 MB.
 }
 \description{
 Reads \code{populations.haps.vcf} or \code{populations.snps.vcf} (gzip-compressed or
@@ -57,6 +74,20 @@ through any \verb{filter_*()} function first.
 VCFs from other pipelines (ipyrad, dDocent/freebayes, GATK, ...) are read
 the same way, provided GT is the first FORMAT field; \code{locus_from} says how
 their records are grouped into RAD loci.
+
+\strong{Assumptions to check on data from other pipelines.}
+\itemize{
+\item Diploid calls only. Haploid (\code{0}) and polyploid (\code{0/0/1}) calls are read
+as missing, and the message lists them.
+\item A record with multi-base alleles (an indel or MNP) makes the object look
+like a haplotype VCF, which switches off the per-site conversion in
+\code{\link[=diversity_stats]{diversity_stats()}}. Remove indels from a SNP VCF first.
+\item With \code{locus_from = "auto"}, a VCF whose ID column is unique per SNP
+(e.g. \code{rs} numbers) makes every SNP its own locus, so linked SNPs are
+resampled as if independent. The message says how many records share each
+locus; if it is 1.00 for RAD data, use \code{locus_from = "window"} or
+\code{"CHROM"}.
+}
 }
 \examples{
 H <- read_stacks_vcf(system.file("extdata", "small.haps.vcf",
@@ -65,4 +96,16 @@ H                  # a short summary
 dim(H$A1)          # records x samples
 H$alleles[[1]]     # the haplotype alleles of the first RAD locus
 H$A1[1:3, 1:4]     # first allele of each genotype (1 = REF, 2 = first ALT, ...)
+}
+\references{
+Danecek, P., Auton, A., Abecasis, G., et al. (2011) The variant call format
+and VCFtools. \emph{Bioinformatics} 27:2156-2158.
+
+Catchen, J., Hohenlohe, P.A., Bassham, S., Amores, A. & Cresko, W.A. (2013)
+Stacks: an analysis tool set for population genomics. \emph{Molecular Ecology}
+22:3124-3140.
+
+Rochette, N.C., Rivera-Colon, A.G. & Catchen, J.M. (2019) Stacks 2:
+analytical methods for paired-end sequencing improve RADseq-based
+population genomics. \emph{Molecular Ecology} 28:4737-4754.
 }

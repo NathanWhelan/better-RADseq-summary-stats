@@ -10,6 +10,7 @@ differentiation_stats(
   vcf,
   popmap,
   nboot = 10000L,
+  beta = TRUE,
   hierfstat_check = FALSE,
   outdir = NULL,
   stem = NULL,
@@ -30,6 +31,11 @@ differentiation_stats(
 
 \item{nboot}{Bootstrap replicates over RAD loci. Default \code{10000}; \code{0} for
 none (the jackknife standard errors are always computed).}
+
+\item{beta}{Also compute Weir & Goudet's pairwise beta with
+\code{hierfstat::pairwise.betas()}, when hierfstat is installed. Default
+\code{TRUE}. On large datasets this one call takes most of the run time (about
+95\% at 100,000 SNPs); set \code{FALSE} to skip it. FST and D do not need it.}
 
 \item{hierfstat_check}{If \code{TRUE} and \code{hierfstat} is installed, also run
 \code{hierfstat::wc()} and report how far its global FST is from this
@@ -67,7 +73,8 @@ An object of class \code{raddiv_differentiation}, a list of:
 standard errors and bootstrap intervals.}
 \item{pairwise_fst, pairwise_beta, pairwise_D}{The pairwise point
 estimates as symmetric matrices (\code{NA} on the diagonal).
-\code{pairwise_beta} is \code{NULL} when hierfstat is not installed.}
+\code{pairwise_beta} is \code{NULL} when hierfstat is not installed or
+\code{beta = FALSE}.}
 \item{settings}{The settings of this run.}
 }
 Values are stored at full precision. With \code{outdir}, \code{global} and
@@ -108,6 +115,13 @@ uses the same records as FST. Missing individuals within a typed
 population are handled by the estimator itself and are not affected. The
 number of skipped records is in \code{settings$fst_records_skipped}.
 
+\strong{Combining loci for D.} Hs and Ht are averaged over loci and one D is
+computed from the averages (mmod's \code{global.het}), not averaged over
+per-locus D values. Jost's bias correction of Hs, 2N/(2N - 1), assumes
+random mating within each population (the same assumption behind Stacks'
+\code{Pi}), so with a heterozygote deficit Hs is slightly underestimated. D is
+then biased upward, most noticeably when differentiation is weak.
+
 \strong{References.} Weir, B.S. & Cockerham, C.C. (1984) Estimating
 F-statistics for the analysis of population structure. \emph{Evolution}
 38:1358-1370. \doi{10.1111/j.1558-5646.1984.tb05657.x} --
@@ -118,7 +132,9 @@ its relatives do not measure differentiation. \emph{Molecular Ecology}
 17:4015-4026. \doi{10.1111/j.1365-294X.2008.03887.x} --
 Winter, D.J. (2012) mmod: an R library for the calculation of population
 differentiation statistics. \emph{Molecular Ecology Resources} 12:1158-1160.
-\doi{10.1111/j.1755-0998.2012.03174.x}
+\doi{10.1111/j.1755-0998.2012.03174.x} --
+Goudet, J. (2005) HIERFSTAT, a package for R to compute and test
+hierarchical F-statistics. \emph{Molecular Ecology Notes} 5:184-186.
 }
 \examples{
 vcf    <- system.file("extdata", "small.haps.vcf", package = "RADdiversity")

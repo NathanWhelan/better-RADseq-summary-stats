@@ -282,7 +282,7 @@ diversity_stats <- function(vcf, popmap, g, nboot = 10000L, boot = "loci", sites
   if (g > 2L * min(pop_sizes))
     stop("g = ", g, " gene copies exceeds the smallest population's ",
          2L * min(pop_sizes), ". g is in GENE COPIES: 10 diploids = 20.", call. = FALSE)
-  sites_by_pop <- .resolve_sites(sites, pop_names)
+  sites_by_pop <- .resolve_sites(sites, pop_names, verbose)
 
   ## Data may have been filtered before reaching this package; say what it
   ## looks filtered at (see .prior_filter_signals() in R/filter_loci.R).
@@ -698,7 +698,7 @@ print.summary.raddiv_diversity <- function(x, ...) {
 ## Called twice by diversity_stats(): first with pop_names = NULL, before the
 ## VCF is read, only to fail fast on a malformed value; then with the real
 ## population names, to match values to populations.
-.resolve_sites <- function(sites, pop_names = NULL) {
+.resolve_sites <- function(sites, pop_names = NULL, verbose = TRUE) {
   variant_sites <- NULL
   if (is.null(sites)) {
     values <- 0
@@ -732,10 +732,15 @@ print.summary.raddiv_diversity <- function(x, ...) {
   one_for_all <- length(values) == 1L && is.null(names(values))
   if (!one_for_all && (is.null(names(values)) || any(!nzchar(names(values)))))
     stop("sites: more than one value must be named (or keyed) by population.", call. = FALSE)
+  ## A repeated population would silently use its first value only.
+  if (anyDuplicated(names(values)))
+    stop("sites: population(s) given more than one value: ",
+         paste(unique(names(values)[duplicated(names(values))]), collapse = ", "),
+         ". Give each population exactly one sites value.", call. = FALSE)
 
   if (is.null(pop_names)) return(invisible(NULL))
   if (one_for_all) values <- stats::setNames(rep(as.numeric(values), length(pop_names)), pop_names)
-  out <- .match_sites_to_pops(values, pop_names)
+  out <- .match_sites_to_pops(values, pop_names, verbose)
   if (!is.null(variant_sites)) attr(out, "variant_sites") <- variant_sites[pop_names]
   out
 }
@@ -797,14 +802,14 @@ print.summary.raddiv_diversity <- function(x, ...) {
 ## directions: every population needs a value (error naming the missing
 ## ones), and a name that matches no population is reported, since it is
 ## most likely a typo.
-.match_sites_to_pops <- function(values, pop_names) {
+.match_sites_to_pops <- function(values, pop_names, verbose = TRUE) {
   missing_pops <- setdiff(pop_names, names(values))
   if (length(missing_pops))
     stop("sites: no value given for population(s): ", paste(missing_pops, collapse = ", "),
          ". Every population in the popmap needs a sites value.", call. = FALSE)
   extra <- setdiff(names(values), pop_names)
   if (length(extra))
-    message("sites: ", length(extra), " name(s) not among this run's populations, ignored: ",
+    .inform(verbose, "sites: ", length(extra), " name(s) not among this run's populations, ignored: ",
             paste(extra, collapse = ", "))
   values[pop_names]
 }

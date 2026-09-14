@@ -87,3 +87,25 @@ test_that("a sample in the data but not in the popmap is named when writing FSTA
   expect_error(write_fstat(H, tempfile(), popmap = list(popA = H$samples[1:3]), verbose = FALSE),
                "not in `popmap`")
 })
+
+test_that("popmap and sites mistakes stop with a message that says what to do", {
+  expect_error(RADdiversity:::.clean_pops(list(A = factor("a"), B = "b"), c("a", "b")),
+               "A is not \\(class factor\\)")
+  expect_error(RADdiversity:::.clean_pops(data.frame(s = c("a", "b"), p = c("A", "B")), c("a", "b")),
+               "is a data frame")
+  expect_error(RADdiversity:::.resolve_sites(data.frame(pop = c("A", "A", "B"), sites = c(1e6, 5, 1e6)),
+                                             c("A", "B")),
+               "more than one value: A")
+  ## An error in read_sumstats_summary() does not print the internal call.
+  err <- tryCatch(read_sumstats_summary(test_path("test-usability.R")), error = function(e) e)
+  expect_null(conditionCall(err))
+})
+
+test_that("verbose = FALSE also silences the note about unmatched sites names", {
+  set.seed(1)
+  g <- sim_genotypes(stats::runif(50, 0.2, 0.8), 8)
+  colnames(g$A1) <- colnames(g$A2) <- c(paste0("a", 1:4), paste0("b", 1:4))
+  pops <- list(A = paste0("a", 1:4), B = paste0("b", 1:4))
+  expect_silent(diversity_stats(sim_H(g$A1, g$A2), pops, g = 4, nboot = 0,
+                                sites = c(A = 1e6, B = 1e6, Cx = 1e6), verbose = FALSE))
+})

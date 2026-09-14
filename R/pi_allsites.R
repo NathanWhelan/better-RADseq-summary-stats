@@ -314,7 +314,10 @@ pi_allsites <- function(vcf, popmap, locus_from = "auto", window_bp = 1000,
                            .describe_locus_rule(rule, window_bp)))
 
   ## ---- 4. Statistics from sums, jackknife and bootstrap ---------------------
-  pair_labels <- vapply(pairs, function(q) paste(pop_names[q], collapse = "__"), character(1))
+  ## Statistics are named by the pair's number, not by its populations'
+  ## names: two pairs can share "popA__popB"-style labels (see
+  ## differentiation_stats()).
+  pair_labels <- paste0("pair", seq_along(pairs))
   stat_names <- c(paste0("pi_", pop_names), paste0("pinc_", pop_names),
                   if (n_pairs) c(paste0("dxy_", pair_labels), paste0("da_", pair_labels)))
   stats_from_sums <- function(totals) {

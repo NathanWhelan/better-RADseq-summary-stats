@@ -385,7 +385,12 @@ differentiation_stats <- function(vcf, popmap, nboot = 10000L, beta = TRUE,
   .inform(verbose, sprintf("  %s records on %s RAD loci (%.2f per locus)",
                            .big(n_rec), .big(n_loci), n_rec / n_loci))
   pairs <- utils::combn(pop_names, 2, simplify = FALSE)
-  pair_labels <- vapply(pairs, paste, character(1), collapse = "__")
+  pair_labels <- make.unique(vapply(pairs, paste, character(1), collapse = "__"))
+  ## Statistics are looked up by the pair's NUMBER, not its label: two pairs
+  ## can share a label (populations "a", "a__b", "b__c" and "c" give
+  ## "a__b__c" twice), and a lookup by label would return one pair's values
+  ## for both.
+  pair_keys <- paste0("pair", seq_along(pairs))
   .inform(verbose, sprintf("Computing FST/D for %d population(s), %d pair(s) ...",
                            n_pops, length(pairs)))
 
@@ -478,7 +483,7 @@ differentiation_stats <- function(vcf, popmap, nboot = 10000L, beta = TRUE,
   storage.mode(pieces) <- "double"
   S <- rowsum(pieces, locus_index, reorder = TRUE)        # RAD loci x pieces
 
-  stat_names <- c("FST", "FIS", "D", paste0("pFST_", pair_labels), paste0("pD_", pair_labels))
+  stat_names <- c("FST", "FIS", "D", paste0("pFST_", pair_keys), paste0("pD_", pair_keys))
   stats_from_sums <- function(totals) {
     totals <- matrix(totals, ncol = ncol(S))
     col <- function(j) totals[, j]
@@ -515,7 +520,9 @@ differentiation_stats <- function(vcf, popmap, nboot = 10000L, beta = TRUE,
       ## populations typed, n-bar > 1); see "Records used for FST" in
       ## ?differentiation_stats for why the others differ.
       fst_rows <- which(informative(wc_global))
-      wc <- tryCatch(hierfstat::wc(.to_hierfstat_df(H, pops, fst_rows)), error = function(e) e)
+      dat_fst <- .to_hierfstat_df(H, pops, fst_rows)
+      wc <- if (is.null(dat_fst)) simpleError("a record has more than 99 alleles, which hierfstat cannot read reliably")
+            else tryCatch(hierfstat::wc(dat_fst), error = function(e) e)
       if (inherits(wc, "error")) {
         warning("Skipped the hierfstat::wc() cross-check: it failed with \"",
                 conditionMessage(wc), "\".", call. = FALSE)
@@ -528,9 +535,13 @@ differentiation_stats <- function(vcf, popmap, nboot = 10000L, beta = TRUE,
     if (beta) {
       .inform(verbose, "Computing Weir & Goudet's beta with hierfstat::pairwise.betas() ",
               "(slow on large datasets; beta = FALSE skips it) ...")
-      beta_matrix <- tryCatch(as.matrix(hierfstat::pairwise.betas(.to_hierfstat_df(H, pops))),
-                              error = function(e) NULL)
-      if (is.null(beta_matrix)) {
+      dat_beta <- .to_hierfstat_df(H, pops)
+      beta_matrix <- if (is.null(dat_beta)) NULL
+                     else tryCatch(as.matrix(hierfstat::pairwise.betas(dat_beta)), error = function(e) NULL)
+      if (is.null(dat_beta)) {
+        .inform(verbose, "  beta skipped: a record has more than 99 alleles, which hierfstat cannot ",
+                "read reliably; pairwise_beta will be NULL.")
+      } else if (is.null(beta_matrix)) {
         .inform(verbose, "  hierfstat::pairwise.betas() failed on this dataset; pairwise_beta will be NULL.")
       } else {
         dimnames(beta_matrix) <- list(pop_names, pop_names)
@@ -553,15 +564,15 @@ differentiation_stats <- function(vcf, popmap, nboot = 10000L, beta = TRUE,
     p1 <- pairs[[k]][1]
     p2 <- pairs[[k]][2]
     cbind(data.frame(pop1 = p1, pop2 = p2),
-          with_uncertainty(paste0("pFST_", pair_labels[k]), "FST"),
+          with_uncertainty(paste0("pFST_", pair_keys[k]), "FST"),
           data.frame(beta = if (is.null(beta_matrix)) NA_real_ else beta_matrix[p1, p2]),
-          with_uncertainty(paste0("pD_", pair_labels[k]), "D"))
+          with_uncertainty(paste0("pD_", pair_keys[k]), "D"))
   }))
   matrix_of <- function(prefix) {
     m <- matrix(NA_real_, n_pops, n_pops, dimnames = list(pop_names, pop_names))
     for (k in seq_len(n_pairs)) {
-      m[pairs[[k]][1], pairs[[k]][2]] <- point[[paste0(prefix, pair_labels[k])]]
-      m[pairs[[k]][2], pairs[[k]][1]] <- point[[paste0(prefix, pair_labels[k])]]
+      m[pairs[[k]][1], pairs[[k]][2]] <- point[[paste0(prefix, pair_keys[k])]]
+      m[pairs[[k]][2], pairs[[k]][1]] <- point[[paste0(prefix, pair_keys[k])]]
     }
     m
   }

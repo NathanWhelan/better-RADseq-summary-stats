@@ -586,6 +586,11 @@
 ## for both functions: a warning saying the check was skipped.
 .hierfstat_crosscheck <- function(H, pops, rows, rs, n_typed, g, min_n, verbose) {
   dat <- .to_hierfstat_df(H, pops, rows)
+  if (is.null(dat)) {
+    warning("Skipped the hierfstat cross-check: a record has more than 99 alleles, which ",
+            "hierfstat cannot read reliably (see .to_hierfstat_df()).", call. = FALSE)
+    return(invisible(NULL))
+  }
   compared <- n_typed >= min_n          # the cells this package reports
 
   bs <- tryCatch(hierfstat::basic.stats(dat, diploid = TRUE, digits = 12),

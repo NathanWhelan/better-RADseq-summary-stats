@@ -27,6 +27,8 @@
 #  populations.sumstats.tsv, which holds only per-population counts.
 #
 #  STEPS (functions below the exported one):
+#    .warn_failed_individuals() names possible failed libraries (keeps them)
+#    .check_population_loci() stops if a population has no usable locus
 #    .individual_het()        pooled locus filter, per-individual table
 #    .population_locus_sets() which loci each population uses (R/vcf_io.R)
 #    .population_summary()    per-population mean heterozygosity and F
@@ -68,7 +70,23 @@
 #' describes or compares populations uses loci that each population clears
 #' on its own: `population_summary` uses each population's own loci, and a
 #' pairwise test uses the loci BOTH populations of that pair clear. A pooled
-#' rule would let a well-covered population carry a poorly covered one.
+#' rule would let a well-covered population carry a poorly covered one. An
+#' individual not genotyped at any of the loci a table or test uses has no
+#' value there and is left out of it (and only it); `n` counts the individuals
+#' with a value. A population with no locus at `min_call` stops the function.
+#'
+#' **Failed individuals.** Nothing is removed. A failed library should be
+#' removed during assembly or filtering, and one still in the popmap was
+#' probably kept for a reason. Instead, an individual genotyped at fewer than
+#' `min_loci` records (when the rest of its population has that many), or at
+#' under half of the records where the rest of its population is genotyped (the dDocent tutorial's cutoff; judged within its
+#' own population, as in Cerca et al. 2021), is named in a warning and in
+#' `settings$flagged_individuals`. Keeping it means: its heterozygosity rests
+#' on few loci yet counts as a full individual in the means and tests; heavy
+#' missing data usually comes with allele dropout, which biases its
+#' heterozygosity low and its F high; and it lowers its population's call
+#' rate, so fewer loci clear `min_call`. Remove it from the popmap (or with
+#' [filter_samples()]) if it was not meant to be analysed.
 #'
 #' @inheritParams diversity_stats
 #' @param vcf Path to a Stacks VCF (`populations.snps.vcf` or
@@ -79,9 +97,10 @@
 #'   locus to be used, applied within each population (see Details). Default
 #'   `0.9`.
 #' @param min_loci Minimum number of loci. An individual genotyped at fewer
-#'   loci is excluded (a failed library cannot give a heterozygosity), a pair
-#'   of populations sharing fewer is reported as `NA`, and a warning is given
-#'   if fewer pass the pooled filter. Default `50`.
+#'   records is named as a possible failed library (see Details; it is kept),
+#'   a pair of populations sharing fewer loci is reported as `NA`, as is the
+#'   overall test when fewer loci clear `min_call` in every population, and a
+#'   message says so if fewer pass the pooled filter. Default `50`.
 #' @param nboot_g2 Bootstrap replicates over individuals for the g2
 #'   confidence interval. Default `1000`, as in [identity_disequilibrium()].
 #' @param seed Random seed for the g2 bootstrap. Default `NULL`: use R's
@@ -90,8 +109,10 @@
 #'   your session's random-number stream as it was.
 #' @return An object of class `raddiv_het`, a list of:
 #'   \describe{
-#'     \item{individual_heterozygosity}{One row per individual: loci called,
-#'       heterozygosity (on the pooled locus set) and individual `F`.}
+#'     \item{individual_heterozygosity}{One row per individual: loci called
+#'       and heterozygosity on the pooled locus set, and individual `F` on its
+#'       population's own loci. `NA` where the individual is genotyped at
+#'       none of those loci.}
 #'     \item{population_summary}{Per population: individuals, loci, mean, SD,
 #'       SE, range of individual heterozygosity, and mean `F`.}
 #'     \item{omnibus}{With 3 or more populations: one overall test of whether
@@ -121,6 +142,11 @@
 #'   `het_between_pops_F_tests.<stem>.tsv`, and with 3 or more populations
 #'   `omnibus` to `het_between_pops_omnibus.<stem>.tsv`.
 #' @references
+#' Cerca, J., Maurstad, M.F., Rochette, N.C., et al. (2021) Removing the bad
+#' apples: a simple bioinformatic method to improve loci-recovery in de novo
+#' RADseq data for non-model organisms. *Methods in Ecology and Evolution*
+#' 12:805-817. (Failed individuals.)
+#'
 #' Van Dongen, S. (1995) How should we bootstrap allozyme data? *Heredity*
 #' 74:445-447.
 #'
@@ -175,13 +201,21 @@ het_between_pops <- function(vcf, popmap, min_call = 0.9, min_loci = 50L, nboot_
   H <- .resolve_H(vcf, verbose = verbose)
   pops <- .resolve_pops(popmap, H$samples, verbose = verbose)
   if (length(pops) < 2) stop("Need at least 2 populations.", call. = FALSE)
+  tiny <- names(pops)[lengths(pops) < 2]
+  if (length(tiny))
+    stop("Population(s) with fewer than 2 individuals: ", paste(tiny, collapse = ", "),
+         "\n  A test between populations needs at least 2 individuals in each. Drop these ",
+         "populations from the popmap or merge them.", call. = FALSE)
 
-  ## ---- 3. Individuals: pooled loci, heterozygosity, exclusions -------------
+  ## ---- 3. Individuals: failed-library check, pooled loci --------------------
+  ## Every individual in the popmap is kept; one that looks like a failed
+  ## library is named in a warning (see "Failed individuals" in the help).
+  flagged <- .warn_failed_individuals(H, pops, min_loci)
   individuals <- .individual_het(H, pops, min_call, min_loci, verbose)
-  pops <- individuals$pops                  # without excluded individuals
 
   ## ---- 4. Populations -------------------------------------------------------
   locus_sets <- .population_locus_sets(H, pops, min_call)
+  .check_population_loci(H, pops, locus_sets, min_call)
   per_pop <- .population_summary(H, pops, locus_sets)
   table_ind <- individuals$table
   table_ind$F <- unname(per_pop$F_by_individual[table_ind$sample])
@@ -214,7 +248,7 @@ het_between_pops <- function(vcf, popmap, min_call = 0.9, min_loci = 50L, nboot_
   settings <- list(n_loci_pooled = individuals$n_loci_pooled,
                    n_individuals = nrow(table_ind), n_pops = length(pops),
                    min_call = min_call, min_loci = min_loci, nboot_g2 = nboot_g2,
-                   seed = seed, files = written)
+                   flagged_individuals = flagged, seed = seed, files = written)
   structure(list(individual_heterozygosity = table_ind,
                  population_summary = per_pop$table,
                  omnibus = omnibus,
@@ -231,15 +265,85 @@ het_between_pops <- function(vcf, popmap, min_call = 0.9, min_loci = 50L, nboot_
 ## Steps
 ## ---------------------------------------------------------------------------
 
+## Not exported. FAILED INDIVIDUALS: a quick check, never a filter. A library
+## that failed (too little DNA, a bad barcode, contamination) should have been
+## removed during assembly or filtering, and one that is still in the popmap
+## was probably kept on purpose, so nothing is removed here. Instead each
+## individual that looks failed is named in a warning that says what keeping
+## it does. An individual is flagged when it is
+##   * genotyped at fewer than `min_loci` records, although the rest of its
+##     population is genotyped at `min_loci` or more (a small dataset is not
+##     a failed library), or
+##   * missing at more than half (`.failed_call_rate`) of the records where
+##     at least one OTHER individual of its own population is genotyped.
+## The second rule uses the dDocent tutorial's 50% cutoff for individuals, and
+## judges each individual against its own population's records, as Cerca et
+## al. (2021) do: a record that a whole population lacks (Stacks' -r, a
+## restriction-site mutation in a divergent population) says nothing about an
+## individual's library.
+## Returns the flagged sample names (character(0) when none), invisibly.
+.warn_failed_individuals <- function(H, pops, min_loci = 50L) {
+  per_pop <- lapply(names(pops), function(p) {
+    typed <- !is.na(H$A1[, pops[[p]], drop = FALSE])       # records x individuals
+    others_typed <- rowSums(typed) - typed > 0              # someone else typed there
+    with_data <- colSums(others_typed)
+    data.frame(sample = pops[[p]], population = p, called = colSums(typed),
+               with_data = with_data,
+               call_rate = ifelse(with_data > 0, colSums(typed & others_typed) / with_data,
+                                  NA_real_),
+               row.names = NULL)
+  })
+  tab <- do.call(rbind, per_pop)
+  failed <- tab[(tab$called < min_loci & tab$with_data >= min_loci) |
+                  (!is.na(tab$call_rate) & tab$call_rate < .failed_call_rate), , drop = FALSE]
+  if (nrow(failed)) {
+    shown <- utils::head(seq_len(nrow(failed)), 10)
+    warning(nrow(failed), " individual(s) look like failed libraries (genotyped at fewer than ",
+            min_loci, " records, or at under ", 100 * .failed_call_rate, "% of the records where ",
+            "the rest of their population is genotyped): ",
+            paste(sprintf("%s (%s: %s records, %s)", failed$sample[shown], failed$population[shown],
+                          .big(failed$called[shown]),
+                          ifelse(is.na(failed$call_rate[shown]), "no call rate",
+                                 sprintf("%.0f%% call rate", 100 * failed$call_rate[shown]))),
+                  collapse = ", "),
+            if (nrow(failed) > 10) sprintf(", and %d more", nrow(failed) - 10) else "", ".\n",
+            "  They are KEPT. What that does: (1) each one's heterozygosity rests on few loci and ",
+            "is noisy, yet it counts as a full individual in population means and tests; (2) heavy ",
+            "missing data usually comes with allele dropout, which biases its heterozygosity low ",
+            "and its F high; (3) it lowers its population's call rate at every record, so fewer ",
+            "loci clear min_call.\n  If they were not meant to be analysed, remove them from the ",
+            "popmap (or with filter_samples()) and re-run.", call. = FALSE)
+  }
+  invisible(failed$sample)
+}
+
+## Not exported. Largest share of missing genotypes, among the records where
+## the rest of its population is genotyped, before an individual is flagged
+## as a failed library (the dDocent tutorial's individual cutoff).
+.failed_call_rate <- 0.5
+
+## Not exported. Stops, naming them, if any population has no record
+## genotyped in at least `min_call` of its own individuals: nothing about that
+## population can be estimated at this min_call.
+.check_population_loci <- function(H, pops, locus_sets, min_call) {
+  empty <- names(pops)[colSums(locus_sets) == 0L]
+  if (!length(empty)) return(invisible(NULL))
+  call_rate <- sweep(.typed_by_pop(H, pops[empty]), 2L, lengths(pops[empty]), "/")
+  best <- apply(call_rate, 2L, max)
+  stop("No record is genotyped in >= ", 100 * min_call, "% of the individuals of population(s): ",
+       paste(sprintf("%s (highest call rate %.0f%%)", empty, 100 * best), collapse = ", "),
+       ".\n  Lower min_call to at most the highest call rate shown, or remove these ",
+       "populations from the popmap.", call. = FALSE)
+}
+
 ## Not exported. The individual-level part of het_between_pops():
 ##   1. keep loci genotyped in >= min_call of ALL individuals pooled (used
 ##      only for this table and the missingness check; see ?het_between_pops);
-##   2. heterozygosity of each individual = heterozygous loci / called loci;
-##   3. exclude individuals called at fewer than `min_loci` loci. An
-##      individual called nowhere would otherwise give NaN, which would
-##      propagate silently through every test.
-## Returns list(table, pops (without excluded individuals), call_rate, het,
-## n_loci_pooled).
+##   2. heterozygosity of each individual = heterozygous loci / called loci.
+## Every individual is kept (see .warn_failed_individuals()). One not called
+## at any pooled locus has heterozygosity NA here, and is simply left out of
+## the missingness check.
+## Returns list(table, call_rate, het, n_loci_pooled).
 .individual_het <- function(H, pops, min_call, min_loci, verbose) {
   ids <- unlist(pops, use.names = FALSE)
   pop_of_id <- rep(names(pops), lengths(pops))
@@ -253,59 +357,46 @@ het_between_pops <- function(vcf, popmap, min_call = 0.9, min_loci = 50L, nboot_
   if (sum(pooled) < min_loci)
     .inform(verbose, "  WARNING: fewer than ", min_loci, " loci pass the pooled filter. ",
             "The per-individual table and the missingness confound check use this ",
-            "pooled set and may be unreliable; the population summary and the ",
-            "pairwise tests use each population's own loci and are not affected.")
+            "pooled set and may be unreliable. The population summary and the tests ",
+            "use each population's own loci instead.")
   a1 <- a1[pooled, , drop = FALSE]
   a2 <- a2[pooled, , drop = FALSE]
 
-  het <- colMeans(a1 != a2, na.rm = TRUE)
   n_called <- colSums(!is.na(a1))
-
-  too_few <- n_called < min_loci
-  if (any(too_few)) {
-    .inform(verbose, sprintf("  %d individual(s) called at fewer than %d loci -- EXCLUDED: %s",
-                             sum(too_few), min_loci, paste(ids[too_few], collapse = ", ")))
-    .inform(verbose, "    (a library this poor cannot contribute a heterozygosity ",
-            "estimate; check it before re-running)")
-    ids <- ids[!too_few]
-    pop_of_id <- pop_of_id[!too_few]
-    het <- het[!too_few]
-    n_called <- n_called[!too_few]
-    pops <- lapply(pops, function(v) v[v %in% ids])
-    small <- names(pops)[lengths(pops) < 2]
-    if (length(small))
-      stop("After excluding those individuals, population(s) ",
-           paste(small, collapse = ", "), " have fewer than 2 individuals.\n",
-           "  A two-sample test needs at least 2 per group.", call. = FALSE)
-  }
-  if (!all(is.finite(het)))
-    stop("Non-finite per-individual heterozygosity remains after filtering. ",
-         "This should not happen; please report it.", call. = FALSE)
+  het <- colMeans(a1 != a2, na.rm = TRUE)
+  het[n_called == 0] <- NA_real_                 # 0/0: no pooled locus called
+  call_rate <- if (sum(pooled)) unname(n_called) / sum(pooled) else rep(NA_real_, length(ids))
 
   table <- data.frame(sample = ids, population = pop_of_id,
                       loci_called = as.integer(n_called), heterozygosity = unname(het),
                       row.names = NULL)
-  list(table = table, pops = pops, call_rate = unname(n_called) / sum(pooled),
-       het = unname(het), n_loci_pooled = sum(pooled))
+  list(table = table, call_rate = call_rate, het = unname(het), n_loci_pooled = sum(pooled))
 }
 
 ## Not exported. Per population, on its own locus set: every individual's
 ## heterozygosity and inbreeding F (.ind_F(), R/individual_inbreeding.R), and
-## the summary table.
+## the summary table. An individual not called at any of these loci has no
+## heterozygosity (NA) and is left out of the summary: `n` counts the
+## individuals with a value.
 .population_summary <- function(H, pops, locus_sets) {
   het_by_pop <- F_by_pop <- stats::setNames(vector("list", length(pops)), names(pops))
   for (p in names(pops)) {
     loci <- locus_sets[, p]
     a1 <- H$A1[loci, pops[[p]], drop = FALSE]
     a2 <- H$A2[loci, pops[[p]], drop = FALSE]
-    het_by_pop[[p]] <- colMeans(a1 != a2, na.rm = TRUE)
+    het <- colMeans(a1 != a2, na.rm = TRUE)
+    het[!is.finite(het)] <- NA_real_
+    het_by_pop[[p]] <- het
     F_by_pop[[p]] <- stats::setNames(.ind_F(a1, a2)$F, pops[[p]])
   }
   table <- do.call(rbind, lapply(names(pops), function(p) {
-    h <- het_by_pop[[p]]
+    h <- het_by_pop[[p]][!is.na(het_by_pop[[p]])]
+    of_h <- function(f) if (length(h)) f(h) else NA_real_
     data.frame(population = p, n = length(h), n_loci = sum(locus_sets[, p]),
-               mean_het = mean(h), sd = stats::sd(h), se = stats::sd(h) / sqrt(length(h)),
-               min = min(h), max = max(h), mean_F = mean(F_by_pop[[p]], na.rm = TRUE))
+               mean_het = of_h(mean), sd = of_h(stats::sd),
+               se = of_h(stats::sd) / sqrt(length(h)), min = of_h(min), max = of_h(max),
+               mean_F = if (any(is.finite(F_by_pop[[p]]))) mean(F_by_pop[[p]], na.rm = TRUE)
+                        else NA_real_)
   }))
   list(table = table, het_by_pop = het_by_pop,
        F_by_individual = unlist(unname(F_by_pop)))
@@ -315,13 +406,22 @@ het_between_pops <- function(vcf, popmap, min_call = 0.9, min_loci = 50L, nboot_
 ## computed over the loci it was called at. If poorly sequenced individuals
 ## are both more often missing and (through allele dropout) more often called
 ## homozygous, a difference between populations can be a difference in
-## library quality. Returns list(no_variation, overall, within):
+## library quality. Only individuals with a heterozygosity on the pooled loci
+## take part. Returns list(no_variation, too_few, overall, within):
+##   no_variation  every individual called at every pooled locus
+##   too_few       fewer than 3 individuals called at any pooled locus
 ##   overall  one row: correlation r of call rate with heterozygosity, its
 ##            p-value, n, and the gap in mean call rate between populations
 ##   within   the same correlation within each population of > 3 individuals
 .missingness_confound <- function(call_rate, het, pop_of_individual, pop_names) {
+  has_value <- is.finite(call_rate) & is.finite(het)
+  if (sum(has_value) < 3L)
+    return(list(no_variation = FALSE, too_few = TRUE, overall = NULL, within = NULL))
+  call_rate <- call_rate[has_value]
+  het <- het[has_value]
+  pop_of_individual <- pop_of_individual[has_value]
   if (stats::sd(call_rate) < .zero_tol)
-    return(list(no_variation = TRUE, overall = NULL, within = NULL))
+    return(list(no_variation = TRUE, too_few = FALSE, overall = NULL, within = NULL))
   test <- suppressWarnings(stats::cor.test(call_rate, het))
   within <- do.call(rbind, lapply(pop_names, function(p) {
     rows <- which(pop_of_individual == p)
@@ -331,7 +431,7 @@ het_between_pops <- function(vcf, popmap, min_call = 0.9, min_loci = 50L, nboot_
   }))
   overall <- data.frame(r = unname(test$estimate), p_value = test$p.value, n = length(het),
                         call_rate_gap = diff(range(tapply(call_rate, pop_of_individual, mean))))
-  list(no_variation = FALSE, overall = overall, within = within)
+  list(no_variation = FALSE, too_few = FALSE, overall = overall, within = within)
 }
 
 ## Not exported. IS THE LOCUS BOOTSTRAP INVALID FOR *THIS* DATASET? That
@@ -349,7 +449,8 @@ het_between_pops <- function(vcf, popmap, min_call = 0.9, min_loci = 50L, nboot_
 ## would make the ratio read about n/(n - 1) with no excess variation at all
 ## (1.21 at n = 5, 1.07 at n = 10 in simulation). Multiplying each locus's
 ## term by n_l/(n_l - 1) removes that; loci typed in fewer than 2 individuals
-## are left out.
+## are left out, and so are individuals with no heterozygosity (not called at
+## any of these loci).
 .overdispersion <- function(H, pops, locus_sets, het_by_pop) {
   do.call(rbind, lapply(names(pops), function(p) {
     loci <- locus_sets[, p]
@@ -360,12 +461,14 @@ het_between_pops <- function(vcf, popmap, min_call = 0.9, min_loci = 50L, nboot_
     keep <- n_typed >= 2
     n_typed <- n_typed[keep]
     locus_het <- locus_het[keep]
-    expected_var <- sum(locus_het * (1 - locus_het) * n_typed / (n_typed - 1)) /
-      length(locus_het)^2
-    observed_var <- stats::var(het_by_pop[[p]])
+    expected_var <- if (length(locus_het))
+      sum(locus_het * (1 - locus_het) * n_typed / (n_typed - 1)) / length(locus_het)^2
+    else NA_real_
+    h <- het_by_pop[[p]][!is.na(het_by_pop[[p]])]
+    observed_var <- if (length(h) >= 2L) stats::var(h) else NA_real_
     ## Monomorphic at every locus: 0/0, which is "undefined", not "no excess".
-    ratio <- if (expected_var > 0) observed_var / expected_var else NA_real_
-    data.frame(population = p, n = length(pops[[p]]),
+    ratio <- if (isTRUE(expected_var > 0)) observed_var / expected_var else NA_real_
+    data.frame(population = p, n = length(h),
                obs_sd = sqrt(observed_var), binomial_sd = sqrt(expected_var),
                overdispersion = ratio, se_understated_by = sqrt(ratio))
   }))
@@ -637,11 +740,16 @@ print.raddiv_het <- function(x, ...) {
 ## Not exported. The short warnings print.raddiv_het() shows.
 .het_warnings <- function(x) {
   out <- character(0)
+  flagged <- x$settings$flagged_individuals
+  if (length(flagged))
+    out <- c(out, sprintf("%d individual(s) look like failed libraries and were kept: %s%s (see the warning and ?het_between_pops).",
+                          length(flagged), paste(utils::head(flagged, 5), collapse = ", "),
+                          if (length(flagged) > 5) ", ..." else ""))
   cf <- x$missingness_confound
-  if (!cf$no_variation && is.finite(cf$overall$p_value) && cf$overall$p_value < 0.05 &&
+  if (!is.null(cf$overall) && is.finite(cf$overall$p_value) && cf$overall$p_value < 0.05 &&
       cf$overall$r > 0)
     out <- c(out, "call rate is positively correlated with heterozygosity (possible allele dropout).")
-  if (!cf$no_variation && cf$overall$call_rate_gap > 0.02)
+  if (!is.null(cf$overall) && cf$overall$call_rate_gap > 0.02)
     out <- c(out, "mean call rate differs between populations by more than 2 percentage points.")
   od <- x$overdispersion$overdispersion
   if (any(is.finite(od)) && max(od, na.rm = TRUE) >= 2)
@@ -677,6 +785,10 @@ print.summary.raddiv_het <- function(x, ...) {
       "  individual-level table and confound check below); ", st$n_individuals,
       " individuals, ", st$n_pops, " populations\n", sep = "")
   cat(rule, "\n", sep = "")
+  if (length(st$flagged_individuals))
+    note("", sprintf("KEPT, but they look like failed libraries: %s.",
+                     paste(st$flagged_individuals, collapse = ", ")),
+         .report_text$het_failed_individuals)
 
   cat("\nPer-population summary of individual heterozygosity\n")
   cat("  (each population's OWN locus set -- loci at >= ", 100 * st$min_call,
@@ -687,7 +799,9 @@ print.summary.raddiv_het <- function(x, ...) {
 
   cat("\nMissingness confound check\n")
   cf <- x$missingness_confound
-  if (cf$no_variation) {
+  if (isTRUE(cf$too_few)) {
+    note("Fewer than 3 individuals were called at any pooled locus; the check needs more.")
+  } else if (cf$no_variation) {
     note("Every individual was called at every locus; no confound possible.")
   } else {
     cat(sprintf("  cor(per-individual call rate, heterozygosity) = %+.3f  (p = %.3g, n = %d)\n",

@@ -264,3 +264,85 @@ test_that("differentiation_stats() requires stem when given an H list, and >= 2 
   expect_no_error(suppressMessages(differentiation_stats(H, fx("small_popmap.tsv"), nboot = 0,
                                                          verbose = FALSE)))
 })
+
+## hierfstat guesses how many digits each allele has from the genotype numbers.
+## With 3 digits per allele and every number below 10000 (alleles 10 and above
+## present, but never two of them in one individual), it read 1012 as alleles
+## 10 and 12, which gave a wrong beta. .to_hierfstat_df() now writes 2 digits
+## per allele over renumbered alleles, which hierfstat always reads correctly.
+test_that("genotypes reach hierfstat as numbers it decodes correctly when alleles reach 10+", {
+  skip_if_not_installed("hierfstat")
+  set.seed(8)
+  n_rec <- 150
+  draw <- function(n, probs) matrix(sample.int(length(probs), n_rec * n, replace = TRUE, prob = probs),
+                                    n_rec, n)
+  pa <- c(.3, .2, .15, .1, .05, .05, .05, .03, .03, .02, .01, .01)
+  A1 <- cbind(draw(12, pa), draw(12, rev(pa)))
+  A2 <- cbind(draw(12, pa), draw(12, rev(pa)))
+  both_high <- A1 >= 10 & A2 >= 10
+  A1[both_high] <- 1L                        # every old 3-digit number stays below 10000
+  samples <- c(paste0("a", 1:12), paste0("b", 1:12))
+  H <- make_H(A1, A2, n_alleles = rep(12L, n_rec),
+              alleles = replicate(n_rec, paste0("AC", LETTERS[1:12]), simplify = FALSE),
+              samples = samples)
+  pops <- list(A = samples[1:12], B = samples[13:24])
+
+  ## hierfstat recovers every locus's allele counts (labels aside).
+  dat <- RADdiversity:::.to_hierfstat_df(H, pops)
+  decoded <- hierfstat::getal(dat)
+  for (j in c(1, 50, 150)) {
+    original <- sort(as.vector(table(c(A1[j, ], A2[j, ]))))
+    expect_equal(sort(as.vector(table(decoded[[paste0("L", j)]]))), original)
+  }
+
+  ## beta equals hierfstat's own on unambiguous 2-digit numbers of the original
+  ## alleles, and the wc() cross-check no longer disagrees.
+  reference <- data.frame(pop = rep(1:2, each = 12), t(pmin(A1, A2) * 100L + pmax(A1, A2)))
+  expected_beta <- hierfstat::pairwise.betas(reference)[2, 1]
+  expect_no_warning(res <- differentiation_stats(H, pops, nboot = 0, hierfstat_check = TRUE,
+                                                 verbose = FALSE))
+  expect_equal(res$pairwise$beta, expected_beta, tolerance = 1e-12)
+  expect_equal(res$global$FST, hierfstat::wc(reference)$FST, tolerance = 1e-8)
+})
+
+test_that(".to_hierfstat_df() writes 2 digits per allele unless a record has more than 99 alleles", {
+  A1 <- matrix(c(1L, 3L, 3L, 1L), 1, dimnames = list(NULL, c("a", "b", "c", "d")))
+  A2 <- matrix(c(3L, 3L, NA, 1L), 1, dimnames = list(NULL, c("a", "b", "c", "d")))
+  H <- make_H(A1, A2, n_alleles = 3L, alleles = list(c("A", "C", "G")))
+  dat <- RADdiversity:::.to_hierfstat_df(H, list(p = c("a", "b"), q = c("c", "d")))
+  ## alleles 1 and 3 are carried, so they become 1 and 2
+  expect_equal(unname(unlist(dat[, 2])), c(102L, 202L, NA, 101L))
+  expect_true(RADdiversity:::.hierfstat_reads_3_digits(c(1001L, 12100L)))
+  expect_false(RADdiversity:::.hierfstat_reads_3_digits(c(1001L, 1123L)))
+})
+
+test_that("pairs whose population names would give the same label keep their own values", {
+  ## "a" + "b__c" and "a__b" + "c" would both be labelled "a__b__c".
+  set.seed(21)
+  ns <- c(a = 6, a__b = 6, b__c = 6, c = 6)
+  freqs <- lapply(seq_along(ns), function(i) stats::runif(120, 0.05 * i, 0.2 * i))
+  gs <- Map(sim_genotypes, freqs, ns)
+  A1 <- do.call(cbind, lapply(gs, `[[`, "A1")); A2 <- do.call(cbind, lapply(gs, `[[`, "A2"))
+  ids <- unlist(Map(function(p, n) paste0(p, "_", seq_len(n)), names(ns), ns))
+  colnames(A1) <- colnames(A2) <- ids
+  pops <- split(ids, factor(rep(names(ns), ns), levels = names(ns)))
+  H <- sim_H(A1, A2)
+  res <- differentiation_stats(H, pops, nboot = 0, beta = FALSE, verbose = FALSE)
+  one_pair <- function(p1, p2)
+    differentiation_stats(H, pops[c(p1, p2)], nboot = 0, beta = FALSE, verbose = FALSE)$global
+  expect_equal(res$pairwise_fst["a", "b__c"], one_pair("a", "b__c")$FST)
+  expect_equal(res$pairwise_fst["a__b", "c"], one_pair("a__b", "c")$FST)
+  expect_false(isTRUE(all.equal(res$pairwise_fst["a", "b__c"], res$pairwise_fst["a__b", "c"])))
+  expect_equal(anyDuplicated(names(res$settings$fst_records_skipped)), 0L)
+
+  vcf <- tempfile(fileext = ".vcf")
+  H$fields <- cbind(CHROM = "1", POS = seq_len(nrow(A1)), ID = ".", REF = "A", ALT = "C",
+                    QUAL = ".", FILTER = "PASS", INFO = ".", FORMAT = "GT")
+  write_vcf(H, vcf, verbose = FALSE)
+  pi_res <- pi_allsites(vcf, pops, locus_from = "window", window_bp = 0, nboot = 0, verbose = FALSE)
+  one_dxy <- function(p1, p2)
+    pi_allsites(vcf, pops[c(p1, p2)], locus_from = "window", window_bp = 0, nboot = 0,
+                verbose = FALSE)$dxy$dxy
+  expect_equal(pi_res$dxy$dxy[pi_res$dxy$pop1 == "a" & pi_res$dxy$pop2 == "b__c"], one_dxy("a", "b__c"))
+  expect_equal(pi_res$dxy$dxy[pi_res$dxy$pop1 == "a__b" & pi_res$dxy$pop2 == "c"], one_dxy("a__b", "c"))
+})

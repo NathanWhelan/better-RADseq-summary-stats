@@ -2,6 +2,7 @@ sample	population	loci_called	heterozygosity
 A01	popA	645	0.26822
 A02	popA	645	0.27132
 A03	popA	645	0.28062
+A04	popA	0	NA
 A05	popA	645	0.26202
 A06	popA	645	0.24806
 A07	popA	645	0.27442

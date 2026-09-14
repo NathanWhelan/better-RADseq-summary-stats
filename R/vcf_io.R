@@ -642,11 +642,22 @@ read_popmap <- function(path, samples = NULL, verbose = TRUE) {
 ## (when given): drops unknown samples and emptied populations, and stops on
 ## a sample assigned to two populations.
 .clean_pops <- function(pops, samples = NULL, verbose = TRUE) {
-  if (!is.list(pops) || is.null(names(pops)) || any(!nzchar(names(pops))) ||
-      !all(vapply(pops, is.character, logical(1))))
+  if (is.data.frame(pops))
+    stop("`popmap` is a data frame; its columns would be read as populations. Pass the ",
+         "popmap file's path, or a list of sample IDs per population, e.g. ",
+         "split(as.character(df[[1]]), df[[2]]) for sample IDs in column 1 and ",
+         "populations in column 2.", call. = FALSE)
+  if (!is.list(pops) || is.null(names(pops)) || any(!nzchar(names(pops))))
     stop("`popmap` must be the path to a popmap file, or a named list of sample ",
          "IDs per population as returned by read_popmap() (got an object of class ",
          paste(class(pops), collapse = "/"), ").", call. = FALSE)
+  not_text <- names(pops)[!vapply(pops, is.character, logical(1))]
+  if (length(not_text))
+    stop("`popmap`: each population must be a character vector of sample IDs, but ",
+         paste(not_text, collapse = ", "), " is not (class ",
+         paste(unique(vapply(pops[not_text], function(x) class(x)[1], character(1))),
+               collapse = "/"),
+         "). Convert with lapply(popmap, as.character).", call. = FALSE)
   if (anyDuplicated(names(pops)))
     stop("Population names must be unique; repeated: ",
          paste(unique(names(pops)[duplicated(names(pops))]), collapse = ", "), call. = FALSE)
@@ -805,16 +816,56 @@ read_popmap <- function(path, samples = NULL, verbose = TRUE) {
 }
 
 ## Not exported. H (records `rows`) as the data frame hierfstat expects: a
-## population number, then one column per locus with each genotype as a
-## 3-digits-per-allele integer (alleles 1 and 12 -> 1012). Used only for the
-## optional hierfstat cross-checks and Weir & Goudet's beta.
+## population number, then one column per locus with each genotype as one
+## integer, 2 digits per allele (alleles 1 and 12 -> 112). Used only for
+## Weir & Goudet's beta and the optional hierfstat cross-checks.
+##
+## WHY 2 DIGITS, AND WHY ALLELES ARE RENUMBERED. hierfstat does not know how
+## many digits each allele has; its getal() (hierfstat 0.5.11) guesses from
+## the numbers. With 3 digits per allele (1 and 12 -> 1012) and every number
+## below 10000, it guesses 2 digits and reads 1012 as alleles 10 and 12. On
+## haplotype data with 10 or more alleles that silently scrambled every
+## genotype, and so beta. With 2 digits per allele its guess is always right:
+## every number is 101-9999, and it picks 3 digits only when every allele is
+## both >= 10 and < 10. So each record's alleles are first renumbered 1, 2,
+## ... over the alleles these individuals actually carry (allele labels do not
+## change any hierfstat statistic), which keeps them within 99. A record with
+## more than 99 alleles needs 3 digits; if hierfstat would then guess wrong,
+## this returns NULL and the caller skips hierfstat.
 .to_hierfstat_df <- function(H, pops, rows = seq_len(nrow(H$A1))) {
   ids <- unlist(pops, use.names = FALSE)
   a <- H$A1[rows, ids, drop = FALSE]
   b <- H$A2[rows, ids, drop = FALSE]
-  genotype_codes <- t(pmin(a, b) * 1000L + pmax(a, b))      # individuals x loci
+  ## new_number[r, j]: allele j's new number at record r = how many alleles
+  ## up to and including j are carried there.
+  carried <- .allele_counts(a, b) > 0L                     # records x alleles
+  new_number <- carried
+  storage.mode(new_number) <- "integer"
+  running <- integer(nrow(carried))
+  for (j in seq_len(ncol(carried))) {
+    running <- running + carried[, j]
+    new_number[, j] <- running
+  }
+  renumber <- function(A) {
+    typed <- !is.na(A)
+    A[typed] <- new_number[cbind(row(A)[typed], A[typed])]
+    A
+  }
+  a <- renumber(a)
+  b <- renumber(b)
+  digits <- if (max(c(0L, running)) <= 99L) 100L else 1000L
+  genotype_codes <- t(pmin(a, b) * digits + pmax(a, b))    # individuals x loci
+  if (digits == 1000L && !.hierfstat_reads_3_digits(genotype_codes)) return(NULL)
   dat <- data.frame(pop = rep(seq_along(pops), lengths(pops)), genotype_codes,
                     row.names = NULL)
   names(dat)[-1] <- paste0("L", seq_along(rows))
   dat
+}
+
+## Not exported. TRUE when hierfstat's getal() would read these
+## 3-digits-per-allele genotype numbers with 3 digits (its rule, restated).
+.hierfstat_reads_3_digits <- function(codes) {
+  top <- max(codes, na.rm = TRUE)
+  top >= 10000 ||
+    (min(codes %/% 100, na.rm = TRUE) >= 10 && max(codes %% 100, na.rm = TRUE) < 10)
 }

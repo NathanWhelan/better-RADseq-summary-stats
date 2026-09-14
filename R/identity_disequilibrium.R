@@ -150,6 +150,14 @@
 #' populations inflates g2 (Wahlund effect), hence one estimate per
 #' population.
 #'
+#' **Failed individuals.** An individual that looks like a failed library
+#' (genotyped at fewer than 50 records when the rest of its population has
+#' that many, or at under half of the records where the rest of its population
+#' is genotyped) is kept and named in a warning:
+#' allele dropout lowers its heterozygosity at many loci at once, which looks
+#' like variance in inbreeding and inflates g2. See "Failed individuals" in
+#' [het_between_pops()].
+#'
 #' @param vcf Path to a VCF file, or the object returned by [read_stacks_vcf()]
 #'   (optionally filtered).
 #' @param popmap Path to a popmap file, or the list returned by
@@ -163,8 +171,7 @@
 #'   stream (call `set.seed()` first for reproducible results). A number makes
 #'   the result reproducible on its own and leaves your session's
 #'   random-number stream as it was.
-#' @param verbose Print progress messages (when `vcf` or `popmap` is a path).
-#'   Default `TRUE`.
+#' @param verbose Print progress messages. Default `TRUE`.
 #' @return A data frame, one row per population: `population`, `n_ind`,
 #'   `n_loci`, `g2`, `g2_se` (bootstrap SD), `g2_lo`, `g2_hi` (95% bootstrap
 #'   interval) and `p_value` (one-sided, g2 > 0).
@@ -199,6 +206,7 @@ identity_disequilibrium <- function(vcf, popmap, nboot = 1000L, nperm = 1000L,
   .check_flag(verbose, "verbose")
   H <- .resolve_H(vcf, verbose = verbose)
   pops <- .resolve_pops(popmap, H$samples, verbose = verbose)
+  .warn_failed_individuals(H, pops)
   if (!is.null(seed)) {
     restore_rng <- .save_rng_state()
     on.exit(restore_rng(), add = TRUE)

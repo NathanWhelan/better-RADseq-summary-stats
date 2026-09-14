@@ -323,9 +323,9 @@
 #' Per-locus test of Hardy-Weinberg equilibrium
 #'
 #' Tests every locus in `H` for departure from Hardy-Weinberg equilibrium
-#' (HWE), pooled across all samples (`pops = NULL`, the default) or
-#' separately per population (`pops` given, same shape as
-#' [filter_call_rate()]'s `pops` argument). This is a **report, never a
+#' (HWE), pooled across all samples (`popmap = NULL`, the default) or
+#' separately per population (`popmap` given, as a file path or the list
+#' from [read_popmap()]). This is a **report, never a
 #' filter**: no function in this package removes loci based on this one's
 #' output -- see `@details` for why.
 #'
@@ -347,7 +347,7 @@
 #' exactly the loci most informative about that structure (a locus that
 #' looks like it deviates from HWE when pooled is often one where allele
 #' frequencies genuinely differ between populations, the Wahlund effect,
-#' not a genotyping artifact). Testing separately per population (`pops`
+#' not a genotyping artifact). Testing separately per population (`popmap`
 #' given) avoids conflating the two, which is why that option exists here --
 #' but even then, this function stops at reporting.
 #'

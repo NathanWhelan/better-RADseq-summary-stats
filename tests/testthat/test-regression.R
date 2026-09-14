@@ -64,8 +64,11 @@ test_that("het_between_pops() reproduces the golden values", {
                 c(vcf = "one_dead_ind.vcf.gz", stem = "one_dead_ind", golden = "hbp_onedead"))
   for (cs in cases) {
     od <- tempfile("legacy-"); dir.create(od)
-    invisible(capture.output(suppressMessages(
+    run <- function() invisible(capture.output(suppressMessages(
       het_between_pops(lg(cs[["vcf"]]), lg("popmap.tsv"), min_call = 0.9, outdir = od))))
+    ## one_dead_ind has an individual with no genotype: it is kept (NA in the
+    ## individual table, left out of every test) and named in a warning.
+    if (cs[["stem"]] == "one_dead_ind") expect_warning(run(), "A04") else run()
     for (kind in c("individual_heterozygosity", "het_between_pops_tests"))
       expect_golden(file.path(od, sprintf("%s.%s.tsv", kind, cs[["stem"]])),
                     sprintf("%s.%s.tsv", cs[["golden"]], kind))
@@ -136,10 +139,13 @@ test_that("het_between_pops() edge cases", {
   for (cs in list(c("sim.haps.vcf.gz", "popmap.tsv"), c("sim.allsnps.vcf.gz", "pm_three.tsv")))
     expect_no_error(suppressMessages(capture.output(
       het_between_pops(lg(cs[1]), lg(cs[2]), min_call = 0.9, outdir = od))))
-  ## One individual with no genotype anywhere is excluded, loudly.
-  msgs <- capture_messages(invisible(capture.output(
-    het_between_pops(lg("one_dead_ind.vcf.gz"), lg("popmap.tsv"), min_call = 0.9, outdir = od))))
-  expect_true(any(grepl("EXCLUDED", msgs)))
+  ## One individual with no genotype anywhere is kept, and named in a warning.
+  expect_warning(suppressMessages(invisible(capture.output(
+    res <- het_between_pops(lg("one_dead_ind.vcf.gz"), lg("popmap.tsv"), min_call = 0.9,
+                            outdir = od)))), "look like failed libraries")
+  expect_identical(res$settings$flagged_individuals, "A04")
+  expect_true(is.na(res$individual_heterozygosity$heterozygosity[
+    res$individual_heterozygosity$sample == "A04"]))
 })
 
 test_that("the Wilcoxon p-value uses the same exact/approximate rule on every R version", {

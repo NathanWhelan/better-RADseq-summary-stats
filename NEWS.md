@@ -147,6 +147,50 @@ Ho, He, FIS, Ar, privAr, F<sub>ST</sub>, D and π are identical.
   column is accepted, and a line with one column, more than three, or spaces
   instead of a TAB stops with the line number and text.
 * `hwe_test(stop_after = )` must be a whole number or `Inf`.
+* `differentiation_stats()`: **Weir & Goudet's beta could be wrong on
+  haplotype data with 10 or more alleles at a locus.** Genotypes were passed
+  to hierfstat with 3 digits per allele (alleles 1 and 12 as `1012`), and
+  hierfstat, which guesses the number of digits from the data, read them with
+  2 digits (`1012` as alleles 10 and 12) whenever every number was below
+  10000. That happens when no individual carries two alleles numbered 10 or
+  more. In a constructed example beta was 0.049 instead of 0.065, and
+  `hierfstat_check = TRUE` falsely reported that this package's F<sub>ST</sub>
+  (which was correct) disagreed with `hierfstat::wc()`. Alleles are now
+  renumbered within each record and written with 2 digits, which hierfstat
+  always reads correctly. The `hierfstat_check` comparisons of
+  `diversity_stats()` had the same problem. Data with fewer than 10 alleles
+  per locus, including the shipped examples, are unaffected.
+* `het_between_pops()` **no longer removes individuals.** It removed any
+  individual genotyped at fewer than `min_loci` of the loci that pass a
+  POOLED call-rate filter. When populations are absent from many records
+  (Stacks' `-r` with several populations), few loci pass that filter, and in
+  one example every individual was removed although each population had 180
+  loci of its own. A failed library belongs to assembly and filtering, and
+  one still in the popmap was probably kept on purpose. So each individual is
+  now kept, and one genotyped at fewer than `min_loci` records (when the rest
+  of its population has that many), or at under half of the records where
+  the rest of its population is genotyped, is named
+  in a warning that says what keeping it does (also in
+  `settings$flagged_individuals`, `print()` and `summary()`).
+  `individual_inbreeding()` and `identity_disequilibrium()` give the same
+  warning. An individual not genotyped at the loci a table or test uses is
+  left out of that table or test only. Its row stays in
+  `individual_heterozygosity` with `NA`.
+* `het_between_pops()` stopped with "missing value where TRUE/FALSE needed"
+  for a population of one individual or a population with no locus at
+  `min_call`, and gave `NaN` in `population_summary` for an individual with no
+  call at its population's loci. Now it stops with a message naming the
+  population and its highest call rate, and leaves such individuals out of
+  the summary (`n` counts individuals with a value).
+* `differentiation_stats()` and `pi_allsites()`: two pairs whose population
+  names join to the same label (e.g. `a` + `b__c` and `a__b` + `c`) were
+  both given one pair's values. Statistics are now looked up by pair number.
+* `diversity_stats(sites = )`: a population given two values used the first
+  silently; it now stops. The note about names that match no population
+  respects `verbose = FALSE`.
+* A popmap given as a data frame, or as a list of factors, stops with a
+  message saying how to convert it. `read_sumstats_summary()` errors no
+  longer print an internal function call.
 
 ## New
 

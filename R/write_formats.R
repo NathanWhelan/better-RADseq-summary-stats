@@ -425,8 +425,8 @@ write_radpainter <- function(H, path, verbose = TRUE) {
   .check_string(path, "path")
   .check_flag(verbose, "verbose")
   if (!.is_haplotype_H(H))
-    .inform(verbose, "write_radpainter(): every record here is biallelic with single-",
-            "nucleotide alleles, i.e. this looks like SNP data rather than RAD-tag ",
+    .inform(verbose, "write_radpainter(): every allele here is a single base, i.e. this ",
+            "looks like SNP data rather than RAD-tag ",
             "haplotypes. RADpainter is meant for haplotypes (e.g. from ",
             "populations.haps.vcf) -- check this is the file you meant to use.")
   n_rec <- nrow(H$A1)

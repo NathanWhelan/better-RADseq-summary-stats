@@ -56,9 +56,9 @@ there) or fewer than 2 typed individuals gets \code{NA} throughout except
 }
 \description{
 Tests every locus in \code{H} for departure from Hardy-Weinberg equilibrium
-(HWE), pooled across all samples (\code{pops = NULL}, the default) or
-separately per population (\code{pops} given, same shape as
-\code{\link[=filter_call_rate]{filter_call_rate()}}'s \code{pops} argument). This is a \strong{report, never a
+(HWE), pooled across all samples (\code{popmap = NULL}, the default) or
+separately per population (\code{popmap} given, as a file path or the list
+from \code{\link[=read_popmap]{read_popmap()}}). This is a \strong{report, never a
 filter}: no function in this package removes loci based on this one's
 output -- see \verb{@details} for why.
 }
@@ -80,7 +80,7 @@ population together, test, and drop any locus that fails -- measurably
 exactly the loci most informative about that structure (a locus that
 looks like it deviates from HWE when pooled is often one where allele
 frequencies genuinely differ between populations, the Wahlund effect,
-not a genotyping artifact). Testing separately per population (\code{pops}
+not a genotyping artifact). Testing separately per population (\code{popmap}
 given) avoids conflating the two, which is why that option exists here --
 but even then, this function stops at reporting.
 

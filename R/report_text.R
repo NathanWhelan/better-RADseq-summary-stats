@@ -150,6 +150,13 @@
 
   ## ---- het_between_pops() ---------------------------------------------------
 
+  het_failed_individuals = c(
+    "Each rests on few loci, yet counts as a full individual in the means and tests;",
+    "heavy missing data usually comes with allele dropout (heterozygosity biased low,",
+    "F high); and it lowers its population's call rate, so fewer loci clear min_call.",
+    "Remove them from the popmap (or with filter_samples()) if they were not meant",
+    "to be analysed."),
+
   het_confound_positive = c(
     "POSITIVE and significant: individuals with more missing data look LESS",
     "heterozygous, which is the allele-dropout signature. Re-run on a",

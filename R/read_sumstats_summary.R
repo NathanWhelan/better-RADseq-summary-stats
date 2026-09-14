@@ -71,7 +71,7 @@
       paste(header, collapse = ", "),
       "\n  This usually means a different Stacks version changed this ",
       "file's columns; check the Stacks changelog for ",
-      "`populations.sumstats_summary.tsv`.")
+      "`populations.sumstats_summary.tsv`.", call. = FALSE)
 
   n_lead <- length(lead_cols)
   n_col  <- length(expected)
@@ -81,7 +81,7 @@
       "populations.sumstats_summary.tsv: the \"%s\" block's row %d has %d ",
       block_name, bad_len[1], lengths(rows)[bad_len[1]]),
       "tab-separated field(s), expected ", n_col, " to match its header. ",
-      "The file is truncated or malformed.")
+      "The file is truncated or malformed.", call. = FALSE)
 
   m <- do.call(rbind, rows)
   out <- data.frame(population = m[, 1L], stringsAsFactors = FALSE)
@@ -166,13 +166,13 @@ read_sumstats_summary <- function(path) {
     stop("populations.sumstats_summary.tsv: expected exactly 2 block title ",
          "lines (\"# Variant positions\" and \"# All positions (variant ",
          "and fixed)\"), found ", length(title_i),
-         ". Is this really a Stacks sumstats_summary file?")
+         ". Is this really a Stacks sumstats_summary file?", call. = FALSE)
   titles <- sub("^#\\s*", "", lines[title_i])
   if (!grepl("^Variant positions", titles[1]) ||
       !grepl("^All positions", titles[2]))
     stop("populations.sumstats_summary.tsv: expected the blocks in the ",
          "order \"Variant positions\" then \"All positions (variant and ",
-         "fixed)\", found: \"", titles[1], "\" then \"", titles[2], "\".")
+         "fixed)\", found: \"", titles[1], "\" then \"", titles[2], "\".", call. = FALSE)
 
   block_bounds <- c(title_i, length(lines) + 1L)
   parse_one <- function(b, lead_cols) {

@@ -59,6 +59,6 @@
 
 ## usethis namespace: start
 #' @importFrom stats cor cor.test median p.adjust quantile rnorm runif setNames sd t.test var wilcox.test
-#' @importFrom utils head read.delim write.table
+#' @importFrom utils head write.table
 ## usethis namespace: end
 NULL

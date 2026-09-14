@@ -34,8 +34,7 @@ stream (call \code{set.seed()} first for reproducible results). A number makes
 the result reproducible on its own and leaves your session's
 random-number stream as it was.}
 
-\item{verbose}{Print progress messages (when \code{vcf} or \code{popmap} is a path).
-Default \code{TRUE}.}
+\item{verbose}{Print progress messages. Default \code{TRUE}.}
 }
 \value{
 A data frame, one row per population: \code{population}, \code{n_ind},
@@ -69,6 +68,14 @@ locus's typed individuals (\code{(exceedances + 1) / (nperm + 1)}). Any marker
 type works -- SNPs or multi-allelic RAD haplotypes. Pooling structured
 populations inflates g2 (Wahlund effect), hence one estimate per
 population.
+
+\strong{Failed individuals.} An individual that looks like a failed library
+(genotyped at fewer than 50 records when the rest of its population has
+that many, or at under half of the records where the rest of its population
+is genotyped) is kept and named in a warning:
+allele dropout lowers its heterozygosity at many loci at once, which looks
+like variance in inbreeding and inflates g2. See "Failed individuals" in
+\code{\link[=het_between_pops]{het_between_pops()}}.
 }
 \examples{
 vcf    <- system.file("extdata", "small.haps.vcf", package = "RADdiversity")

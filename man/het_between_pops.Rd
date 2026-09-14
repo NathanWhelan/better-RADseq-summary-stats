@@ -35,9 +35,10 @@ locus to be used, applied within each population (see Details). Default
 \code{0.9}.}
 
 \item{min_loci}{Minimum number of loci. An individual genotyped at fewer
-loci is excluded (a failed library cannot give a heterozygosity), a pair
-of populations sharing fewer is reported as \code{NA}, and a warning is given
-if fewer pass the pooled filter. Default \code{50}.}
+records is named as a possible failed library (see Details; it is kept),
+a pair of populations sharing fewer loci is reported as \code{NA}, as is the
+overall test when fewer loci clear \code{min_call} in every population, and a
+message says so if fewer pass the pooled filter. Default \code{50}.}
 
 \item{nboot_g2}{Bootstrap replicates over individuals for the g2
 confidence interval. Default \code{1000}, as in \code{\link[=identity_disequilibrium]{identity_disequilibrium()}}.}
@@ -66,8 +67,10 @@ your session's random-number stream as it was.}
 \value{
 An object of class \code{raddiv_het}, a list of:
 \describe{
-\item{individual_heterozygosity}{One row per individual: loci called,
-heterozygosity (on the pooled locus set) and individual \code{F}.}
+\item{individual_heterozygosity}{One row per individual: loci called
+and heterozygosity on the pooled locus set, and individual \code{F} on its
+population's own loci. \code{NA} where the individual is genotyped at
+none of those loci.}
 \item{population_summary}{Per population: individuals, loci, mean, SD,
 SE, range of individual heterozygosity, and mean \code{F}.}
 \item{omnibus}{With 3 or more populations: one overall test of whether
@@ -124,7 +127,23 @@ genotyped in at least \code{min_call} of ALL individuals pooled. Everything that
 describes or compares populations uses loci that each population clears
 on its own: \code{population_summary} uses each population's own loci, and a
 pairwise test uses the loci BOTH populations of that pair clear. A pooled
-rule would let a well-covered population carry a poorly covered one.
+rule would let a well-covered population carry a poorly covered one. An
+individual not genotyped at any of the loci a table or test uses has no
+value there and is left out of it (and only it); \code{n} counts the individuals
+with a value. A population with no locus at \code{min_call} stops the function.
+
+\strong{Failed individuals.} Nothing is removed. A failed library should be
+removed during assembly or filtering, and one still in the popmap was
+probably kept for a reason. Instead, an individual genotyped at fewer than
+\code{min_loci} records (when the rest of its population has that many), or at
+under half of the records where the rest of its population is genotyped (the dDocent tutorial's cutoff; judged within its
+own population, as in Cerca et al. 2021), is named in a warning and in
+\code{settings$flagged_individuals}. Keeping it means: its heterozygosity rests
+on few loci yet counts as a full individual in the means and tests; heavy
+missing data usually comes with allele dropout, which biases its
+heterozygosity low and its F high; and it lowers its population's call
+rate, so fewer loci clear \code{min_call}. Remove it from the popmap (or with
+\code{\link[=filter_samples]{filter_samples()}}) if it was not meant to be analysed.
 }
 \examples{
 # A toy dataset shipped with the package (4 and 3 individuals -- far too
@@ -138,6 +157,11 @@ res$individual_heterozygosity
 summary(res)              # the full report, with the confound and overdispersion checks
 }
 \references{
+Cerca, J., Maurstad, M.F., Rochette, N.C., et al. (2021) Removing the bad
+apples: a simple bioinformatic method to improve loci-recovery in de novo
+RADseq data for non-model organisms. \emph{Methods in Ecology and Evolution}
+12:805-817. (Failed individuals.)
+
 Van Dongen, S. (1995) How should we bootstrap allozyme data? \emph{Heredity}
 74:445-447.
 

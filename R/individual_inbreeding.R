@@ -70,17 +70,19 @@
 #' diversity. Negative values mean more heterozygosity than random mating
 #' predicts.
 #'
+#' An individual that looks like a failed library (genotyped at fewer than 50
+#' records when the rest of its population has that many, or at under half of
+#' the records where the rest of its population is genotyped) is kept and
+#' named in a warning; see "Failed individuals" in [het_between_pops()]. A
+#' population with fewer than 2 individuals, or with no locus at `min_call`,
+#' stops the function with a message naming it.
+#'
 #' @param vcf Path to a VCF file, or the object returned by [read_stacks_vcf()]
 #'   (optionally filtered).
 #' @param popmap Path to a popmap file, or the list returned by
 #'   [read_popmap()].
 #' @param min_call Use a locus for a population only if at least this fraction
 #'   of that population's individuals is genotyped there. Default `0.9`.
-#' An individual that looks like a failed library (genotyped at fewer than 50
-#' records when the rest of its population has that many, or at under half of
-#' the records where the rest of its population is genotyped) is kept and named in a warning; see "Failed individuals" in
-#' [het_between_pops()].
-#'
 #' @param verbose Print progress messages. Default `TRUE`.
 #' @return A data frame, one row per individual: `sample`, `population`,
 #'   `n_loci` (loci used), `obs_het` (heterozygous loci), `exp_het` (expected
@@ -100,12 +102,16 @@
 individual_inbreeding <- function(vcf, popmap, min_call = 0.9, verbose = TRUE) {
   .check_number(min_call, "min_call", min = 0, max = 1)
   .check_flag(verbose, "verbose")
+  .check_run_inputs(vcf, popmap, stem = NULL, outdir = NULL)
   H <- .resolve_H(vcf, verbose = verbose)
   pops <- .resolve_pops(popmap, H$samples, verbose = verbose)
+  .stop_tiny_pops(pops, paste("An individual's expected heterozygosity comes from its",
+                              "population's allele frequencies, which need at least 2 individuals."))
   .warn_failed_individuals(H, pops)
   ## A locus is used for population p when p itself genotypes >= min_call of
   ## its individuals there.
   locus_sets <- .population_locus_sets(H, pops, min_call)
+  .check_population_loci(H, pops, locus_sets, min_call)
   do.call(rbind, lapply(names(pops), function(p) {
     loci <- locus_sets[, p]
     data.frame(sample = pops[[p]], population = p,

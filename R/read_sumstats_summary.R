@@ -123,6 +123,10 @@
 #' hand. `sites` differs slightly per population for the same reason a locus
 #' can be missing from one population and not another.
 #'
+#' `Sites` fits the data exactly as Stacks' `populations` wrote them. If whole
+#' RAD loci are removed afterwards, their sequenced sites are still in `Sites`;
+#' see `sites` in [diversity_stats()] for what to do then.
+#'
 #' @param path Path to `populations.sumstats_summary.tsv`.
 #' @return A list with elements `variant_positions` and `all_positions`,
 #'   each a data frame with one row per population and columns:

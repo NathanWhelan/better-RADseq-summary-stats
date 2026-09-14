@@ -34,7 +34,8 @@ Required: Genepop files are organized by population.}
 Writes the Genepop text layout: a title line, one locus-name line per
 record, then for each population a \code{POP} line followed by one line per
 individual (\verb{name ,} then its genotypes). Missing genotypes are all zeros
-(e.g. \code{0000}), as in the Genepop manual.
+(e.g. \code{0000}), as in the Genepop manual. Genepop ends a name at the first
+comma, so a sample name containing a comma stops the function.
 }
 \examples{
 H <- read_stacks_vcf(system.file("extdata", "small.haps.vcf",

@@ -13,6 +13,8 @@
 #
 #  (or, with R's pipe, H |> filter_call_rate(0.8) |> filter_maf(0.05)), and
 #  the result goes straight into any analysis function in place of a path.
+#  Each filter also adds a line to H$filter_log, so print(H) lists what was
+#  done to the data (see "The filter log" below).
 #
 #  These filters are separate from the record rules built into
 #  diversity_stats() (min_n / complete_case) and het_between_pops()
@@ -22,7 +24,7 @@
 #  WHICH SAMPLES. The filters use EVERY sample in H, including samples that
 #  are not in the popmap (an outgroup, a failed library), whereas every
 #  analysis uses only the popmap's samples. filter_samples() removes the
-#  others from H, so that filters and exported files see only the analysed
+#  others from H, so that filters and exported files see only the analyzed
 #  individuals.
 #
 #  A NOTE FOR READERS NEW TO R: `NA` is R's code for a missing value, and a
@@ -90,6 +92,74 @@
   H
 }
 
+## ---------------------------------------------------------------------------
+## The filter log
+##
+## Every exported filter adds one row to H$filter_log (except filter_samples()
+## and filter_thin_one_snp() when they have nothing to do, which return H
+## unchanged), so the data object itself records what was done to it since
+## read_stacks_vcf(): print(H) lists the steps (useful for a methods
+## section), and diversity_stats() uses the
+## log to tell apart RAD loci emptied by an allele-frequency filter (their
+## sequenced sites still count) from loci removed as unreliable (their sites
+## should not). Internal subsetting (.subset_H() inside kinship_check() or
+## write_plink()) is not a filter and is not logged.
+## ---------------------------------------------------------------------------
+
+## Not exported. The log of an object nothing has filtered yet: a data frame
+## with no rows and these columns:
+##   filter           the function, e.g. "filter_mac"
+##   setting          its settings as text, e.g. "min_mac = 3"
+##   records_removed  records it removed
+##   loci_removed     RAD loci it removed entirely (every record of the locus)
+##   calls_masked     genotype calls it set to missing
+##   samples_removed  samples it removed
+.empty_filter_log <- function() {
+  data.frame(filter = character(0), setting = character(0), records_removed = integer(0),
+             loci_removed = integer(0), calls_masked = integer(0),
+             samples_removed = integer(0), stringsAsFactors = FALSE)
+}
+
+## Not exported. The counts a filter's log row is measured against, taken
+## when the filter starts.
+.filter_start <- function(H) {
+  list(records = nrow(H$A1), loci = length(unique(H$locus_raw)), samples = length(H$samples))
+}
+
+## Not exported. Adds one row to H$filter_log for `filter` (its name) run with
+## `setting` (text), comparing H now with `before` (from .filter_start()).
+## An object built by hand has no log yet; it gets one here.
+.log_filter <- function(H, before, filter, setting, calls_masked = 0L) {
+  log <- if (is.null(H$filter_log)) .empty_filter_log() else H$filter_log
+  row <- data.frame(filter = filter, setting = setting,
+                    records_removed = as.integer(before$records - nrow(H$A1)),
+                    loci_removed = as.integer(before$loci - length(unique(H$locus_raw))),
+                    calls_masked = as.integer(calls_masked),
+                    samples_removed = as.integer(before$samples - length(H$samples)),
+                    stringsAsFactors = FALSE)
+  H$filter_log <- rbind(log, row)
+  H
+}
+
+## Not exported. The log as numbered lines of text, one per filter, e.g.
+## "1. filter_mac (min_mac = 3): 127 records removed (48 RAD loci emptied)".
+## character(0) for an empty or missing log.
+.format_filter_log <- function(log) {
+  if (is.null(log) || !nrow(log)) return(character(0))
+  effect <- function(i) {
+    parts <- c(
+      if (log$samples_removed[i] > 0) sprintf("%s samples removed", .big(log$samples_removed[i])),
+      if (log$records_removed[i] > 0)
+        sprintf("%s records removed%s", .big(log$records_removed[i]),
+                if (log$loci_removed[i] > 0)
+                  sprintf(" (%s RAD loci emptied)", .big(log$loci_removed[i])) else ""),
+      if (log$calls_masked[i] > 0) sprintf("%s calls masked", .big(log$calls_masked[i])))
+    if (length(parts)) paste(parts, collapse = ", ") else "nothing changed"
+  }
+  vapply(seq_len(nrow(log)), function(i)
+    sprintf("%d. %s (%s): %s", i, log$filter[i], log$setting[i], effect(i)), character(1))
+}
+
 #' Keep only the individuals in a popmap
 #'
 #' Removes from `H` every sample that is not in `popmap`: its genotypes, read
@@ -99,10 +169,10 @@
 #' `filter_*()` functions and [locus_allele_stats()] work on EVERY sample in
 #' `H`, and the `write_*()` functions write every sample. A sample left out
 #' of the popmap on purpose -- an outgroup, a failed library, a replicate --
-#' still counts towards minor allele frequencies, call rates and
+#' still counts toward minor allele frequencies, call rates and
 #' heterozygosity there, and still appears in exported files. Run
 #' `filter_samples()` first to filter, and export, only the individuals you
-#' analyse.
+#' analyze.
 #'
 #' Removing samples can leave records with no genotyped individual, or with
 #' only one allele among the remaining individuals; the message counts them.
@@ -127,15 +197,18 @@
 filter_samples <- function(H, popmap, verbose = TRUE) {
   H <- .resolve_H(H, verbose = FALSE)
   .check_flag(verbose, "verbose")
+  before <- .filter_start(H)
   pops <- .resolve_pops(popmap, H$samples, verbose = FALSE)
   ids <- unlist(pops, use.names = FALSE)
   keep <- H$samples %in% ids
   if (all(keep)) {
+    ## Nothing to do, so H comes back unchanged (and unlogged).
     .inform(verbose, "filter_samples(): every sample in H is in the popmap; nothing removed.")
     return(H)
   }
   removed <- H$samples[!keep]
   H <- .subset_samples(H, keep)
+  H <- .log_filter(H, before, "filter_samples", sprintf("popmap with %d populations", length(pops)))
   typed <- rowSums(!is.na(H$A1))
   n_observed <- rowSums(.allele_counts(H$A1, H$A2, k = max(1L, H$n_alleles)) > 0L)
   .inform(verbose, sprintf("filter_samples(): kept %d of %d samples; removed %d not in the popmap: %s%s",
@@ -173,7 +246,7 @@ filter_samples <- function(H, popmap, verbose = TRUE) {
 #'
 #' **Which samples.** This uses every sample in `H`, including any that are
 #' not in your popmap (an outgroup, say). Run [filter_samples()] first to base
-#' it on the individuals you analyse.
+#' it on the individuals you analyze.
 #'
 #' @param H The object returned by [read_stacks_vcf()] (optionally filtered).
 #' @return A data frame with one row per record, in the order of `H`:
@@ -310,7 +383,7 @@ locus_allele_stats <- function(H) {
 #'
 #' **Which samples.** This uses every sample in `H`, including any that are
 #' not in your popmap (an outgroup, say). Run [filter_samples()] first to base
-#' it on the individuals you analyse.
+#' it on the individuals you analyze.
 #'
 #' @references
 #' Linck, E. & Battey, C.J. (2019) Minor allele frequency thresholds strongly
@@ -337,6 +410,7 @@ filter_maf <- function(H, min_maf, allele_stats = NULL, verbose = TRUE) {
   .check_number(min_maf, "min_maf", min = 0, max = 1)
   .check_flag(verbose, "verbose")
   allele_stats <- .check_or_make_allele_stats(H, allele_stats)
+  before <- .filter_start(H)
   n_rec <- nrow(allele_stats)
   keep <- !is.na(allele_stats$maf) & allele_stats$maf >= min_maf - .threshold_tol
   .report_kept(verbose, sprintf("MAF filter (minor allele frequency >= %.4g)", min_maf), keep, n_rec)
@@ -345,7 +419,7 @@ filter_maf <- function(H, min_maf, allele_stats = NULL, verbose = TRUE) {
   if (!any(keep))
     stop("No record has a minor allele frequency >= ", min_maf, ". Lower min_maf, ",
          "or look at locus_allele_stats(H)$maf to see the actual values.", call. = FALSE)
-  .subset_H(H, keep)
+  .log_filter(.subset_H(H, keep), before, "filter_maf", sprintf("min_maf = %g", min_maf))
 }
 
 #' Filter records by minor allele count
@@ -363,7 +437,7 @@ filter_maf <- function(H, min_maf, allele_stats = NULL, verbose = TRUE) {
 #'
 #' **Which samples.** This uses every sample in `H`, including any that are
 #' not in your popmap (an outgroup, say). Run [filter_samples()] first to base
-#' it on the individuals you analyse.
+#' it on the individuals you analyze.
 #'
 #' @references
 #' Linck, E. & Battey, C.J. (2019) Minor allele frequency thresholds strongly
@@ -383,6 +457,7 @@ filter_mac <- function(H, min_mac, allele_stats = NULL, verbose = TRUE) {
   .check_number(min_mac, "min_mac", min = 0)
   .check_flag(verbose, "verbose")
   allele_stats <- .check_or_make_allele_stats(H, allele_stats)
+  before <- .filter_start(H)
   n_rec <- nrow(allele_stats)
   keep <- !is.na(allele_stats$mac) & allele_stats$mac >= min_mac
   .report_kept(verbose, sprintf("MAC filter (minor allele count >= %g)", min_mac), keep, n_rec)
@@ -391,7 +466,7 @@ filter_mac <- function(H, min_mac, allele_stats = NULL, verbose = TRUE) {
   if (!any(keep))
     stop("No record has a minor allele count >= ", min_mac, ". Lower min_mac, ",
          "or look at locus_allele_stats(H)$mac to see the actual values.", call. = FALSE)
-  .subset_H(H, keep)
+  .log_filter(.subset_H(H, keep), before, "filter_mac", sprintf("min_mac = %g", min_mac))
 }
 
 #' Filter records by genotyping (call) rate
@@ -436,6 +511,7 @@ filter_call_rate <- function(H, min_call, popmap = NULL, rule = "all", verbose =
   .check_number(min_call, "min_call", min = 0, max = 1)
   .check_choice(rule, "rule", c("all", "any"))
   .check_flag(verbose, "verbose")
+  before <- .filter_start(H)
   n_rec <- nrow(H$A1)
 
   if (is.null(popmap)) {
@@ -458,7 +534,9 @@ filter_call_rate <- function(H, min_call, popmap = NULL, rule = "all", verbose =
   if (!any(keep))
     stop("No record passed the call-rate filter (min_call = ", min_call, "). Lower min_call, ",
          "or check for a widespread genotyping problem in this dataset.", call. = FALSE)
-  .subset_H(H, keep)
+  setting <- if (is.null(popmap)) sprintf("min_call = %g, pooled", min_call)
+             else sprintf("min_call = %g within populations, rule = \"%s\"", min_call, rule)
+  .log_filter(.subset_H(H, keep), before, "filter_call_rate", setting)
 }
 
 #' Filter out records with excessive heterozygosity
@@ -476,7 +554,7 @@ filter_call_rate <- function(H, min_call, popmap = NULL, rule = "all", verbose =
 #'
 #' **Which samples.** This uses every sample in `H`, including any that are
 #' not in your popmap (an outgroup, say). Run [filter_samples()] first to base
-#' it on the individuals you analyse.
+#' it on the individuals you analyze.
 #'
 #' @references
 #' McKinney, G.J., Waples, R.K., Seeb, L.W. & Seeb, J.E. (2017) Paralogs are
@@ -499,6 +577,7 @@ filter_max_het <- function(H, max_ho, verbose = TRUE) {
   H <- .resolve_H(H, verbose = FALSE)
   .check_number(max_ho, "max_ho", min = 0, max = 1)
   .check_flag(verbose, "verbose")
+  before <- .filter_start(H)
   ## Observed heterozygosity per record: the fraction of genotyped individuals
   ## whose two alleles differ. With nobody genotyped this is 0/0 = NaN, which
   ## !is.finite() below treats as "no data".
@@ -509,7 +588,7 @@ filter_max_het <- function(H, max_ho, verbose = TRUE) {
   if (!any(keep))
     stop("Every record exceeds max_ho = ", max_ho, ". Raise max_ho, ",
          "or check that the genotypes were read correctly.", call. = FALSE)
-  .subset_H(H, keep)
+  .log_filter(.subset_H(H, keep), before, "filter_max_het", sprintf("max_ho = %g", max_ho))
 }
 
 #' Thin a SNP dataset to one record per RAD locus
@@ -537,8 +616,10 @@ filter_thin_one_snp <- function(H, method = "first", seed = NULL, verbose = TRUE
   .check_choice(method, "method", c("first", "random"))
   .check_seed(seed)
   .check_flag(verbose, "verbose")
+  before <- .filter_start(H)
   n_rec <- nrow(H$A1)
   if (length(unique(H$locus_raw)) == n_rec) {
+    ## Nothing to do, so H comes back unchanged (and unlogged).
     .inform(verbose, "Every record already belongs to its own RAD locus (locus_raw has no ",
             "repeats) -- there is nothing to thin.")
     return(H)
@@ -564,7 +645,7 @@ filter_thin_one_snp <- function(H, method = "first", seed = NULL, verbose = TRUE
   .inform(verbose, sprintf(
     "One-record-per-locus thinning (method = \"%s\"): %s records -> %s RAD loci (%.1f%% of records kept)",
     method, .big(n_rec), .big(length(keep)), 100 * length(keep) / n_rec))
-  .subset_H(H, keep)
+  .log_filter(.subset_H(H, keep), before, "filter_thin_one_snp", sprintf("method = \"%s\"", method))
 }
 
 ###############################################################################
@@ -663,7 +744,8 @@ filter_genotype_depth <- function(H, min_dp, max_dp = Inf, verbose = TRUE) {
     .inform(verbose, sprintf("  %s calls have no readable depth and were kept.", .big(sum(typed & !known))))
   H$A1[masked] <- NA_integer_
   H$A2[masked] <- NA_integer_
-  H
+  .log_filter(H, .filter_start(H), "filter_genotype_depth",
+              sprintf("min_dp = %g, max_dp = %g", min_dp, max_dp), calls_masked = sum(masked))
 }
 
 ###############################################################################
@@ -769,7 +851,7 @@ filter_genotype_depth <- function(H, min_dp, max_dp = Inf, verbose = TRUE) {
 #'
 #' **Which samples.** This uses every sample in `H`, including any that are
 #' not in your popmap (an outgroup, say). Run [filter_samples()] first to base
-#' it on the individuals you analyse.
+#' it on the individuals you analyze.
 #'
 #' @param H The object returned by [read_stacks_vcf()] (optionally filtered).
 #'   The allele depths come from `H$ad_ref` and `H$ad_alt`, which
@@ -809,6 +891,7 @@ filter_low_conf_alt <- function(H, min_alt_reads = 2, mode = "mask", drop_frac =
   .check_choice(mode, "mode", c("mask", "drop"))
   .check_number(drop_frac, "drop_frac", min = 0, max = 1)
   .check_flag(verbose, "verbose")
+  before <- .filter_start(H)
   calls <- .parse_alt_ad(H)
   flags <- .flag_summary(H, calls, min_alt_reads)
   n_rec <- nrow(H$A1)
@@ -833,7 +916,9 @@ filter_low_conf_alt <- function(H, min_alt_reads = 2, mode = "mask", drop_frac =
       H$A1[address] <- NA_integer_
       H$A2[address] <- NA_integer_
     }
-    return(H)
+    return(.log_filter(H, before, "filter_low_conf_alt",
+                       sprintf("min_alt_reads = %g, mode = \"mask\"", min_alt_reads),
+                       calls_masked = sum(flags$flagged)))
   }
   keep <- flags$per_record$flagged_fraction <= drop_frac + .threshold_tol
   .inform(verbose, sprintf("  drop_frac = %.3g: %s of %s records kept", drop_frac,
@@ -841,7 +926,8 @@ filter_low_conf_alt <- function(H, min_alt_reads = 2, mode = "mask", drop_frac =
   if (!any(keep))
     stop("Every record would be dropped at drop_frac = ", drop_frac, ". Raise drop_frac, ",
          "or lower min_alt_reads so fewer calls are flagged.", call. = FALSE)
-  .subset_H(H, keep)
+  .log_filter(.subset_H(H, keep), before, "filter_low_conf_alt",
+              sprintf("min_alt_reads = %g, mode = \"drop\", drop_frac = %g", min_alt_reads, drop_frac))
 }
 
 #' List low-confidence ALT genotype calls

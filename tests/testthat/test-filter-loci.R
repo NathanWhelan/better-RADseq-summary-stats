@@ -308,7 +308,8 @@ test_that("filter_genotype_depth() masks by depth alone, whatever the genotype",
                matrix(c(3, 3, 12, 50,
                         4, 10, 2, NA,
                         NA, NA, 20, 8), 3, 4, byrow = TRUE))
-  expect_message(out <- filter_genotype_depth(H, min_dp = 6, max_dp = 30), "of heterozygous")
+  suppressMessages(expect_message(out <- filter_genotype_depth(H, min_dp = 6, max_dp = 30),
+                                  "of heterozygous"))
   expected_missing <- matrix(c(TRUE, TRUE, FALSE, TRUE,
                                TRUE, FALSE, TRUE, TRUE,
                                FALSE, FALSE, FALSE, FALSE), 3, 4, byrow = TRUE)
@@ -328,7 +329,8 @@ test_that("filter_genotype_depth() masks by depth alone, whatever the genotype",
 test_that("filter_samples() keeps only popmap samples, with depths lined up", {
   H <- read_stacks_vcf(fx("small_ad.haps.vcf"), verbose = FALSE)
   pops <- list(popA = c("popA_1", "popA_3", "popA_4"), popB = c("popB_1", "popB_2", "popB_3"))
-  expect_message(H2 <- filter_samples(H, pops), "removed 1 not in the popmap: popA_2")
+  suppressMessages(expect_message(H2 <- filter_samples(H, pops),
+                                  "removed 1 not in the popmap: popA_2"))
   expect_equal(H2$samples, setdiff(H$samples, "popA_2"))
   expect_equal(colnames(H2$A1), H2$samples)
   expect_equal(H2$depth, H$depth[, H2$samples])
@@ -352,6 +354,44 @@ test_that("filter_samples() changes what a filter sees when an outgroup carries 
               samples = c("a1", "a2", "b1", "outgroup"))
   pops <- list(A = c("a1", "a2"), B = "b1")
   expect_equal(nrow(filter_mac(H, min_mac = 1, verbose = FALSE)$A1), 2L)
-  expect_message(H_pop <- filter_samples(H, pops), "have only one allele")
+  suppressMessages(expect_message(H_pop <- filter_samples(H, pops), "have only one allele"))
   expect_equal(filter_mac(H_pop, min_mac = 1, verbose = FALSE)$locus, "locus_2")
+})
+
+## ---------------------------------------------------------------------------
+## The filter log
+## ---------------------------------------------------------------------------
+
+test_that("each filter adds a line to H$filter_log, and print(H) lists them", {
+  H <- read_stacks_vcf(fx("small_ad.haps.vcf"), verbose = FALSE)
+  expect_equal(nrow(H$filter_log), 0L)
+  pops <- list(popA = c("popA_1", "popA_3", "popA_4"), popB = c("popB_1", "popB_2", "popB_3"))
+  H_samples <- filter_samples(H, pops, verbose = FALSE)
+  H_depth <- filter_genotype_depth(H_samples, min_dp = 6, verbose = FALSE)
+  H_out <- H_depth |>
+    filter_mac(min_mac = 2, verbose = FALSE) |>
+    filter_call_rate(min_call = 0.5, verbose = FALSE)
+  log <- H_out$filter_log
+  expect_equal(log$filter, c("filter_samples", "filter_genotype_depth", "filter_mac",
+                             "filter_call_rate"))
+  expect_equal(log$setting[3], "min_mac = 2")
+  expect_equal(log$samples_removed, c(1L, 0L, 0L, 0L))
+  expect_equal(log$calls_masked[2], sum(!is.na(H_samples$A1)) - sum(!is.na(H_depth$A1)))
+  expect_equal(sum(log$records_removed), nrow(H$A1) - nrow(H_out$A1))
+  expect_equal(sum(log$loci_removed),
+               length(unique(H$locus_raw)) - length(unique(H_out$locus_raw)))
+  printed <- capture.output(print(H_out))
+  expect_true(any(grepl("filters applied since reading", printed)))
+  expect_true(any(grepl("2. filter_genotype_depth (min_dp = 6, max_dp = Inf)", printed, fixed = TRUE)))
+
+  ## Masking low-confidence ALT calls logs the calls it masked.
+  H_alt <- filter_low_conf_alt(H, min_alt_reads = 2, verbose = FALSE)
+  expect_equal(H_alt$filter_log$calls_masked,
+               nrow(low_conf_alt_calls(H, min_alt_reads = 2)$flagged_calls))
+
+  ## A hand-built H has no log; its first filter starts one.
+  H_hand <- make_H(A1 = rbind(c(1L, 2L), c(2L, 2L)), A2 = rbind(c(1L, 2L), c(2L, 2L)),
+                   samples = c("s1", "s2"))
+  expect_equal(filter_max_het(H_hand, max_ho = 1, verbose = FALSE)$filter_log$filter,
+               "filter_max_het")
 })

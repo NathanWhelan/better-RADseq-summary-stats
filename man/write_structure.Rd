@@ -29,7 +29,9 @@ copy), with STRUCTURE's missing-data code \code{-9}.
 The file has a locus-name row, a sample-label column and a
 population column, so the STRUCTURE run's \code{mainparams} should set
 \code{MARKERNAMES=1}, \code{LABEL=1} and \code{POPDATA=1}. Without \code{popmap} the
-population column is a placeholder \code{1} for everyone.
+population column is a placeholder \code{1} for everyone. STRUCTURE separates
+columns by white space, so a sample name containing a space stops the
+function.
 }
 \examples{
 H <- read_stacks_vcf(system.file("extdata", "small.snps.vcf",

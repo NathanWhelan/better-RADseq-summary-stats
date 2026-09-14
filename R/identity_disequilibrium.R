@@ -12,8 +12,7 @@
 #  It stops averaging away when individuals differ in inbreeding (or include
 #  relatives): heterozygosity is then correlated across loci WITHIN an
 #  individual, and no number of loci removes that. g2 measures exactly this
-#  correlation, and it is 0 when individuals do not differ. The overdispersion
-#  factor het_between_pops() prints is the same idea in a cruder form.
+#  correlation, and it is 0 when individuals do not differ.
 #
 #  THE ESTIMATOR. With h_il = 1 if individual i is heterozygous at locus l,
 #  g2 is defined (David et al. 2007) as
@@ -130,15 +129,17 @@
 #'
 #' @details
 #' **Why it matters for this package.** Standard errors and intervals that
-#' resample loci ([diversity_stats()]) hold the sampled individuals fixed.
-#' With many loci that is also enough for population-level inference, as
-#' long as individuals are exchangeable (Nei & Roychoudhury 1974; Nei 1978).
-#' When individuals differ in inbreeding -- or include relatives --
-#' heterozygosity is correlated across loci within an individual and the
-#' locus-based intervals are too narrow. A g2 confidence interval that
-#' excludes 0 is the signal to use the individual-jackknife standard errors
-#' of [diversity_stats()] (`se_individuals = TRUE`) and the individual-level
-#' tests of [het_between_pops()].
+#' resample loci ([diversity_stats()]'s `_se`, `_lo`, `_hi`) hold the sampled
+#' individuals fixed. When individuals are alike that costs little, because
+#' with many loci the chance of which individuals were caught averages out
+#' (Nei & Roychoudhury 1974; Nei 1978). When individuals differ in inbreeding,
+#' heterozygosity is correlated across loci within an individual and it does
+#' not average out: locus-based SEs for Ho and FIS are then too small. A g2
+#' interval above 0 is that signal. Report `_se_combined` from
+#' `diversity_stats(se_individuals = TRUE)` (see "How standard errors are
+#' calculated" in [diversity_stats()]) and compare populations with
+#' [het_between_pops()]. Relatives in a sample also raise g2; screen for them
+#' with [kinship_check()].
 #'
 #' **Estimator.** From the definition, using every pair of distinct loci
 #' typed in the same individual (numerator) and in two different individuals
@@ -153,10 +154,11 @@
 #' **Failed individuals.** An individual that looks like a failed library
 #' (genotyped at fewer than 50 records when the rest of its population has
 #' that many, or at under half of the records where the rest of its population
-#' is genotyped) is kept and named in a warning:
-#' allele dropout lowers its heterozygosity at many loci at once, which looks
-#' like variance in inbreeding and inflates g2. See "Failed individuals" in
-#' [het_between_pops()].
+#' is genotyped) is kept and named in a warning: allele dropout lowers its
+#' heterozygosity at many loci at once, which looks like variance in
+#' inbreeding and inflates g2. See "Failed individuals" in
+#' [het_between_pops()]. A population with fewer than 2 individuals, or with
+#' no locus at `min_call`, stops the function with a message naming it.
 #'
 #' @param vcf Path to a VCF file, or the object returned by [read_stacks_vcf()]
 #'   (optionally filtered).
@@ -204,8 +206,10 @@ identity_disequilibrium <- function(vcf, popmap, nboot = 1000L, nperm = 1000L,
   .check_number(min_call, "min_call", min = 0, max = 1)
   .check_seed(seed)
   .check_flag(verbose, "verbose")
+  .check_run_inputs(vcf, popmap, stem = NULL, outdir = NULL)
   H <- .resolve_H(vcf, verbose = verbose)
   pops <- .resolve_pops(popmap, H$samples, verbose = verbose)
+  .stop_tiny_pops(pops, "g2 compares heterozygosity between individuals, so it needs at least 2.")
   .warn_failed_individuals(H, pops)
   if (!is.null(seed)) {
     restore_rng <- .save_rng_state()
@@ -213,6 +217,7 @@ identity_disequilibrium <- function(vcf, popmap, nboot = 1000L, nperm = 1000L,
     set.seed(seed)
   }
   locus_sets <- .population_locus_sets(H, pops, min_call)
+  .check_population_loci(H, pops, locus_sets, min_call)
   do.call(rbind, lapply(names(pops), function(p) {
     loci <- locus_sets[, p]
     cbind(population = p,

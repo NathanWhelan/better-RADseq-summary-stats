@@ -55,16 +55,16 @@ locus.}
 
 \item{het_per_snp}{Heterozygosity per variant record.}
 
-\item{n_snps_used}{Number of variant (SNP) sites at which the population
-has at least one genotyped individual -- Stacks' \code{Variant_Sites} in the
-"All positions (variant and fixed)" block -- not only those retained for
-estimating \code{het_per_snp} (the mean over the retained records estimates
-the mean over all). One value, or one per element of \code{het_per_snp}.}
+\item{n_snps_used}{Number of SNP records in the data at which the
+population has at least one genotyped individual (not only those used to
+estimate \code{het_per_snp}). One value, or one per element of \code{het_per_snp}.}
 
-\item{n_sites_sequenced}{Sequenced sites, variant and fixed, at which the
-population has at least one genotyped individual: the \code{Sites} column of
-the same block of \code{populations.sumstats_summary.tsv}. One value, or one
-per element of \code{het_per_snp}.}
+\item{n_sites_sequenced}{Sequenced sites, variant and fixed, of the RAD loci
+in the data, counting a site only where the population has at least one
+genotyped individual. For unfiltered Stacks output this is \code{Sites} in the
+"All positions (variant and fixed)" block of
+\code{populations.sumstats_summary.tsv}; see \code{sites} in \code{\link[=diversity_stats]{diversity_stats()}}
+for filtered data. One value, or one per element of \code{het_per_snp}.}
 
 \item{g}{Rarefaction size in gene copies.}
 

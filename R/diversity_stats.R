@@ -41,8 +41,12 @@
 #'
 #' Run it twice: `populations.snps.vcf` gives Ho, He, `pct_poly` and the
 #' per-sequenced-site values; `populations.haps.vcf` gives FIS, Ar and
-#' privAr. The printed result says which numbers to take from each file. See
-#' `vignette("rationale")`, section 3.
+#' privAr. Haplotype Ar and privAr depend on how many SNPs each RAD locus
+#' holds, which changes with read length, enzyme and SNP calling. Compare them
+#' only among populations analyzed together (the same run, filters and `g`):
+#' which population is richer is reliable, but the size of the difference
+#' also depends on SNPs per locus. The printed result says which numbers to
+#' take from each file. See `vignette("rationale")`, section 3.
 #'
 #' The SNP-VCF side was designed for biallelic SNPs, as Stacks writes them.
 #' A VCF whose alleles are all single bases is treated as one site per record
@@ -65,55 +69,66 @@
 #'   `"both"` are for comparison only: in a coverage simulation their
 #'   intervals badly missed the true He and FIS (`vignette("rationale")`,
 #'   "Why not bootstrap individuals?"). For uncertainty over individuals use
-#'   `se_individuals = TRUE` instead.
-#' @param sites Total sequenced sites, to convert Ho and He to per-site values
-#'   (`Ho_autosomal`, `He_autosomal`; SNP VCF only). Default `NULL`: no
-#'   conversion. One of:
+#'   `se_individuals = TRUE` instead (see "How standard errors are
+#'   calculated" below).
+#' @param sites Number of sequenced sites, to turn Ho and He into per-site
+#'   values (`Ho_autosomal`, `He_autosomal`; SNP VCF only). Default `NULL`: no
+#'   per-site values. Give one of:
+#'   * the path to Stacks' `populations.sumstats_summary.tsv`: each
+#'     population's own `Sites` (from the "All positions (variant and fixed)"
+#'     block) is read with [read_sumstats_summary()];
 #'   * one number, used for every population;
-#'   * a named numeric vector, one value per population (names must match
-#'     the popmap's populations);
-#'   * a data frame with a `population` (or `pop`) column and a `sites`
-#'     column;
-#'   * the path to Stacks' `populations.sumstats_summary.tsv`, from which each
-#'     population's own `Sites` ("All positions (variant and fixed)" block) is
-#'     read with [read_sumstats_summary()].
+#'   * a named numeric vector, one value per population (names as in the
+#'     popmap);
+#'   * a data frame with a `population` (or `pop`) column and a `sites` column.
 #'
-#'   A population's own value matters because Stacks counts a site for a
-#'   population only where that population has a genotyped individual. For
-#'   the same reason, each population's He is multiplied by its own number of
-#'   variant records: `Variant_Sites` from the same file when `sites` is that
-#'   file, otherwise the records of this VCF where the population has a
-#'   genotyped individual (column `variant_records` of the result).
+#'   **How per-site values are calculated.** For each population, He summed
+#'   over the SNP records in the data, divided by `sites`. (In practice: the
+#'   mean He over the records the population uses, times the number of records
+#'   where it has at least one genotyped individual, shown as
+#'   `variant_records`.) Fixed sites add nothing to the sum but count in
+#'   `sites`. Ho is done the same way.
 #'
-#'   Per-site values assume the variant records are all the variant sites
-#'   inside `sites`. Records removed in R with a `filter_*()` function are
-#'   still counted in `sites`: pass the `populations.sumstats_summary.tsv`
-#'   path (whose `Variant_Sites` is unfiltered) and a warning is given.
-#'   Allele-frequency filters ([filter_maf()], [filter_mac()], Stacks'
-#'   `--min-mac`/`--min-maf`) remove rare variants, which lowers per-site
-#'   values by an amount that grows as samples get smaller; report the
-#'   threshold used (see `vignette("rationale")`, section 1).
+#'   **What `sites` must count.** Every sequenced site, variant or fixed, of
+#'   the RAD loci in the data, counting a site for a population only where at
+#'   least one of its individuals is genotyped there. This is how Stacks
+#'   counts `Sites`. Use the same popmap that was given to Stacks.
+#'
+#'   **When Stacks' `Sites` is right.** Only for the data exactly as Stacks'
+#'   `populations` wrote them. Filtering afterwards (in R or with another
+#'   program) changes things:
+#'   * SNPs removed, for example by [filter_mac()]: their He drops out of the
+#'     sum, so per-site values go down. For MAC and MAF filters this is real
+#'     rare-variant diversity being lost, as with Stacks' own `--min-mac`;
+#'     report the threshold (`vignette("rationale")`, section 1). A RAD locus
+#'     whose every SNP was removed this way was still sequenced, so its sites
+#'     stay in `sites`.
+#'   * Whole RAD loci removed as unreliable (low call rate, paralogs): their
+#'     sites should leave `sites` too, but Stacks' `Sites` still counts them,
+#'     so per-site values come out too low. Give `sites` for the loci you kept,
+#'     or use [pi_allsites()] on an all-sites VCF.
+#'   * A VCF thinned to one SNP per RAD locus (Stacks' `--write-single-snp`,
+#'     [filter_thin_one_snp()]) no longer holds all the SNPs. Compute per-site
+#'     values from the unthinned SNP VCF.
+#'
+#'   A warning is given when records or whole loci were removed after reading
+#'   (the `filter_*()` functions record which filter removed them, so loci
+#'   emptied by [filter_maf()] or [filter_mac()] give no loci warning), or when
+#'   the VCF's SNP count does not match `Variant_Sites` in the Stacks file.
 #' @param min_n Minimum genotyped individuals a population needs at a record
 #'   to use that record. Default `2`, the smallest number for which He and
 #'   FIS are defined. Ignored when `complete_case = TRUE`.
 #' @param complete_case Use a record only if every individual of every
 #'   population is genotyped there (Schmidt et al. 2021, recommendation (b)).
 #'   Default `FALSE`.
-#' @param se_individuals Also report delete-one-INDIVIDUAL jackknife standard
-#'   errors (`Ho_se_ind`, `He_se_ind`, `Fis_se_ind`, `Ar_se_ind`,
-#'   `privAr_se_ind`): the uncertainty from which individuals were sampled,
-#'   which the locus-based `_se`, `_lo` and `_hi` leave out. Report these when
-#'   individuals differ in inbreeding or include relatives (check with
-#'   [identity_disequilibrium()]: g2 > 0). The Ar/privAr ones need
-#'   `g <= 2 * (n - 1)` for every population and are `NA` otherwise. Two
-#'   caveats for those two, from simulation (`vignette("rationale")`, section
-#'   4): `privAr_se_ind` deletes only that population's individuals and holds
-#'   the other populations' fixed, although private richness depends on them
-#'   too, so it runs too small (by up to about 20%); and when many records
-#'   have fewer than `g + 2` gene copies (missing data with `g` close to
-#'   `2 * (n - 1)`), deleting one individual drops them from some jackknife
-#'   replicates, and both come out too large (up to about twice the true
-#'   value); a warning then suggests a smaller `g` for them. Default `FALSE`.
+#' @param se_individuals Also compute the uncertainty from which individuals
+#'   were sampled, and add three columns each for Ho, He and FIS: `_se_ind`
+#'   (a jackknife over individuals) and `_se_combined` (locus and individual
+#'   uncertainty together). **Report `_se_combined` for Ho, He and FIS.** Ar and
+#'   privAr keep their locus-based `_se`, `_lo` and `_hi`, which already cover
+#'   both sources. See "How standard errors are calculated" below. Default
+#'   `FALSE`, because the jackknife over individuals takes longer on large
+#'   datasets.
 #' @param hierfstat_check If `TRUE` and the `hierfstat` package is installed,
 #'   also compute per-record Ho/Hs with `hierfstat::basic.stats()` and
 #'   allelic richness with `hierfstat::allelic.richness()`, and report the
@@ -136,8 +151,9 @@
 #' @return An object of class `raddiv_diversity`, a list of:
 #'   \describe{
 #'     \item{per_population}{Ho, He, FIS and % polymorphic records per
-#'       population, each with its jackknife SE (`_se`) and 95% bootstrap
-#'       interval (`_lo`, `_hi`).}
+#'       population, each with its locus jackknife SE (`_se`) and 95% locus
+#'       bootstrap interval (`_lo`, `_hi`). With `se_individuals = TRUE`, also
+#'       `_se_ind` and `_se_combined` for Ho, He and FIS.}
 #'     \item{richness}{Ar, privAr and priv_total per population, with the
 #'       number of records each rests on (`Ar_n`, `privAr_n`).}
 #'     \item{autosomal}{Per-sequenced-site Ho/He, with the `sites_used` and
@@ -160,6 +176,50 @@
 #'   Values are stored at full precision; `print()`, `summary()` and the TSV
 #'   files round them. With `outdir`, `per_population`, `richness` and
 #'   `autosomal` are written to `diversity_<table>.<stem>.tsv`.
+#' @section How standard errors are calculated:
+#' A standard error (SE) says how much a number would change if the study were
+#' repeated; the estimate plus or minus 1.96 SE is a 95% confidence interval.
+#' A population's He (or Ho, FIS, Ar) is uncertain for two reasons:
+#' * you typed **some of the RAD loci** in the genome, and other loci would
+#'   give a slightly different value;
+#' * you caught **some of the individuals** in the population, and other
+#'   individuals would give a slightly different value.
+#'
+#' The columns measure these as follows:
+#' * `_se`: a jackknife over RAD loci. Each RAD locus is left out in turn and
+#'   the statistic recomputed; how much those values spread gives the SE. It
+#'   holds the individuals fixed.
+#' * `_lo`, `_hi`: a bootstrap over RAD loci. Loci are drawn at random, with
+#'   replacement, thousands of times; the middle 95% of the results is the
+#'   interval. It also holds the individuals fixed.
+#' * `_se_ind` (with `se_individuals = TRUE`): a jackknife over individuals.
+#'   Each individual is left out in turn. It holds the loci fixed.
+#' * `_se_combined`: both sources together, `sqrt(_se^2 + _se_ind^2)`.
+#'
+#' Whole RAD loci, not single SNPs, are resampled, because SNPs on one RAD
+#' locus are inherited together.
+#'
+#' **Which to report.** For **Ho, He and FIS**, report `_se_combined`. For
+#' **Ar and privAr**, report `_se` (or `_lo`, `_hi`). This rule comes from
+#' simulated populations with a known true value, where each simulated study
+#' was repeated 300 times with new loci and new individuals, and we counted how
+#' often the 95% interval contained the truth (it should be about 95%). With
+#' the locus SE alone, Ho and FIS intervals contained the truth only 30-65% of
+#' the time in most settings once individuals differed in inbreeding: an inbred individual is
+#' homozygous at many loci at once, so loci are not independent. With the
+#' individual SE alone, He intervals contained it 47-86% of the time, because
+#' He depends mostly on which loci were typed. The combined SE contained it
+#' 90-99% of the time for all three, often a little more than 95% because some
+#' noise is counted in both SEs. For Ar and privAr the locus SE alone did well
+#' (88-96%). A bootstrap over individuals is not offered for reporting:
+#' drawing an individual twice makes the sample look less diverse than it is,
+#' and its He intervals contained the truth under 10% of the time. Details are
+#' in `vignette("rationale")`, section 4, and `inst/sims/uncertainty_sources.R`.
+#'
+#' **What no SE covers.** Relatives in the sample (they bias the estimates
+#' themselves; screen with [kinship_check()]), filtering choices and allele
+#' dropout, and linkage between separate RAD loci.
+#'
 #' @references
 #' Nei, M. & Chesser, R.K. (1983) Estimation of fixation indices and gene
 #' diversities. *Annals of Human Genetics* 47:253-259.
@@ -191,6 +251,17 @@
 #'
 #' Weir, B.S. (1996) *Genetic Data Analysis II*. Sinauer, Sunderland, MA.
 #' (Delete-one jackknife over loci.)
+#'
+#' Nei, M. & Roychoudhury, A.K. (1974) Sampling variances of heterozygosity
+#' and genetic distance. *Genetics* 76:379-390. (Loci and individuals as two
+#' sources of uncertainty.)
+#'
+#' Shao, J. & Wu, C.F.J. (1989) A general theory for jackknife variance
+#' estimation. *Annals of Statistics* 17:1176-1197.
+#' \doi{10.1214/aos/1176347263}
+#'
+#' Owen, A.B. (2007) The pigeonhole bootstrap. *Annals of Applied Statistics*
+#' 1:386-411. \doi{10.1214/07-AOAS122}
 #'
 #' Owen, A.B. & Eckles, D. (2012) Bootstrapping data arrays of arbitrary
 #' order. *Annals of Applied Statistics* 6:895-927. (`boot = "both"`.)
@@ -343,39 +414,26 @@ diversity_stats <- function(vcf, popmap, g, nboot = 10000L, boot = "loci", sites
   if (se_individuals) {
     .inform(verbose, "Delete-one-individual jackknife over ", .big(sum(pop_sizes)),
             " individuals ...")
-    jack <- .jack_individuals(H, pops, rows, counts, n_typed, n_het, min_n_used, g)
+    jack <- .jack_individuals(H, pops, rows, counts, n_typed, n_het, min_n_used)
     se_ind <- jack$se
     ## Built-in check that the two code paths agree.
     gap <- suppressWarnings(max(abs(jack$full - point[names(jack$full)]), na.rm = TRUE))
     if (is.finite(gap) && gap > 1e-8)
       warning("Individual jackknife: its full-sample estimates differ from the point ",
               "estimates by ", signif(gap, 3), ". Please report this.", call. = FALSE)
-    if (g > 2L * (min(pop_sizes) - 1L))
-      .inform(verbose, "  Ar/privAr individual SEs are NA for populations with fewer than ",
-              "g/2 + 1 individuals: removing one leaves fewer than g = ", g,
-              " gene copies. Use g <= ", 2L * (min(pop_sizes) - 1L), " to get them ",
-              "(with missing data, a smaller g still; see the warning if one is given).")
-    .inform(verbose, "  Note: privAr_se_ind holds the OTHER populations' individuals fixed, so it ",
-            "leaves out part of the uncertainty (up to about 20% too small in simulation; ",
-            "see ?diversity_stats).")
-    ## Ar/privAr SEs are inflated when many records sit within 2 gene copies
-    ## of g (see .jackknife_boundary()). Only populations whose SEs exist.
-    boundary <- .jackknife_boundary(n_typed, rs$Ar, g, min_n_used, .jackknife_boundary_share)
-    has_se <- is.finite(se_ind[paste0("Ar_", pop_names)])
-    jackknife_boundary <- boundary$share
-    inflated <- pop_names[has_se & is.finite(boundary$share) &
-                            boundary$share > .jackknife_boundary_share]
+    ## Records with exactly 2 genotyped individuals drop out of a replicate
+    ## when either is left out, which inflates these SEs (.jackknife_boundary()).
+    jackknife_boundary <- .jackknife_boundary(n_typed, min_n_used)
+    inflated <- pop_names[is.finite(jackknife_boundary) &
+                            jackknife_boundary > .jackknife_boundary_share]
     if (length(inflated))
-      warning("Ar_se_ind and privAr_se_ind are probably too large for ",
-              paste(sprintf("%s (%.0f%% of its records with a defined Ar)", inflated,
-                            100 * boundary$share[inflated]), collapse = ", "),
-              ": those records have fewer than g + 2 = ", g + 2L, " gene copies, so deleting one ",
-              "individual drops them from some jackknife replicates, which made these SEs up ",
-              "to about twice the true value in simulation (vignette(\"rationale\"), section 4). ",
-              if (!is.na(boundary$suggest_g) && boundary$suggest_g >= 2L)
-                paste0("For these two SEs, re-run with g = ", boundary$suggest_g, " or less. ")
-              else "For these two SEs, re-run with a smaller g. ",
-              "The Ho, He and FIS SEs are not affected.", call. = FALSE)
+      warning("The individual SEs (_se_ind, and so _se_combined), mainly He's, are ",
+              "probably too large for ",
+              paste(sprintf("%s (%.0f%% of its records have only 2 genotyped individuals)",
+                            inflated, 100 * jackknife_boundary[inflated]), collapse = ", "),
+              ". Leaving one of those 2 out leaves too few to compute He, so the record drops ",
+              "out of that jackknife replicate. A higher min_n (e.g. min_n = 3) avoids it; see ",
+              "?diversity_stats, \"How standard errors are calculated\".", call. = FALSE)
   }
 
   ## ---- 8. Bootstrap ---------------------------------------------------------
@@ -400,7 +458,7 @@ diversity_stats <- function(vcf, popmap, g, nboot = 10000L, boot = "loci", sites
   ## Per-site values divide by each population's own sequenced sites and
   ## multiply by its own count of variant records (see .autosomal_counts()).
   ## A sites value is plausible if it is at least that count.
-  counts_autosomal <- .autosomal_counts(n_typed_all, sites_by_pop, H$n_records_read, is_haplotype)
+  counts_autosomal <- .autosomal_counts(n_typed_all, sites_by_pop, H, is_haplotype)
   variant_records <- counts_autosomal$variant_records
   for (note_text in counts_autosomal$notes) warning(note_text, call. = FALSE)
   ok_sites <- is.finite(sites_by_pop) & sites_by_pop > 0 & sites_by_pop >= variant_records
@@ -434,7 +492,8 @@ diversity_stats <- function(vcf, popmap, g, nboot = 10000L, boot = "loci", sites
                    jackknife_boundary = jackknife_boundary,
                    is_haplotype = is_haplotype, sites = as.vector(sites_by_pop),
                    variant_records = variant_records, ok_sites = ok_sites,
-                   prior_filters = prior_filters, seed = seed, files = written)
+                   prior_filters = prior_filters, filter_log = H$filter_log,
+                   seed = seed, files = written)
   names(settings$sites) <- pop_names
   structure(c(tables, list(settings = settings)), class = "raddiv_diversity")
 }
@@ -454,6 +513,7 @@ print.raddiv_diversity <- function(x, ...) {
   cat("  _se: jackknife over RAD loci",
       if (st$nboot > 0) sprintf("; _lo/_hi: 95%% bootstrap interval, %s replicates (boot = \"%s\")",
                                 .big(st$nboot), st$boot) else "; no bootstrap (nboot = 0)",
+      if (isTRUE(st$se_individuals)) "; _se_ind: jackknife over individuals; _se_combined: both (report it for Ho, He, Fis)",
       "\n", sep = "")
 
   cat("\n$per_population\n")
@@ -468,6 +528,7 @@ print.raddiv_diversity <- function(x, ...) {
   cat("\n")
   if (st$is_haplotype) {
     cat("Take from this haplotype VCF: Fis, Ar, privAr. (Ho and He: run the SNP VCF.)\n")
+    cat("  Ar and privAr: compare only populations analyzed together; which is richer is reliable, how much richer depends on SNPs per locus.\n")
   } else {
     cat("Take from this SNP VCF: Ho, He, pct_poly", if (!is.null(x$autosomal)) ", Ho_autosomal, He_autosomal",
         ". (Fis, Ar, privAr: run the haplotype VCF.)\n", sep = "")
@@ -488,20 +549,18 @@ print.raddiv_diversity <- function(x, ...) {
     out <- c(out, "privAr rests on under half of the records for some population; consider a smaller g.")
   if (st$complete_case && st$n_records_used / st$n_records < 0.5)
     out <- c(out, "complete_case dropped most records for missing data; check poor libraries.")
-  if (any(st$ok_sites) && st$is_haplotype)
+  if (st$is_haplotype && any(st$sites > 0))
     out <- c(out, "`sites` was ignored: per-site values need the SNP VCF.")
-  if (!any(st$ok_sites) && any(st$sites > 0))
+  else if (!any(st$ok_sites) && any(st$sites > 0))
     out <- c(out, "`sites` was ignored: every value is smaller than the number of variant records.")
-  if (isTRUE(st$se_individuals) && anyNA(x$richness$Ar_se_ind))
-    out <- c(out, "some Ar/privAr individual SEs are NA: g is too large to remove one individual.")
   if (isTRUE(st$se_individuals)) {
     share <- st$jackknife_boundary
-    inflated <- names(share)[is.finite(share) & share > .jackknife_boundary_share &
-                               is.finite(x$richness$Ar_se_ind)]
+    inflated <- names(share)[is.finite(share) & share > .jackknife_boundary_share]
     if (length(inflated))
-      out <- c(out, sprintf("Ar_se_ind/privAr_se_ind are probably too large for %s (records within 2 gene copies of g); use a smaller g for them.",
+      out <- c(out, sprintf("_se_ind and _se_combined (mainly He's) are probably too large for %s (many records with only 2 genotyped individuals); a higher min_n avoids it.",
                             paste(inflated, collapse = ", ")))
-    out <- c(out, "privAr_se_ind holds the other populations' individuals fixed (up to about 20% too small in simulation).")
+  } else {
+    out <- c(out, "_se holds the individuals fixed. For Ho, He and Fis, report _se_combined: re-run with se_individuals = TRUE (see ?diversity_stats).")
   }
   out
 }
@@ -554,7 +613,8 @@ print.summary.raddiv_diversity <- function(x, ...) {
 
   .print_table(.round_diversity_table(x$per_population, "per_population"))
   note(.report_text$diversity_se_columns)
-  if (isTRUE(st$se_individuals)) note(.report_text$diversity_se_ind_columns)
+  note(if (isTRUE(st$se_individuals)) .report_text$diversity_se_ind_columns
+       else .report_text$diversity_se_loci_only)
   cat("\n")
 
   .print_table(.round_diversity_table(x$richness, "richness"))
@@ -604,6 +664,11 @@ print.summary.raddiv_diversity <- function(x, ...) {
     if (isTRUE(pf$looks_mac_filtered)) note(.report_text$diversity_looks_mac_filtered)
     note(.report_text$diversity_prior_filters)
   }
+  steps <- .format_filter_log(st$filter_log)
+  if (length(steps)) {
+    cat("\nFilters applied in R after reading the VCF\n")
+    note(steps)
+  }
 
   if (!is.null(x$fis_by_call_rate)) {
     cat("\nFIS by call rate -- a check for null alleles and allele dropout\n")
@@ -615,7 +680,7 @@ print.summary.raddiv_diversity <- function(x, ...) {
   sites <- st$sites
   ok_sites <- st$ok_sites
   mode_text <- if (st$complete_case) "complete-case" else sprintf("available-data, min_n = %d", st$min_n)
-  if (any(ok_sites) && st$is_haplotype) {
+  if (st$is_haplotype && any(sites > 0)) {
     note(.report_text$diversity_sites_on_haplotypes)
     see("3. Which Stacks file for which statistic")
   } else if (any(ok_sites)) {
@@ -745,55 +810,114 @@ print.summary.raddiv_diversity <- function(x, ...) {
   out
 }
 
-## Not exported. The two counts behind each population's per-site values,
-## He_autosomal = He * variant_records / sites (see autosomal_het()).
+## Not exported. The SNP count behind each population's per-site values,
+## He_autosomal = He * variant_records / sites (see autosomal_het()), and the
+## warnings about it.
 ##
-## `sites` (Stacks' `Sites`, All-positions block) counts only the sites where
-## that population has at least one genotyped individual (Stacks 2.68,
-## SumStatsSummary::accumulate()). The matching numerator is therefore the
-## number of VARIANT sites where that population has at least one genotyped
-## individual -- not every record in the VCF. The two differ whenever a
-## population is absent from some records: Stacks' `-r` filter blanks a
-## population site by site while keeping the site for the others (with 3 or
-## more populations and `-p` below their number), and every such record
-## would otherwise inflate that population's He_autosomal.
+## WHAT THE FORMULA DOES. He_autosomal should be the population's He summed
+## over its SNPs, divided by its sequenced sites. He (the mean over the records
+## the population uses) times `variant_records` rebuilds that sum.
+## `variant_records` is therefore the number of records in THIS data where the
+## population has at least one genotyped individual. That matches how Stacks
+## counts `Sites` (a site counts for a population only where it has a
+## genotyped individual; SumStatsSummary::accumulate(), Stacks 2.68), and it
+## handles Stacks' `-r`, which blanks a population at some sites and keeps
+## the site for the others.
 ##
-## Where the count comes from:
-##   * `sites` read from populations.sumstats_summary.tsv: that file's own
-##     `Variant_Sites`, the exact count Stacks paired with `Sites`. It stays
-##     right if records were removed in R afterwards (the mean He over the
-##     remaining records still estimates the mean over all of them).
-##   * `sites` given as numbers: the records of this VCF where the population
-##     has at least one genotyped individual.
+## WHY NOT STACKS' Variant_Sites. It also counts SNPs removed after Stacks.
+## Multiplying by it treats every removed SNP as if it had the average He of
+## the ones kept. After a MAC or MAF filter the removed SNPs had much lower He,
+## so that inflated per-site He (+41% after filter_mac(3) in a simulation with
+## 20 diploids). Using the data's own count, removed SNPs simply add nothing,
+## which is the same loss Stacks' own --min-mac causes.
+##
+## The notes (warnings) cover the cases where `sites` may no longer match the
+## data: records removed after reading, whole RAD loci removed after reading
+## (told apart by H$filter_log: loci emptied by a MAF or MAC filter keep their
+## sites and need no warning), and a VCF whose SNP count differs from the
+## Stacks file's Variant_Sites.
+##   n_typed_all   records x populations, genotyped individuals (all records)
+##   sites_by_pop  from .resolve_sites(); attribute "variant_sites" when read
+##                 from populations.sumstats_summary.tsv
+##   H             the data (for n_records_read, n_loci_read, filter_log and
+##                 locus_raw)
 ## Returns list(variant_records = named per-population counts, notes =
 ## warning texts for diversity_stats() to raise).
-.autosomal_counts <- function(n_typed_all, sites_by_pop, n_records_read, is_haplotype) {
-  present_in_vcf <- colSums(n_typed_all > 0)
-  n_rec <- nrow(n_typed_all)
-  from_file <- attr(sites_by_pop, "variant_sites")
+.autosomal_counts <- function(n_typed_all, sites_by_pop, H, is_haplotype) {
+  variant_records <- stats::setNames(as.numeric(colSums(n_typed_all > 0)), names(sites_by_pop))
   notes <- character(0)
-  supplied <- any(sites_by_pop > 0) && !is_haplotype
+  if (!any(sites_by_pop > 0) || is_haplotype)
+    return(list(variant_records = variant_records, notes = notes))
 
-  if (!is.null(from_file) && all(is.finite(from_file))) {
-    variant_records <- stats::setNames(as.numeric(from_file), names(sites_by_pop))
-    gap <- abs(present_in_vcf - variant_records) / pmax(variant_records, 1)
-    if (supplied && any(gap > 0.005))
+  n_rec <- nrow(n_typed_all)
+  n_loci <- length(unique(H$locus_raw))
+  records_removed <- if (is.null(H$n_records_read)) 0 else H$n_records_read - n_rec
+  loci_removed <- if (is.null(H$n_loci_read)) 0 else H$n_loci_read - n_loci
+  ## Which filters removed them (H$filter_log; see R/filter_loci.R). A RAD
+  ## locus emptied by a minor allele count or frequency filter was still
+  ## sequenced: its sites are now fixed sites, which is also how Stacks' own
+  ## --min-mac treats them, so they rightly stay in `sites`. A locus removed by
+  ## any other filter (call rate, excess heterozygosity) was removed as
+  ## unreliable, so its sites should leave `sites`. Loci removed without a
+  ## filter_*() function (or before the log existed) have no known reason.
+  log <- H$filter_log
+  if (is.null(log)) log <- .empty_filter_log()
+  by_allele_frequency <- log$filter %in% c("filter_maf", "filter_mac")
+  loci_quality <- sum(log$loci_removed[!by_allele_frequency])
+  loci_unexplained <- max(0, loci_removed - sum(log$loci_removed))
+  filters_named <- function(rows) paste(unique(log$filter[rows]), collapse = ", ")
+  if (records_removed > 0) {
+    removed_by <- log$records_removed > 0
+    notes <- c(notes, paste0(
+      "Per-site values: ", .big(records_removed), " of ", .big(H$n_records_read),
+      " records were removed after reading",
+      if (any(removed_by)) paste0(" (by ", filters_named(removed_by), ")") else "",
+      ", so their He adds nothing to Ho_autosomal and He_autosomal. After a MAC or MAF filter ",
+      "this is real rare-variant diversity being lost; report the threshold. See ",
+      "?diversity_stats, `sites`.",
+      if (any(log$filter == "filter_thin_one_snp" & removed_by))
+        paste0(" filter_thin_one_snp() kept one SNP per RAD locus, so these per-site values ",
+               "are far too low: compute them from the unthinned SNP data.")
+      else ""))
+  }
+  if (loci_quality > 0) {
+    quality_rows <- !by_allele_frequency & log$loci_removed > 0
+    notes <- c(notes, paste0(
+      "Per-site values: ", .big(loci_quality), " whole RAD loci were removed after reading by ",
+      filters_named(quality_rows), ". Their sequenced sites should no longer count, but ",
+      "Stacks' Sites still counts them, so if `sites` came from ",
+      "populations.sumstats_summary.tsv, Ho_autosomal and He_autosomal are too low. Give `sites` ",
+      "for the loci you kept, or use pi_allsites() on an all-sites VCF."))
+  }
+  if (loci_unexplained > 0)
+    notes <- c(notes, paste0(
+      "Per-site values: ", .big(loci_unexplained), " whole RAD loci were removed after reading, ",
+      "but not by a filter_*() function, so the reason is not known. If they were removed as ",
+      "unreliable (low call rate, paralogs), their sites should no longer count and Stacks' ",
+      "Sites is too large, so Ho_autosomal and He_autosomal are too low: give `sites` for the ",
+      "loci you kept, or use pi_allsites() on an all-sites VCF. If they only lost their SNPs to ",
+      "a minor allele count or frequency filter, their sites were still sequenced and Stacks' ",
+      "Sites is right."))
+
+  from_file <- attr(sites_by_pop, "variant_sites")
+  if (records_removed == 0 && !is.null(from_file) && all(is.finite(from_file))) {
+    gap <- abs(variant_records - from_file) / pmax(from_file, 1)
+    if (any(gap > 0.005)) {
+      thinned <- n_rec / n_loci < 1.05 && any(from_file > 1.2 * variant_records)
       notes <- c(notes, paste0(
-        "Per-site values: the VCF has a different number of variant records per population ",
-        "than populations.sumstats_summary.tsv's Variant_Sites (",
-        paste(sprintf("%s: %s vs %s", names(gap)[gap > 0.005], present_in_vcf[gap > 0.005],
-                      variant_records[gap > 0.005]), collapse = "; "),
-        "). Ho_autosomal/He_autosomal use Variant_Sites. Check that both files come from the ",
-        "same populations run; if records were removed in R, see ?diversity_stats (`sites`)."))
-  } else {
-    variant_records <- stats::setNames(as.numeric(present_in_vcf), names(sites_by_pop))
-    if (supplied && !is.null(n_records_read) && n_rec < n_records_read)
-      notes <- c(notes, paste0(
-        "Per-site values: ", n_records_read - n_rec, " of ", n_records_read, " records were ",
-        "removed after reading (filter_*()), but the removed variant sites are still in ",
-        "`sites`, so Ho_autosomal/He_autosomal are too low. Pass `sites` as the path to ",
-        "populations.sumstats_summary.tsv (which supplies the unfiltered count), or compute ",
-        "per-site values on the unfiltered VCF."))
+        "Per-site values: this VCF's SNP count does not match Variant_Sites in ",
+        "populations.sumstats_summary.tsv (",
+        paste(sprintf("%s: %s in the VCF, %s in the file", names(gap)[gap > 0.005],
+                      .big(variant_records[gap > 0.005]), .big(from_file[gap > 0.005])),
+              collapse = "; "),
+        "). Either the VCF was filtered or thinned before it was read, or the two files come ",
+        "from different populations runs. Ho_autosomal and He_autosomal use the VCF's own SNPs, so ",
+        "SNPs missing from it add nothing, and if whole loci are missing, `sites` is too large; ",
+        "both make the per-site values too low.",
+        if (thinned) paste0(" The VCF has about one SNP per RAD locus, so it looks thinned ",
+                            "(e.g. --write-single-snp): use the unthinned SNP VCF for per-site values.")
+        else ""))
+    }
   }
   list(variant_records = variant_records, notes = notes)
 }

@@ -513,7 +513,11 @@ differentiation_stats <- function(vcf, popmap, nboot = 10000L, beta = TRUE,
   ci <- .percentile_ci(boot_matrix, stat_names)
 
   ## ---- 6. hierfstat: beta, and the optional cross-check ---------------------
+  ## beta_status says why pairwise_beta is (or is not) there, for print():
+  ## "computed", "off" (beta = FALSE), "no_hierfstat", "too_many_alleles" or
+  ## "failed".
   beta_matrix <- NULL
+  beta_status <- if (!beta) "off" else if (!.hierfstat_available()) "no_hierfstat" else "computed"
   if (.hierfstat_available() && (beta || hierfstat_check)) {
     if (hierfstat_check) {
       ## Compared on the records this package's global FST uses (>= 2
@@ -539,9 +543,11 @@ differentiation_stats <- function(vcf, popmap, nboot = 10000L, beta = TRUE,
       beta_matrix <- if (is.null(dat_beta)) NULL
                      else tryCatch(as.matrix(hierfstat::pairwise.betas(dat_beta)), error = function(e) NULL)
       if (is.null(dat_beta)) {
+        beta_status <- "too_many_alleles"
         .inform(verbose, "  beta skipped: a record has more than 99 alleles, which hierfstat cannot ",
                 "read reliably; pairwise_beta will be NULL.")
       } else if (is.null(beta_matrix)) {
+        beta_status <- "failed"
         .inform(verbose, "  hierfstat::pairwise.betas() failed on this dataset; pairwise_beta will be NULL.")
       } else {
         dimnames(beta_matrix) <- list(pop_names, pop_names)
@@ -604,7 +610,7 @@ differentiation_stats <- function(vcf, popmap, nboot = 10000L, beta = TRUE,
                    is_haplotype = .is_haplotype_H(H), fst_records_skipped = fst_records_skipped,
                    d_records_global = d_records_global,
                    d_records_skipped_global = n_rec - d_records_global,
-                   beta = beta, seed = seed, files = written)
+                   beta = beta, beta_status = beta_status, seed = seed, files = written)
   structure(list(global = global, pairwise = pairwise, pairwise_fst = matrix_of("pFST_"),
                  pairwise_beta = beta_matrix, pairwise_D = matrix_of("pD_"), settings = settings),
             class = "raddiv_differentiation")
@@ -617,6 +623,20 @@ differentiation_stats <- function(vcf, popmap, nboot = 10000L, beta = TRUE,
                 "pairwise D uses the records typed in both populations of the pair"),
           .big(d_records), .big(n_records),
           if (n_pops == 2) "both populations" else sprintf("all %d populations", n_pops))
+}
+
+## Not exported. Why a result has no pairwise_beta, as one sentence (NULL
+## when beta was computed). Results made before settings$beta_status existed
+## fall back to the `beta` setting.
+.beta_note <- function(st) {
+  status <- if (!is.null(st$beta_status)) st$beta_status
+            else if (isFALSE(st$beta)) "off" else "no_hierfstat"
+  switch(status,
+    computed = NULL,
+    off = "beta not computed (beta = FALSE).",
+    no_hierfstat = "beta needs the hierfstat package: install.packages(\"hierfstat\").",
+    too_many_alleles = "beta not computed: a record has more than 99 alleles, which hierfstat cannot read reliably.",
+    failed = "beta not computed: hierfstat::pairwise.betas() failed on this dataset.")
 }
 
 ## Not exported. TRUE when the global D rests on fewer than half the records.
@@ -652,9 +672,7 @@ print.raddiv_differentiation <- function(x, ...) {
   }
   cat("\n")
   if (st$is_haplotype) cat("NOTE: haplotype VCF -- prefer D (or beta) over FST (see summary()).\n")
-  if (is.null(x$pairwise_beta))
-    cat(if (isFALSE(st$beta)) "NOTE: beta not computed (beta = FALSE).\n"
-        else "NOTE: beta needs the hierfstat package.\n")
+  if (is.null(x$pairwise_beta)) cat("NOTE:", .beta_note(st), "\n")
   cat("summary() prints the full report.\n")
   invisible(x)
 }
@@ -699,8 +717,7 @@ print.summary.raddiv_differentiation <- function(x, ...) {
   if (!is.null(res$pairwise_beta))
     note("beta = Weir & Goudet (2017), via hierfstat::pairwise.betas() -- a point estimate only.")
   else
-    note(if (isFALSE(st$beta)) "beta not computed (beta = FALSE)."
-         else "beta not available (hierfstat not installed).")
+    note(.beta_note(st))
   cat("\n")
   rule("-")
   if (st$is_haplotype) note(.report_text$differentiation_haplotype)

@@ -49,7 +49,7 @@ test_that("read_popmap() follows Stacks' rules and explains malformed lines", {
   ## that look numeric are all fine.
   ok <- write_pm(c("# my popmap", "001\tnorth\tgroup1\r", "", "002\tnorth\tgroup1",
                    "003\tsouth\tgroup2"))
-  expect_message(pops <- read_popmap(ok), "third \\(group\\) column")
+  suppressMessages(expect_message(pops <- read_popmap(ok), "third \\(group\\) column"))
   expect_equal(pops, list(north = c("001", "002"), south = "003"))
   ## A line with no population column names the line.
   expect_error(read_popmap(write_pm(c("s1\tpopA", "s2")), verbose = FALSE),
@@ -224,4 +224,42 @@ test_that("a Stacks 2.68 de novo haplotype VCF (ID '.', POS 0) is read as one lo
   res <- suppressWarnings(diversity_stats(H, pm, g = 4, nboot = 0, verbose = FALSE))
   expect_true(res$settings$is_haplotype)
   expect_equal(res$settings$n_loci, 4L)
+})
+
+test_that("symbolic ALT alleles do not make a SNP VCF look like haplotype data, and are reported", {
+  lines <- c("##fileformat=VCFv4.2",
+             "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\ti1\ti2",
+             "chr1\t10\t.\tA\tC\t.\tPASS\t.\tGT\t0/1\t0/0",
+             "chr1\t20\t.\tG\tT,*\t.\tPASS\t.\tGT\t0/1\t1/2",
+             "chr1\t30\t.\tC\tA,<NON_REF>\t.\tPASS\t.\tGT\t0/1\t0/0")
+  vcf <- tempfile(fileext = ".vcf")
+  writeLines(lines, vcf)
+  msgs <- capture_messages(H <- read_stacks_vcf(vcf))
+  expect_false(RADdiversity:::.is_haplotype_H(H))
+  expect_true(any(grepl("2 records have a symbolic ALT allele", msgs)))
+  ## A real multi-base allele still counts.
+  H$alleles[[1]] <- c("AG", "CT")
+  expect_true(RADdiversity:::.is_haplotype_H(H))
+})
+
+test_that("popmap samples missing from the VCF are named; no match at all shows both name sets", {
+  H <- read_stacks_vcf(fx("small.snps.vcf"), verbose = FALSE)
+  pops <- list(popA = c("popA_1", "popA_2", "popA_3", "popA_4", "popA_5_typo"),
+               popB = c("popB_1", "popB_2", "popB_3"))
+  msgs <- capture_messages(resolved <- RADdiversity:::.resolve_pops(pops, H$samples))
+  expect_true(any(grepl("1 popmap sample(s) not in the VCF, so left out: popA_5_typo", msgs,
+                        fixed = TRUE)))
+  expect_equal(lengths(resolved), c(popA = 4L, popB = 3L))
+  expect_no_message(RADdiversity:::.resolve_pops(pops, H$samples, verbose = FALSE))
+
+  ## The same from a popmap file.
+  pm <- tempfile(fileext = ".tsv")
+  writeLines(c(readLines(fx("small_popmap.tsv")), "popB_9\tpopB"), pm)
+  msgs <- capture_messages(read_popmap(pm, samples = H$samples))
+  expect_true(any(grepl("left out: popB_9", msgs, fixed = TRUE)))
+
+  ## Nothing matches: both sets of names are shown.
+  expect_error(RADdiversity:::.resolve_pops(list(a = c("x1", "x2"), b = "y1"), H$samples,
+                                            verbose = FALSE),
+               "VCF samples: +popA_1.*popmap samples: x1, x2, y1")
 })

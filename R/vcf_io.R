@@ -23,8 +23,12 @@
 #               call's own ALT allele(s), from AD; NULL without AD. Used by
 #               filter_genotype_depth() and filter_low_conf_alt(), so the
 #               genotype text itself is never kept (it dominated memory)
-#    n_records_read  how many records the file had; filters leave it alone,
-#               so it records whether records were removed after reading
+#    n_records_read, n_loci_read  how many records and RAD loci the file had;
+#               filters leave them alone, so they show whether records or whole
+#               loci were removed after reading
+#    filter_log one row per filter_*() call since reading: which filter, its
+#               settings, and the records, RAD loci, calls and samples it
+#               removed (see "The filter log" in R/filter_loci.R)
 #
 #  Every filter_*() function returns the same object with fewer records or
 #  more missing genotypes, and every analysis function accepts it in place of
@@ -89,6 +93,11 @@
 #'   therefore makes a SNP VCF look like a haplotype VCF, which switches off
 #'   the per-site conversion in [diversity_stats()]. Remove indels and MNPs
 #'   from a SNP VCF first.
+#' * Symbolic ALT alleles (`*` for a spanning deletion, or `<*>`, `<NON_REF>`,
+#'   `<DEL>`, as GATK and bcftools can write) are not DNA sequences. They do
+#'   not make a file count as haplotype data, but a genotype that uses one is
+#'   still read as an allele. The summary message counts such records; remove
+#'   them first (for example with bcftools view).
 #' * With `locus_from = "auto"`, a VCF whose ID column is unique per SNP
 #'   (e.g. `rs` numbers) makes every SNP its own locus, so linked SNPs are
 #'   resampled as if independent. The message says how many records share each
@@ -167,8 +176,12 @@
 #'   fixed columns, CHROM ... FORMAT), `depth` (read depth of each call, from
 #'   DP or the sum of AD; `NULL` if the VCF has neither), `ad_ref` and `ad_alt`
 #'   (reads supporting REF and the call's ALT allele(s), from AD; `NULL` if
-#'   the VCF has no AD) and `n_records_read` (records in the file, unchanged
-#'   by the `filter_*()` functions). Printing it shows a short summary.
+#'   the VCF has no AD), `n_records_read` and `n_loci_read` (records and RAD
+#'   loci in the file, unchanged by the `filter_*()` functions), and
+#'   `filter_log` (a data frame with one row per `filter_*()` call made on the
+#'   object: `filter`, `setting`, `records_removed`, `loci_removed`,
+#'   `calls_masked`, `samples_removed`; no rows straight after reading).
+#'   Printing it shows a short summary, including the filters applied.
 #'
 #'   **Memory.** The genotype text is not kept, only integer matrices: about
 #'   20 bytes per genotype call with depths, or 8 without. For example,
@@ -273,15 +286,20 @@ read_stacks_vcf <- function(path, locus_from = "auto", window_bp = 1000, chunk_l
     message(sprintf("  missing genotype rate: %.2f%%", 100 * mean(is.na(gt$A1))))
     if (length(gt$unrecognised))
       message("  treated as missing: ", paste(utils::head(gt$unrecognised, 8), collapse = ", "))
+    n_symbolic <- sum(vapply(alleles, function(a) any(.is_symbolic_allele(a)), logical(1)))
+    if (n_symbolic)
+      message("  ", .big(n_symbolic), " records have a symbolic ALT allele (*, <...>); ",
+              "remove them first (see ?read_stacks_vcf, \"Assumptions\")")
   }
 
-  ## `n_records_read` is never changed by the filter_*() functions, so an
-  ## analysis can tell that records were removed after reading (see the
-  ## per-site check in diversity_stats()).
+  ## `n_records_read` and `n_loci_read` are never changed by the filter_*()
+  ## functions, so an analysis can tell that records or whole RAD loci were
+  ## removed after reading (see the per-site checks in diversity_stats()).
   structure(list(A1 = gt$A1, A2 = gt$A2, locus = locus, locus_raw = locus_raw,
                  alleles = alleles, n_alleles = n_alleles, samples = samples,
                  fields = fields, depth = depth, ad_ref = ad_ref, ad_alt = ad_alt,
-                 n_records_read = nrow(fields)),
+                 n_records_read = nrow(fields), n_loci_read = n_loci,
+                 filter_log = .empty_filter_log()),
             class = "raddiv_vcf")
 }
 
@@ -301,10 +319,14 @@ print.raddiv_vcf <- function(x, ...) {
   }
   cat("  samples:", paste(utils::head(x$samples, 6), collapse = ", "),
       if (length(x$samples) > 6) "..." else "", "\n")
+  steps <- .format_filter_log(x$filter_log)
+  if (length(steps))
+    cat("  filters applied since reading:\n", paste0("    ", steps, "\n"), sep = "")
   cat("  elements: $A1 $A2 (allele matrices), $locus, $locus_raw, $alleles, ",
       "$n_alleles, $samples, $fields",
       if (!is.null(x$depth)) ", $depth" else "",
-      if (!is.null(x$ad_ref)) ", $ad_ref, $ad_alt" else "", "\n", sep = "")
+      if (!is.null(x$ad_ref)) ", $ad_ref, $ad_alt" else "",
+      if (!is.null(x$filter_log)) ", $filter_log" else "", "\n", sep = "")
   invisible(x)
 }
 
@@ -520,7 +542,7 @@ print.raddiv_vcf <- function(x, ...) {
 
 ## Not exported. Groups records into loci by position: sorted within each
 ## CHROM, a record starts a new locus when it is on a different CHROM from the
-## previous record or more than `window_bp` beyond it. Each locus is labelled
+## previous record or more than `window_bp` beyond it. Each locus is labeled
 ## "CHROM:POS" of its first record; labels come back in the input order.
 .window_blocks <- function(chrom, pos, window_bp) {
   pos <- suppressWarnings(as.numeric(pos))
@@ -576,12 +598,13 @@ read_popmap <- function(path, samples = NULL, verbose = TRUE) {
   if (!file.exists(path))
     stop("Popmap file not found: ", path, "\n  Check the path and try again.", call. = FALSE)
   pm <- .parse_popmap_lines(path, verbose)
+  if (!nrow(pm)) stop("The popmap file has no samples.", call. = FALSE)
   ## Keep only samples in the VCF BEFORE grouping, so populations come out in
   ## the order they first appear among the retained samples.
-  if (!is.null(samples)) pm <- pm[pm$sample %in% samples, , drop = FALSE]
-  if (!nrow(pm))
-    stop(if (is.null(samples)) "The popmap file has no samples."
-         else "No popmap sample names match the VCF.", call. = FALSE)
+  if (!is.null(samples)) {
+    .report_popmap_not_in_vcf(pm$sample, samples, verbose)
+    pm <- pm[pm$sample %in% samples, , drop = FALSE]
+  }
   pops <- split(pm$sample, factor(pm$pop, levels = unique(pm$pop)))
   .clean_pops(pops, samples, verbose)
 }
@@ -662,9 +685,9 @@ read_popmap <- function(path, samples = NULL, verbose = TRUE) {
     stop("Population names must be unique; repeated: ",
          paste(unique(names(pops)[duplicated(names(pops))]), collapse = ", "), call. = FALSE)
   if (!is.null(samples)) {
+    .report_popmap_not_in_vcf(unlist(pops, use.names = FALSE), samples, verbose)
     pops <- lapply(pops, function(ids) ids[ids %in% samples])
     pops <- pops[lengths(pops) > 0]
-    if (!length(pops)) stop("No popmap sample names match the VCF.", call. = FALSE)
   }
   ## A sample listed twice would be counted in both populations and silently
   ## corrupt every between-population statistic.
@@ -715,6 +738,39 @@ read_popmap <- function(path, samples = NULL, verbose = TRUE) {
   vcf
 }
 
+## Not exported. Compares the popmap's sample IDs (`ids`) with the VCF's
+## (`samples`). A popmap sample missing from the VCF is left out of every
+## analysis, which quietly makes its population smaller, and is most often a
+## typo or a different popmap, so a message names up to 10 of them. If no
+## popmap sample is in the VCF, stops and shows a few names from each, so a
+## systematic difference (a suffix such as ".sorted", upper vs lower case)
+## can be seen.
+.report_popmap_not_in_vcf <- function(ids, samples, verbose = TRUE) {
+  missing_ids <- unique(ids[!ids %in% samples])
+  if (length(missing_ids) == length(unique(ids)))
+    stop("No popmap sample names match the VCF.\n",
+         "  VCF samples:    ", paste(utils::head(samples, 3), collapse = ", "),
+         if (length(samples) > 3) ", ..." else "", "\n",
+         "  popmap samples: ", paste(utils::head(unique(ids), 3), collapse = ", "),
+         if (length(unique(ids)) > 3) ", ..." else "", "\n",
+         "  The names must match exactly (spelling, upper/lower case, suffixes).", call. = FALSE)
+  if (length(missing_ids))
+    .inform(verbose, "  ", length(missing_ids), " popmap sample(s) not in the VCF, so left out: ",
+            paste(utils::head(missing_ids, 10), collapse = ", "),
+            if (length(missing_ids) > 10) ", ..." else "")
+  invisible(missing_ids)
+}
+
+## Not exported. Stops, naming them, if any population has fewer than 2
+## individuals. `why` says what the calling function needs 2 individuals for.
+.stop_tiny_pops <- function(pops, why) {
+  tiny <- names(pops)[lengths(pops) < 2]
+  if (length(tiny))
+    stop("Population(s) with fewer than 2 individuals: ", paste(tiny, collapse = ", "),
+         "\n  ", why, " Drop these populations from the popmap or merge them.", call. = FALSE)
+  invisible(NULL)
+}
+
 ## Not exported. Checks shared by the functions that take `vcf` and `popmap`,
 ## run before any (possibly slow) reading.
 .check_run_inputs <- function(vcf, popmap, stem, outdir) {
@@ -761,10 +817,17 @@ read_popmap <- function(path, samples = NULL, verbose = TRUE) {
 ## or ipyrad can contain a few multi-allelic SNPs (e.g. A -> C,T), and
 ## treating those as haplotypes would switch off the per-site values. Indels
 ## and MNPs also have multi-base alleles, which is why ?read_stacks_vcf asks
-## for them to be removed from a SNP VCF.
+## for them to be removed from a SNP VCF. Symbolic alleles ("*", "<NON_REF>")
+## are codes, not sequences, so their length is ignored.
 .is_haplotype_H <- function(H) {
-  any(nchar(unlist(H$alleles, use.names = FALSE)) > 1L)
+  alleles <- unlist(H$alleles, use.names = FALSE)
+  any(nchar(alleles[!.is_symbolic_allele(alleles)]) > 1L)
 }
+
+## Not exported. TRUE for a symbolic VCF allele, which is a code rather than
+## a DNA sequence: "*" (an allele missing because of an overlapping deletion)
+## or anything in angle brackets ("<*>", "<NON_REF>", "<DEL>").
+.is_symbolic_allele <- function(alleles) alleles == "*" | grepl("^<.*>$", alleles)
 
 ## Not exported. Typed (non-missing) individuals per record and population,
 ## for the records `rows`: an integer matrix, one row per record, one column

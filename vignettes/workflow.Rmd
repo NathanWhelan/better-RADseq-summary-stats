@@ -120,7 +120,8 @@ what each filter changes and reporting it:
 | pooled missing-data filter (`-R`, `vcftools --max-missing`) | can leave one population with more missing data than another | check `fis_by_call_rate` (section 5) and the missingness check in `het_between_pops()` (section 7); or re-filter per population with `filter_call_rate(..., popmap = )` |
 | Hardy-Weinberg filter | removes loci with heterozygote deficits, pulling FIS toward 0 | report it; if possible, re-run without it for FIS |
 | maximum heterozygosity (`--max-obs-het`) | removes loci with many heterozygotes (often paralogs) | usually fine; report it |
-| one SNP per RAD locus (`--write-single-snp`) | fewer SNPs; He per SNP shifts differently in different populations | use all SNPs for He and π if you can |
+| one SNP per RAD locus (`--write-single-snp`) | fewer SNPs; He per SNP shifts differently in different populations; per-site He comes out far too low, because most SNPs are missing | use all SNPs for He and per-site values |
+| any filter applied after Stacks `populations` | Stacks' `Sites` no longer matches the data if whole RAD loci were removed | give `sites` for the loci you kept (see "The SNP run" in section 5) |
 
 `summary()` of a `diversity_stats()` result (section 5) shows what the data
 look filtered at: the rarest allele count left, the lowest call rates, and
@@ -164,14 +165,18 @@ popmap (an outgroup or a failed library, say), whereas the analyses use only
 the popmap's individuals. If the VCF holds such samples, remove them first
 with `H <- filter_samples(H, pops)`, so that allele frequencies and call
 rates, and any file written with a `write_*()` function, describe only the
-individuals you analyse. Look before filtering:
+individuals you analyze. Look before filtering:
 
 ```{r}
 allele_stats <- locus_allele_stats(H)
 summary(allele_stats$maf)
 H_f <- filter_genotype_depth(H, min_dp = 6)
 H_f <- filter_call_rate(H_f, min_call = 0.8, popmap = pops)
+H_f
 ```
+
+Printing the data lists every filter applied since reading, with what each
+one removed, which is what a methods section needs.
 
 **Why these two.** `filter_genotype_depth()` is the same rule as Stacks'
 `--min-gt-depth`, for VCFs made without it. It masks a call whatever its
@@ -237,12 +242,7 @@ for (g in c(10, 20)) {
 on. At `g = 20` private richness rests on far fewer loci than at `g = 10`,
 because only loci with at least 10 typed individuals in *both* populations
 count. Pick the largest `g` that keeps most loci (here 16, eight individuals'
-worth), and report it. If you will also report individual standard errors for
-Ar and privAr (`se_individuals = TRUE`, section 6), a `g` well below twice the
-smallest population keeps them accurate: `diversity_stats()` warns, and
-suggests a smaller `g`, when too many records sit within two gene copies of
-`g` (`vignette("rationale")`, "Individual standard errors for Ar and
-privAr").
+worth), and report it.
 
 ### The haplotype run
 
@@ -294,19 +294,31 @@ sites, monomorphic ones included, gives heterozygosity per sequenced site
 `sites = sumstats` reads each population's own count of sequenced sites from
 Stacks' `populations.sumstats_summary.tsv`.
 
+The package adds up He over the SNPs in your data and divides by `sites`.
+Stacks' count is right only if nothing was filtered after `populations`.
+Removing SNPs (for example with `filter_mac()`) lowers per-site He, because
+their diversity is gone. Removing whole RAD loci also means their sites should
+not be counted, so then give `sites` yourself: the sequenced sites of the loci
+you kept, counting a site for a population only where at least one of its
+individuals is genotyped. `diversity_stats()` warns in both cases.
+
 **Reading the output.** South has `r sprintf("%.0f%%", 100 * (1 - div_snps$autosomal$He_autosomal[2] / div_snps$autosomal$He_autosomal[1]))`
 lower per-site He than north. `pct_poly` (percentage of SNPs polymorphic
 within the population) is lower in south too: after a bottleneck, many
 variants are lost altogether.
 
-## 6. Do individuals differ in inbreeding?
+## 6. Which standard errors to report
 
-**Why.** The standard errors above resample loci, holding the individuals
-fixed. That is fine when individuals are alike, but when some individuals
-are more inbred than others, heterozygosity is correlated across all loci
-within an individual, and adding loci does not remove that uncertainty. The
-statistic g2 measures this correlation; it is 0 when individuals do not
-differ.
+**Why.** A standard error (SE) says how much a number would change if you
+repeated the study. A population's He is uncertain for two reasons: you typed
+some of the genome's RAD loci, and you caught some of the population's
+individuals. The `_se`, `_lo` and `_hi` columns above resample loci and hold
+the individuals fixed, so they cover only the first reason.
+
+That matters most when individuals differ in inbreeding. An inbred individual
+is homozygous at many loci at once, so its loci are not independent, and
+adding loci does not remove the uncertainty it brings. The statistic g2
+measures this; it is 0 when individuals do not differ.
 
 ```{r}
 id <- identity_disequilibrium(haps, pops, nboot = 1000, nperm = 1000)
@@ -317,25 +329,26 @@ id
 bootstrap interval over individuals, and `p_value` a one-sided permutation
 test of g2 = 0. An interval that lies above 0 means individuals differ in
 inbreeding; here that holds for
-`r paste(id$population[id$g2_lo > 0], collapse = " and ")`. When the two
-disagree (a small p-value but an interval that reaches 0), treat the evidence
-as borderline and report both kinds of standard error. Where individuals do
-differ, the standard errors to report are the delete-one-individual jackknife
-ones:
+`r paste(id$population[id$g2_lo > 0], collapse = " and ")`.
+
+**What to report.** Turn on `se_individuals = TRUE`. It adds `_se_ind`, a
+jackknife over individuals (each one left out in turn), and `_se_combined`,
+which puts both sources together. For Ho, He and FIS, report `_se_combined`.
+For Ar and privAr, report the locus-based `_se` (or `_lo` and `_hi`), which
+already covered the truth well in simulation.
 
 ```{r}
 div_ind <- diversity_stats(haps, pops, g = 16, nboot = 0, se_individuals = TRUE,
                            verbose = FALSE)
-div_ind$per_population[, c("population", "Fis", "Fis_se", "Fis_se_ind")]
+div_ind$per_population[, c("population", "Fis", "Fis_se", "Fis_se_ind", "Fis_se_combined")]
 ```
 
-If a warning about `Ar_se_ind` and `privAr_se_ind` appears here, it concerns
-only those two columns (some of south's loci have only 16 or 17 gene copies); the
-FIS standard errors shown are not affected. `Fis_se_ind` is about
-`r round(min(div_ind$per_population$Fis_se_ind / div_ind$per_population$Fis_se), 1)`
-to `r round(max(div_ind$per_population$Fis_se_ind / div_ind$per_population$Fis_se), 1)`
-times `Fis_se`: most of the uncertainty comes from which individuals were
-sampled, not which loci.
+Here `Fis_se_combined` is about
+`r round(min(div_ind$per_population$Fis_se_combined / div_ind$per_population$Fis_se), 1)`
+to `r round(max(div_ind$per_population$Fis_se_combined / div_ind$per_population$Fis_se), 1)`
+times `Fis_se`: most of the uncertainty in FIS comes from which individuals
+were sampled. How each SE is calculated, and the simulations behind this
+rule, are in `vignette("rationale")`, section 4.
 
 ## 7. Do the populations differ?
 
@@ -375,16 +388,17 @@ het
 
 ```{r}
 het$missingness_confound$overall
-het$overdispersion
+het$g2
 ```
 
 * **Missingness confound.** If individuals with more missing data are also
   less heterozygous (a positive `r`), poor libraries, not biology, may be
   driving the difference. Here `r` is `r round(het$missingness_confound$overall$r, 2)`,
   not positive.
-* **Overdispersion.** How much more individuals vary than chance alone would
-  make them. `se_understated_by` is roughly how many times too small a
-  locus-based standard error would have been on these data.
+* **g2.** Whether individuals differ in inbreeding (section 6). When they do
+  (`g2_lo` above 0), an inbred individual is homozygous at many loci at once,
+  so loci are not independent replicates and a locus-based comparison would
+  find differences too often. That is why this test uses individuals.
 
 ## 8. Differentiation between populations
 

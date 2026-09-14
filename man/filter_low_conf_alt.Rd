@@ -61,7 +61,7 @@ calls masked, so the imbalance can be seen.
 
 \strong{Which samples.} This uses every sample in \code{H}, including any that are
 not in your popmap (an outgroup, say). Run \code{\link[=filter_samples]{filter_samples()}} first to base
-it on the individuals you analyse.
+it on the individuals you analyze.
 }
 \examples{
 # A tiny VCF: ind2's ALT call at locus_1 is supported by only 1 read.

@@ -55,7 +55,7 @@ test_that("every table of a het_between_pops() result is a list element, not hid
   res <- het_between_pops(fx("small.haps.vcf"), fx("small_popmap.tsv"), min_call = 0.5,
                           verbose = FALSE)
   expect_null(attributes(res)$report)
-  for (tab in c("population_summary", "overdispersion", "g2"))
+  for (tab in c("population_summary", "g2"))
     expect_s3_class(res[[tab]], "data.frame")
   expect_true(is.list(res$missingness_confound))
   expect_true(is.list(res$settings))

@@ -59,7 +59,7 @@ test_that("multiallelic loci are excluded (with a message) before either method 
   H <- make_kinship_H()
   ## Make locus 1 triallelic -- both methods should silently drop it and say so.
   H$A1[1, 1] <- 3L; H$n_alleles[1] <- 3L; H$alleles[[1]] <- c("A", "C", "T")
-  expect_message(kinship_check(H, verbose = TRUE), "excluding 1 of")
+  suppressMessages(expect_message(kinship_check(H, verbose = TRUE), "excluding 1 of"))
 })
 
 test_that("n_loci_used correctly restricts to the shared both-called locus set", {
@@ -105,11 +105,16 @@ test_that("threshold controls which pairs land in flagged_pairs", {
   expect_true(any(res_mid$flagged_pairs$sample1 == "s1" & res_mid$flagged_pairs$sample2 == "s2"))
 })
 
-test_that("outdir writes kinship_pairwise.tsv", {
+test_that("outdir writes kinship_pairwise.<method>.tsv", {
   H <- make_kinship_H()
   outdir <- tempfile("kinship-")
   suppressMessages(kinship_check(H, outdir = outdir, verbose = FALSE))
-  expect_true(file.exists(file.path(outdir, "kinship_pairwise.tsv")))
+  expect_true(file.exists(file.path(outdir, "kinship_pairwise.king.tsv")))
+  skip_if_not_installed("hierfstat")
+  suppressMessages(kinship_check(H, method = "beta", outdir = outdir, verbose = FALSE))
+  ## The beta run does not overwrite the KING run.
+  expect_true(all(file.exists(file.path(outdir, c("kinship_pairwise.king.tsv",
+                                                   "kinship_pairwise.beta.tsv")))))
 })
 
 test_that("kinship does not depend on which allele numbers a biallelic record uses", {
@@ -201,8 +206,8 @@ test_that("method = \"beta\" with popmap uses each population as its own referen
   expect_gt(within$kinship[sibs], 0.177)
   expect_equal(sum(within$kinship[same & !sibs] > 0.0442), 0)
 
-  expect_message(pooled <- kinship_check(H, method = "beta", threshold = NULL)$pairwise,
-                 "without `popmap`")
+  suppressMessages(expect_message(
+    pooled <- kinship_check(H, method = "beta", threshold = NULL)$pairwise, "without `popmap`"))
   same_pooled <- substr(pooled$sample1, 1, 1) == substr(pooled$sample2, 1, 1)
   expect_gt(mean(pooled$kinship[same_pooled] > 0.0442), 0.3)
 

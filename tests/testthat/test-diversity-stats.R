@@ -37,7 +37,7 @@ test_that("results are quiet objects: no files without outdir, tables on print()
   het <- suppressMessages(het_between_pops(vcf, pm, min_call = 0.5))
   expect_s3_class(het, "raddiv_het")
   expect_true(any(grepl("pairwise_tests", capture.output(print(het)))))
-  expect_true(any(grepl("Overdispersion check", capture.output(print(summary(het))))))
+  expect_true(any(grepl("Identity disequilibrium g2", capture.output(print(summary(het))))))
 
   dif <- suppressMessages(differentiation_stats(vcf, pm, nboot = 0))
   expect_s3_class(dif, "raddiv_differentiation")
@@ -267,17 +267,137 @@ test_that("per-site values warn when records were removed after reading", {
   H_f <- filter_call_rate(H, min_call = 1, verbose = FALSE)
   skip_if(nrow(H_f$A1) == nrow(H$A1), "fixture has no incomplete record to filter")
   expect_identical(H_f$n_records_read, nrow(H$A1))
-  expect_warning(diversity_stats(H_f, pm, g = 4, nboot = 0, sites = 1e5, verbose = FALSE),
-                 "removed after reading")
-  ## With the sumstats file, its unfiltered Variant_Sites is used, and the
-  ## mismatch with the VCF is reported.
-  expect_warning(res <- diversity_stats(H_f, pm, g = 4, nboot = 0, sites = sumstats,
-                                        verbose = FALSE),
-                 "Variant_Sites")
-  expect_equal(res$autosomal$variant_records,
-               read_sumstats_summary(sumstats)$all_positions$variant_sites)
+  w <- testthat::capture_warnings(
+    diversity_stats(H_f, pm, g = 4, nboot = 0, sites = 1e5, verbose = FALSE))
+  expect_true(any(grepl("removed after reading", w)))
+  ## With the sumstats file, only its Sites is used: the SNP count comes from
+  ## the data, so the result equals passing those Sites as numbers.
+  all_pos <- read_sumstats_summary(sumstats)$all_positions
+  res_file <- suppressWarnings(diversity_stats(H_f, pm, g = 4, nboot = 0, sites = sumstats,
+                                               verbose = FALSE))
+  res_num <- suppressWarnings(diversity_stats(H_f, pm, g = 4, nboot = 0, verbose = FALSE,
+                                              sites = stats::setNames(all_pos$sites,
+                                                                      all_pos$population)))
+  expect_equal(res_file$autosomal, res_num$autosomal)
+  expect_equal(res_file$autosomal$variant_records,
+               unname(colSums(RADdiversity:::.typed_by_pop(H_f, read_popmap(pm, verbose = FALSE)) > 0)))
   ## The unfiltered VCF with its own sumstats file: no warning.
   expect_no_warning(diversity_stats(H, pm, g = 4, nboot = 0, sites = sumstats, verbose = FALSE))
+})
+
+test_that("per-site values do not inflate after a MAC filter (Variant_Sites is not used)", {
+  ## Rare SNPs have low He. Scaling the He of the SNPs kept by the unfiltered
+  ## SNP count would treat the removed SNPs as average and inflate per-site He.
+  set.seed(3)
+  L <- 2000; n <- 10
+  ids <- paste0("i", 1:(2 * n))
+  pops <- list(A = ids[1:n], B = ids[n + 1:n])
+  p <- c(stats::runif(L / 2, 0.2, 0.8), stats::runif(L / 2, 0.01, 0.04))
+  g <- sim_genotypes(p, 2 * n)
+  colnames(g$A1) <- colnames(g$A2) <- ids
+  H <- sim_H(g$A1, g$A2)
+  H$n_records_read <- L
+  H_f <- filter_mac(H, min_mac = 3, verbose = FALSE)
+  full <- diversity_stats(H, pops, g = 4, nboot = 0, sites = 1e6, verbose = FALSE)
+  filtered <- suppressWarnings(diversity_stats(H_f, pops, g = 4, nboot = 0, sites = 1e6,
+                                               verbose = FALSE))
+  ## The filter can only remove He, never add it.
+  expect_true(all(filtered$autosomal$He_autosomal <= full$autosomal$He_autosomal))
+})
+
+test_that("per-site values warn when whole RAD loci were removed, or the VCF was thinned", {
+  snps <- fx("small.snps.vcf")
+  pm <- fx("small_popmap.tsv")
+  sumstats <- fx("sumstats_summary_small.tsv")
+  H <- read_stacks_vcf(snps, verbose = FALSE)
+  loci <- unique(H$locus_raw)
+  H_drop <- RADdiversity:::.subset_H(H, H$locus_raw != loci[1])
+  w <- testthat::capture_warnings(
+    diversity_stats(H_drop, pm, g = 4, nboot = 0, sites = sumstats, verbose = FALSE))
+  expect_true(any(grepl("whole RAD loci were removed", w)))
+  ## Removed without a filter_*() function, so the reason is not known.
+  expect_true(any(grepl("not by a filter_*() function", w, fixed = TRUE)))
+
+  ## A VCF thinned to one SNP per RAD locus BEFORE reading (as with Stacks'
+  ## --write-single-snp), paired with the unthinned Stacks summary file.
+  set.seed(8)
+  L <- 300
+  ids <- paste0("i", 1:12)
+  pops <- list(A = ids[1:6], B = ids[7:12])
+  g <- sim_genotypes(stats::runif(L, 0.2, 0.8), 12)
+  colnames(g$A1) <- colnames(g$A2) <- ids
+  H_thin <- filter_thin_one_snp(sim_H(g$A1, g$A2, records_per_locus = 3L), verbose = FALSE)
+  H_thin$n_records_read <- nrow(H_thin$A1)
+  H_thin$n_loci_read <- length(unique(H_thin$locus_raw))
+  row_all <- function(p) paste(c(p, 0, 1e5, L, L, 1, rep(0, 24)), collapse = "\t")
+  row_var <- function(p) paste(c(p, 0, rep(0, 24)), collapse = "\t")
+  trip <- paste(as.vector(rbind(c("Num_Indv", "P", "Obs_Het", "Obs_Hom", "Exp_Het", "Exp_Hom",
+                                  "Pi", "Fis"), "Var", "StdErr")), collapse = "\t")
+  f <- tempfile(fileext = ".tsv")
+  writeLines(c("# Variant positions", paste0("# Pop ID\tPrivate\t", trip), row_var("A"), row_var("B"),
+               "# All positions (variant and fixed)",
+               paste0("# Pop ID\tPrivate\tSites\tVariant_Sites\tPolymorphic_Sites\t%Polymorphic_Loci\t", trip),
+               row_all("A"), row_all("B")), f)
+  w <- testthat::capture_warnings(
+    diversity_stats(H_thin, pops, g = 4, nboot = 0, sites = f, verbose = FALSE))
+  expect_true(any(grepl("looks thinned", w)))
+})
+
+test_that("RAD loci emptied by a MAC filter give no loci warning; loci removed by call rate do", {
+  ex <- function(f) system.file("extdata", f, package = "RADdiversity")
+  pm <- ex("example_popmap.tsv")
+  sumstats <- ex("example.sumstats_summary.tsv")
+  H <- read_stacks_vcf(ex("example.snps.vcf.gz"), verbose = FALSE)
+  H_mac <- filter_mac(H, min_mac = 3, verbose = FALSE)
+  expect_gt(H_mac$filter_log$loci_removed, 0L)        # the filter did empty some loci
+  w <- testthat::capture_warnings(
+    diversity_stats(H_mac, pm, g = 10, nboot = 0, sites = sumstats, verbose = FALSE))
+  expect_true(any(grepl("records were removed after reading (by filter_mac)", w, fixed = TRUE)))
+  ## Their sites were still sequenced, so Stacks' Sites is right: no loci warning.
+  expect_false(any(grepl("whole RAD loci", w)))
+
+  H_call <- filter_call_rate(H_mac, min_call = 0.95, verbose = FALSE)
+  w <- testthat::capture_warnings(
+    res <- diversity_stats(H_call, pm, g = 10, nboot = 0, sites = sumstats, verbose = FALSE))
+  loci_warning <- grep("whole RAD loci", w, value = TRUE)
+  expect_length(loci_warning, 1L)
+  expect_true(grepl(sprintf("%d whole RAD loci were removed after reading by filter_call_rate.",
+                            H_call$filter_log$loci_removed[2]), loci_warning, fixed = TRUE))
+  ## The full report lists the filters.
+  report <- capture.output(print(summary(res)))
+  expect_true(any(grepl("2. filter_call_rate (min_call = 0.95, pooled)", report, fixed = TRUE)))
+})
+
+test_that("per-site values from data thinned in R warn to use the unthinned data", {
+  set.seed(9)
+  ids <- paste0("i", 1:12)
+  g <- sim_genotypes(stats::runif(300, 0.2, 0.8), 12)
+  colnames(g$A1) <- colnames(g$A2) <- ids
+  H <- sim_H(g$A1, g$A2, records_per_locus = 3L)
+  H$n_records_read <- nrow(H$A1)
+  H_thin <- filter_thin_one_snp(H, verbose = FALSE)
+  w <- testthat::capture_warnings(
+    diversity_stats(H_thin, list(A = ids[1:6], B = ids[7:12]), g = 4, nboot = 0, sites = 1e5,
+                    verbose = FALSE))
+  expect_true(any(grepl("compute them from the unthinned SNP data", w, fixed = TRUE)))
+})
+
+test_that("a population with no record at min_n stops, naming it", {
+  expect_error(diversity_stats(fx("small.snps.vcf"), fx("small_popmap.tsv"), g = 4, nboot = 0,
+                               min_n = 4, verbose = FALSE),
+               "population\\(s\\): popB \\(at most 3 genotyped at any record, of 3 individuals\\)")
+})
+
+test_that("`sites` on a haplotype VCF is reported as needing the SNP VCF, whatever its value", {
+  for (s in c(5, 1e6)) {
+    res <- diversity_stats(fx("small.haps.vcf"), fx("small_popmap.tsv"), g = 4, nboot = 0,
+                           sites = s, verbose = FALSE)
+    expect_null(res$autosomal)
+    printed <- capture.output(print(res))
+    expect_true(any(grepl("per-site values need the SNP VCF", printed)))
+    expect_false(any(grepl("smaller than the number of variant records", printed)))
+    expect_true(any(grepl("HAPLOTYPE VCF, so the autosomal", capture.output(print(summary(res))))))
+  }
 })
 
 test_that("fis_by_call_rate is flat without dropout and rises with it", {
@@ -384,7 +504,7 @@ test_that("het_between_pops() returns the expected structure on a small fixture"
     )
   ))
   expect_named(result, c("individual_heterozygosity", "population_summary", "omnibus",
-                         "pairwise_tests", "pairwise_F_tests", "overdispersion", "g2",
+                         "pairwise_tests", "pairwise_F_tests", "g2",
                          "missingness_confound", "settings"))
   expect_null(result$omnibus)                      # two populations: no overall test
   expect_equal(nrow(result$individual_heterozygosity), 7L)

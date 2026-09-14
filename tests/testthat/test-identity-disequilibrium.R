@@ -51,9 +51,11 @@ test_that("with complete data g2 is the closed form (n - 1) P_same / P_diff - 1"
 test_that("g2 is ~0 when individuals share one F, and > 0 when F varies among them", {
   same <- sim_F(rep(0.1, 30), 2000, seed = 3)
   varied <- sim_F(rep(c(0, 0.5), 15), 2000, seed = 4)
-  res <- identity_disequilibrium(same, list(pop = same$samples), nboot = 200, nperm = 200)
+  res <- identity_disequilibrium(same, list(pop = same$samples), nboot = 200, nperm = 200,
+                                 verbose = FALSE)
   expect_true(res$g2_lo < 0 && res$g2_hi > 0)            # CI covers 0
-  res2 <- identity_disequilibrium(varied, list(pop = varied$samples), nboot = 200, nperm = 200)
+  res2 <- identity_disequilibrium(varied, list(pop = varied$samples), nboot = 200, nperm = 200,
+                                  verbose = FALSE)
   expect_gt(res2$g2_lo, 0)
   expect_lt(res2$p_value, 0.01)
 })
@@ -61,15 +63,17 @@ test_that("g2 is ~0 when individuals share one F, and > 0 when F varies among th
 test_that("identity_disequilibrium() and individual_inbreeding() accept a VCF and a popmap path", {
   vcf <- system.file("extdata", "small.haps.vcf", package = "RADdiversity")
   pm  <- system.file("extdata", "small_popmap.tsv", package = "RADdiversity")
-  expect_equal(nrow(identity_disequilibrium(vcf, pm, nboot = 10, nperm = 10, min_call = 0.5)), 2L)
-  expect_equal(nrow(individual_inbreeding(vcf, pm, min_call = 0.5)), 7L)
+  expect_equal(nrow(identity_disequilibrium(vcf, pm, nboot = 10, nperm = 10, min_call = 0.5,
+                                            verbose = FALSE)), 2L)
+  expect_equal(nrow(individual_inbreeding(vcf, pm, min_call = 0.5, verbose = FALSE)), 7L)
 })
 
 test_that("identity_disequilibrium() with a seed restores the caller's RNG state", {
   H <- sim_F(rep(0.1, 8), 100, seed = 5)
   set.seed(9)
   before <- .Random.seed
-  identity_disequilibrium(H, list(pop = H$samples), nboot = 20, nperm = 20, seed = 1)
+  identity_disequilibrium(H, list(pop = H$samples), nboot = 20, nperm = 20, seed = 1,
+                          verbose = FALSE)
   expect_identical(.Random.seed, before)
 })
 
@@ -79,4 +83,18 @@ test_that("with complete data g2 agrees with inbreedR::g2_snps()", {
   geno <- t((H$A1 != H$A2) * 1)                   # individuals x loci, 1 = heterozygous
   ref <- inbreedR::g2_snps(geno, nperm = 0, nboot = 0, verbose = FALSE)$g2
   expect_equal(RADdiversity:::.g2_summary(H$A1, H$A2, 0, 0)$g2, ref, tolerance = 1e-8)
+})
+
+test_that("identity_disequilibrium() stops for a population it cannot analyze", {
+  H <- sim_F(rep(0, 6), 60, seed = 2)
+  expect_error(identity_disequilibrium(H, list(a = H$samples[1:5], lone = H$samples[6]),
+                                       nboot = 0, nperm = 0, verbose = FALSE),
+               "fewer than 2 individuals: lone")
+  H$A1[, 1:3] <- NA
+  H$A2[, 1:3] <- NA
+  expect_error(identity_disequilibrium(H, list(a = H$samples[1:3], b = H$samples[4:6]),
+                                       nboot = 0, nperm = 0, verbose = FALSE),
+               "individuals of population\\(s\\): a \\(highest call rate 0%\\)")
+  expect_error(identity_disequilibrium(H, "no_such_popmap.tsv", verbose = FALSE),
+               "Popmap file not found")
 })

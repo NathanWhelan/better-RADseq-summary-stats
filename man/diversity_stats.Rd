@@ -46,37 +46,57 @@ default), \code{"individuals"} (within each population, as diveRsity does) or
 \code{"both"} are for comparison only: in a coverage simulation their
 intervals badly missed the true He and FIS (\code{vignette("rationale")},
 "Why not bootstrap individuals?"). For uncertainty over individuals use
-\code{se_individuals = TRUE} instead.}
+\code{se_individuals = TRUE} instead (see "How standard errors are
+calculated" below).}
 
-\item{sites}{Total sequenced sites, to convert Ho and He to per-site values
-(\code{Ho_autosomal}, \code{He_autosomal}; SNP VCF only). Default \code{NULL}: no
-conversion. One of:
+\item{sites}{Number of sequenced sites, to turn Ho and He into per-site
+values (\code{Ho_autosomal}, \code{He_autosomal}; SNP VCF only). Default \code{NULL}: no
+per-site values. Give one of:
 \itemize{
+\item the path to Stacks' \code{populations.sumstats_summary.tsv}: each
+population's own \code{Sites} (from the "All positions (variant and fixed)"
+block) is read with \code{\link[=read_sumstats_summary]{read_sumstats_summary()}};
 \item one number, used for every population;
-\item a named numeric vector, one value per population (names must match
-the popmap's populations);
-\item a data frame with a \code{population} (or \code{pop}) column and a \code{sites}
-column;
-\item the path to Stacks' \code{populations.sumstats_summary.tsv}, from which each
-population's own \code{Sites} ("All positions (variant and fixed)" block) is
-read with \code{\link[=read_sumstats_summary]{read_sumstats_summary()}}.
+\item a named numeric vector, one value per population (names as in the
+popmap);
+\item a data frame with a \code{population} (or \code{pop}) column and a \code{sites} column.
 }
 
-A population's own value matters because Stacks counts a site for a
-population only where that population has a genotyped individual. For
-the same reason, each population's He is multiplied by its own number of
-variant records: \code{Variant_Sites} from the same file when \code{sites} is that
-file, otherwise the records of this VCF where the population has a
-genotyped individual (column \code{variant_records} of the result).
+\strong{How per-site values are calculated.} For each population, He summed
+over the SNP records in the data, divided by \code{sites}. (In practice: the
+mean He over the records the population uses, times the number of records
+where it has at least one genotyped individual, shown as
+\code{variant_records}.) Fixed sites add nothing to the sum but count in
+\code{sites}. Ho is done the same way.
 
-Per-site values assume the variant records are all the variant sites
-inside \code{sites}. Records removed in R with a \verb{filter_*()} function are
-still counted in \code{sites}: pass the \code{populations.sumstats_summary.tsv}
-path (whose \code{Variant_Sites} is unfiltered) and a warning is given.
-Allele-frequency filters (\code{\link[=filter_maf]{filter_maf()}}, \code{\link[=filter_mac]{filter_mac()}}, Stacks'
-\code{--min-mac}/\code{--min-maf}) remove rare variants, which lowers per-site
-values by an amount that grows as samples get smaller; report the
-threshold used (see \code{vignette("rationale")}, section 1).}
+\strong{What \code{sites} must count.} Every sequenced site, variant or fixed, of
+the RAD loci in the data, counting a site for a population only where at
+least one of its individuals is genotyped there. This is how Stacks
+counts \code{Sites}. Use the same popmap that was given to Stacks.
+
+\strong{When Stacks' \code{Sites} is right.} Only for the data exactly as Stacks'
+\code{populations} wrote them. Filtering afterwards (in R or with another
+program) changes things:
+\itemize{
+\item SNPs removed, for example by \code{\link[=filter_mac]{filter_mac()}}: their He drops out of the
+sum, so per-site values go down. For MAC and MAF filters this is real
+rare-variant diversity being lost, as with Stacks' own \code{--min-mac};
+report the threshold (\code{vignette("rationale")}, section 1). A RAD locus
+whose every SNP was removed this way was still sequenced, so its sites
+stay in \code{sites}.
+\item Whole RAD loci removed as unreliable (low call rate, paralogs): their
+sites should leave \code{sites} too, but Stacks' \code{Sites} still counts them,
+so per-site values come out too low. Give \code{sites} for the loci you kept,
+or use \code{\link[=pi_allsites]{pi_allsites()}} on an all-sites VCF.
+\item A VCF thinned to one SNP per RAD locus (Stacks' \code{--write-single-snp},
+\code{\link[=filter_thin_one_snp]{filter_thin_one_snp()}}) no longer holds all the SNPs. Compute per-site
+values from the unthinned SNP VCF.
+}
+
+A warning is given when records or whole loci were removed after reading
+(the \verb{filter_*()} functions record which filter removed them, so loci
+emptied by \code{\link[=filter_maf]{filter_maf()}} or \code{\link[=filter_mac]{filter_mac()}} give no loci warning), or when
+the VCF's SNP count does not match \code{Variant_Sites} in the Stacks file.}
 
 \item{min_n}{Minimum genotyped individuals a population needs at a record
 to use that record. Default \code{2}, the smallest number for which He and
@@ -86,21 +106,14 @@ FIS are defined. Ignored when \code{complete_case = TRUE}.}
 population is genotyped there (Schmidt et al. 2021, recommendation (b)).
 Default \code{FALSE}.}
 
-\item{se_individuals}{Also report delete-one-INDIVIDUAL jackknife standard
-errors (\code{Ho_se_ind}, \code{He_se_ind}, \code{Fis_se_ind}, \code{Ar_se_ind},
-\code{privAr_se_ind}): the uncertainty from which individuals were sampled,
-which the locus-based \verb{_se}, \verb{_lo} and \verb{_hi} leave out. Report these when
-individuals differ in inbreeding or include relatives (check with
-\code{\link[=identity_disequilibrium]{identity_disequilibrium()}}: g2 > 0). The Ar/privAr ones need
-\code{g <= 2 * (n - 1)} for every population and are \code{NA} otherwise. Two
-caveats for those two, from simulation (\code{vignette("rationale")}, section
-4): \code{privAr_se_ind} deletes only that population's individuals and holds
-the other populations' fixed, although private richness depends on them
-too, so it runs too small (by up to about 20\%); and when many records
-have fewer than \code{g + 2} gene copies (missing data with \code{g} close to
-\code{2 * (n - 1)}), deleting one individual drops them from some jackknife
-replicates, and both come out too large (up to about twice the true
-value); a warning then suggests a smaller \code{g} for them. Default \code{FALSE}.}
+\item{se_individuals}{Also compute the uncertainty from which individuals
+were sampled, and add three columns each for Ho, He and FIS: \verb{_se_ind}
+(a jackknife over individuals) and \verb{_se_combined} (locus and individual
+uncertainty together). \strong{Report \verb{_se_combined} for Ho, He and FIS.} Ar and
+privAr keep their locus-based \verb{_se}, \verb{_lo} and \verb{_hi}, which already cover
+both sources. See "How standard errors are calculated" below. Default
+\code{FALSE}, because the jackknife over individuals takes longer on large
+datasets.}
 
 \item{hierfstat_check}{If \code{TRUE} and the \code{hierfstat} package is installed,
 also compute per-record Ho/Hs with \code{hierfstat::basic.stats()} and
@@ -135,8 +148,9 @@ your session's random-number stream as it was.}
 An object of class \code{raddiv_diversity}, a list of:
 \describe{
 \item{per_population}{Ho, He, FIS and \% polymorphic records per
-population, each with its jackknife SE (\verb{_se}) and 95\% bootstrap
-interval (\verb{_lo}, \verb{_hi}).}
+population, each with its locus jackknife SE (\verb{_se}) and 95\% locus
+bootstrap interval (\verb{_lo}, \verb{_hi}). With \code{se_individuals = TRUE}, also
+\verb{_se_ind} and \verb{_se_combined} for Ho, He and FIS.}
 \item{richness}{Ar, privAr and priv_total per population, with the
 number of records each rests on (\code{Ar_n}, \code{privAr_n}).}
 \item{autosomal}{Per-sequenced-site Ho/He, with the \code{sites_used} and
@@ -171,8 +185,12 @@ on interpretation; \code{outdir} also writes the tables to TSV files.
 \details{
 Run it twice: \code{populations.snps.vcf} gives Ho, He, \code{pct_poly} and the
 per-sequenced-site values; \code{populations.haps.vcf} gives FIS, Ar and
-privAr. The printed result says which numbers to take from each file. See
-\code{vignette("rationale")}, section 3.
+privAr. Haplotype Ar and privAr depend on how many SNPs each RAD locus
+holds, which changes with read length, enzyme and SNP calling. Compare them
+only among populations analyzed together (the same run, filters and \code{g}):
+which population is richer is reliable, but the size of the difference
+also depends on SNPs per locus. The printed result says which numbers to
+take from each file. See \code{vignette("rationale")}, section 3.
 
 The SNP-VCF side was designed for biallelic SNPs, as Stacks writes them.
 A VCF whose alleles are all single bases is treated as one site per record
@@ -180,6 +198,56 @@ even if a few SNPs are multi-allelic (as GATK or freebayes can emit), and
 those sites are counted correctly; a VCF with any multi-base allele is
 treated as haplotype data (see "Assumptions" in \code{\link[=read_stacks_vcf]{read_stacks_vcf()}}).
 }
+\section{How standard errors are calculated}{
+
+A standard error (SE) says how much a number would change if the study were
+repeated; the estimate plus or minus 1.96 SE is a 95\% confidence interval.
+A population's He (or Ho, FIS, Ar) is uncertain for two reasons:
+\itemize{
+\item you typed \strong{some of the RAD loci} in the genome, and other loci would
+give a slightly different value;
+\item you caught \strong{some of the individuals} in the population, and other
+individuals would give a slightly different value.
+}
+
+The columns measure these as follows:
+\itemize{
+\item \verb{_se}: a jackknife over RAD loci. Each RAD locus is left out in turn and
+the statistic recomputed; how much those values spread gives the SE. It
+holds the individuals fixed.
+\item \verb{_lo}, \verb{_hi}: a bootstrap over RAD loci. Loci are drawn at random, with
+replacement, thousands of times; the middle 95\% of the results is the
+interval. It also holds the individuals fixed.
+\item \verb{_se_ind} (with \code{se_individuals = TRUE}): a jackknife over individuals.
+Each individual is left out in turn. It holds the loci fixed.
+\item \verb{_se_combined}: both sources together, \verb{sqrt(_se^2 + _se_ind^2)}.
+}
+
+Whole RAD loci, not single SNPs, are resampled, because SNPs on one RAD
+locus are inherited together.
+
+\strong{Which to report.} For \strong{Ho, He and FIS}, report \verb{_se_combined}. For
+\strong{Ar and privAr}, report \verb{_se} (or \verb{_lo}, \verb{_hi}). This rule comes from
+simulated populations with a known true value, where each simulated study
+was repeated 300 times with new loci and new individuals, and we counted how
+often the 95\% interval contained the truth (it should be about 95\%). With
+the locus SE alone, Ho and FIS intervals contained the truth only 30-65\% of
+the time in most settings once individuals differed in inbreeding: an inbred individual is
+homozygous at many loci at once, so loci are not independent. With the
+individual SE alone, He intervals contained it 47-86\% of the time, because
+He depends mostly on which loci were typed. The combined SE contained it
+90-99\% of the time for all three, often a little more than 95\% because some
+noise is counted in both SEs. For Ar and privAr the locus SE alone did well
+(88-96\%). A bootstrap over individuals is not offered for reporting:
+drawing an individual twice makes the sample look less diverse than it is,
+and its He intervals contained the truth under 10\% of the time. Details are
+in \code{vignette("rationale")}, section 4, and \code{inst/sims/uncertainty_sources.R}.
+
+\strong{What no SE covers.} Relatives in the sample (they bias the estimates
+themselves; screen with \code{\link[=kinship_check]{kinship_check()}}), filtering choices and allele
+dropout, and linkage between separate RAD loci.
+}
+
 \examples{
 # A toy dataset shipped with the package: 80 RAD loci, 2 populations of 4
 # and 3 individuals (real studies need far more individuals).
@@ -235,6 +303,17 @@ population heterozygosity estimates from genome-wide sequence data.
 
 Weir, B.S. (1996) \emph{Genetic Data Analysis II}. Sinauer, Sunderland, MA.
 (Delete-one jackknife over loci.)
+
+Nei, M. & Roychoudhury, A.K. (1974) Sampling variances of heterozygosity
+and genetic distance. \emph{Genetics} 76:379-390. (Loci and individuals as two
+sources of uncertainty.)
+
+Shao, J. & Wu, C.F.J. (1989) A general theory for jackknife variance
+estimation. \emph{Annals of Statistics} 17:1176-1197.
+\doi{10.1214/aos/1176347263}
+
+Owen, A.B. (2007) The pigeonhole bootstrap. \emph{Annals of Applied Statistics}
+1:386-411. \doi{10.1214/07-AOAS122}
 
 Owen, A.B. & Eckles, D. (2012) Bootstrapping data arrays of arbitrary
 order. \emph{Annals of Applied Statistics} 6:895-927. (\code{boot = "both"}.)

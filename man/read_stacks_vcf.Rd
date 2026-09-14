@@ -57,8 +57,12 @@ sequences per record), \code{n_alleles}, \code{samples}, \code{fields} (the VCF'
 fixed columns, CHROM ... FORMAT), \code{depth} (read depth of each call, from
 DP or the sum of AD; \code{NULL} if the VCF has neither), \code{ad_ref} and \code{ad_alt}
 (reads supporting REF and the call's ALT allele(s), from AD; \code{NULL} if
-the VCF has no AD) and \code{n_records_read} (records in the file, unchanged
-by the \verb{filter_*()} functions). Printing it shows a short summary.
+the VCF has no AD), \code{n_records_read} and \code{n_loci_read} (records and RAD
+loci in the file, unchanged by the \verb{filter_*()} functions), and
+\code{filter_log} (a data frame with one row per \verb{filter_*()} call made on the
+object: \code{filter}, \code{setting}, \code{records_removed}, \code{loci_removed},
+\code{calls_masked}, \code{samples_removed}; no rows straight after reading).
+Printing it shows a short summary, including the filters applied.
 
 \strong{Memory.} The genotype text is not kept, only integer matrices: about
 20 bytes per genotype call with depths, or 8 without. For example,
@@ -92,6 +96,11 @@ taken to be one site. A record with multi-base alleles (an indel or MNP)
 therefore makes a SNP VCF look like a haplotype VCF, which switches off
 the per-site conversion in \code{\link[=diversity_stats]{diversity_stats()}}. Remove indels and MNPs
 from a SNP VCF first.
+\item Symbolic ALT alleles (\code{*} for a spanning deletion, or \verb{<*>}, \verb{<NON_REF>},
+\verb{<DEL>}, as GATK and bcftools can write) are not DNA sequences. They do
+not make a file count as haplotype data, but a genotype that uses one is
+still read as an allele. The summary message counts such records; remove
+them first (for example with bcftools view).
 \item With \code{locus_from = "auto"}, a VCF whose ID column is unique per SNP
 (e.g. \code{rs} numbers) makes every SNP its own locus, so linked SNPs are
 resampled as if independent. The message says how many records share each

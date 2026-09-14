@@ -19,6 +19,7 @@ COGE
 Castella
 Catchen
 Catchen's
+Cerca
 Cezard
 Chesser
 Chesser's
@@ -91,6 +92,7 @@ MNP
 Malinsky
 Mammen
 Manichaikul
+Maurstad
 McCullagh
 McGinnity
 McMaster
@@ -105,6 +107,7 @@ PLINK
 PLINK's
 PLoS
 PNAS
+POS
 Pearman
 Petit
 Phipson
@@ -126,6 +129,7 @@ STRUCTURE's
 Samuk
 Sankararaman
 Seeb
+Shao
 Sinauer
 Smyth
 Springer
@@ -153,9 +157,10 @@ Wigginton
 al
 allozyme
 argan
-artefact
 auditable
+bcftools
 biallelic
+bioinformatic
 bottlenecked
 bp
 combinatorial
@@ -204,12 +209,14 @@ nonconcept
 novo
 nucleotides
 numberOfPopulations
+outgroup
 paralog
 pixy
 polymorphisms
 polyploid
 popmap
 popmap's
+pre
 priv
 privA
 privAr
@@ -223,6 +230,8 @@ underpowered
 uninterpretable
 unlinked
 unrarefied
+unthinned
+untyped
 xy
 Σ
 ΣH

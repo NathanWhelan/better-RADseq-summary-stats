@@ -25,10 +25,10 @@ Every analysis function uses only the popmap's individuals, but the
 \verb{filter_*()} functions and \code{\link[=locus_allele_stats]{locus_allele_stats()}} work on EVERY sample in
 \code{H}, and the \verb{write_*()} functions write every sample. A sample left out
 of the popmap on purpose -- an outgroup, a failed library, a replicate --
-still counts towards minor allele frequencies, call rates and
+still counts toward minor allele frequencies, call rates and
 heterozygosity there, and still appears in exported files. Run
 \code{filter_samples()} first to filter, and export, only the individuals you
-analyse.
+analyze.
 
 Removing samples can leave records with no genotyped individual, or with
 only one allele among the remaining individuals; the message counts them.

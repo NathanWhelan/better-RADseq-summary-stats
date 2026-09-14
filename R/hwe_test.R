@@ -434,6 +434,7 @@ hwe_test <- function(vcf, popmap = NULL, method = "exact", n_draws = 10000L,
                                   .show_value(stop_after), ").", call. = FALSE))
   .check_seed(seed)
   .check_flag(verbose, "verbose")
+  .check_run_inputs(vcf, popmap, stem = NULL, outdir = NULL)
   H <- .resolve_H(vcf, verbose = verbose)
   groups <- if (is.null(popmap)) stats::setNames(list(H$samples), "pooled")
             else .resolve_pops(popmap, H$samples, verbose = verbose)

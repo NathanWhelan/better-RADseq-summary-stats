@@ -35,6 +35,10 @@ population, in the "All positions" block) -- can be read by name and
 handed to \code{\link[=diversity_stats]{diversity_stats()}}'s \code{sites} argument instead of retyped by
 hand. \code{sites} differs slightly per population for the same reason a locus
 can be missing from one population and not another.
+
+\code{Sites} fits the data exactly as Stacks' \code{populations} wrote them. If whole
+RAD loci are removed afterwards, their sequenced sites are still in \code{Sites};
+see \code{sites} in \code{\link[=diversity_stats]{diversity_stats()}} for what to do then.
 }
 \examples{
 triple_hdr <- paste(

@@ -72,32 +72,38 @@
 #  the run happened to call, so it is not comparable to any other study.
 #
 #  Schmidt et al. (2021) show that SNP-based heterozygosity is biased by sample
-#  size and by analysing differentiated populations together, and that the
+#  size and by analyzing differentiated populations together, and that the
 #  unbiased quantity is AUTOSOMAL heterozygosity: the same sum divided by every
 #  sequenced site, monomorphic ones included. Retaining sites that are
 #  monomorphic WITHIN a population but variable in another is a step toward
 #  that, not the thing itself.
 #
-#  The conversion is one multiplication, so there is no excuse for not
-#  reporting it. For each population separately:
+#  The conversion is one multiplication. For each population separately:
 #
 #       He_autosomal = He_per_SNP * (n_variant_records / n_sites_sequenced)
 #
-#  `n_sites_sequenced` is the population's `Sites` in the "All positions
-#  (variant and fixed)" block of populations.sumstats_summary.tsv. Stacks
-#  counts a site there only if that population has at least one genotyped
-#  individual at it (SumStatsSummary::accumulate(), Stacks 2.68).
+#  He_per_SNP * n_variant_records rebuilds He summed over the population's
+#  SNPs, and dividing by n_sites_sequenced spreads it over every sequenced
+#  site (fixed sites add 0 to the sum).
 #
-#  n_variant_records must be counted the same way: the variant sites where
-#  THAT population has at least one genotyped individual -- Stacks'
-#  `Variant_Sites` in the same block. It is not every record in the VCF: with
-#  3 or more populations and `-p` below their number, Stacks blanks a
-#  population at the sites where it fails `-r` and keeps the site for the
-#  others, and those records are not in that population's `Sites`. It is
-#  also not just the records that passed diversity_stats()'s min_n rule: the
-#  mean over the used records estimates the mean over all of them, and
-#  scaling by the smaller used count would understate pi by exactly the
-#  retention fraction. diversity_stats() computes both counts per population
+#  n_sites_sequenced: every sequenced site, variant or fixed, of the RAD loci
+#  in the data, counting a site for a population only where it has at least
+#  one genotyped individual. For data exactly as Stacks wrote them this is
+#  the population's `Sites` in the "All positions (variant and fixed)" block
+#  of populations.sumstats_summary.tsv (SumStatsSummary::accumulate(), Stacks
+#  2.68). If whole loci are removed afterwards, their sites must leave this
+#  count too, and Stacks' `Sites` no longer fits.
+#
+#  n_variant_records: the SNP records IN THE DATA where that population has
+#  at least one genotyped individual. Not every record in the VCF: with 3 or
+#  more populations and `-p` below their number, Stacks blanks a population
+#  at the sites where it fails `-r`, and those sites are not in its `Sites`.
+#  Not just the records that passed diversity_stats()'s min_n rule either:
+#  the mean over the used records stands in for the mean over all of them.
+#  And not Stacks' `Variant_Sites`: that also counts SNPs removed after Stacks,
+#  and multiplying by it would treat each removed SNP as having the average He
+#  of the kept ones -- far too high after a MAC or MAF filter, which removes
+#  low-He SNPs. diversity_stats() counts it per population
 #  (.autosomal_counts() in R/diversity_stats.R).
 #
 #  Stacks reports both blocks; the "All positions" one is the
@@ -199,15 +205,15 @@
 #' @param he Per-locus (or per-site) expected heterozygosity, same loci as
 #'   `ho`.
 #' @param het_per_snp Heterozygosity per variant record.
-#' @param n_snps_used Number of variant (SNP) sites at which the population
-#'   has at least one genotyped individual -- Stacks' `Variant_Sites` in the
-#'   "All positions (variant and fixed)" block -- not only those retained for
-#'   estimating `het_per_snp` (the mean over the retained records estimates
-#'   the mean over all). One value, or one per element of `het_per_snp`.
-#' @param n_sites_sequenced Sequenced sites, variant and fixed, at which the
-#'   population has at least one genotyped individual: the `Sites` column of
-#'   the same block of `populations.sumstats_summary.tsv`. One value, or one
-#'   per element of `het_per_snp`.
+#' @param n_snps_used Number of SNP records in the data at which the
+#'   population has at least one genotyped individual (not only those used to
+#'   estimate `het_per_snp`). One value, or one per element of `het_per_snp`.
+#' @param n_sites_sequenced Sequenced sites, variant and fixed, of the RAD loci
+#'   in the data, counting a site only where the population has at least one
+#'   genotyped individual. For unfiltered Stacks output this is `Sites` in the
+#'   "All positions (variant and fixed)" block of
+#'   `populations.sumstats_summary.tsv`; see `sites` in [diversity_stats()]
+#'   for filtered data. One value, or one per element of `het_per_snp`.
 #' @param g Rarefaction size in gene copies.
 #' @param count_mat Matrix of gene-copy counts, populations (rows) x alleles.
 #' @param j Row (population) of `count_mat` to compute private richness for.

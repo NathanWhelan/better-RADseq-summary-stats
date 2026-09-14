@@ -325,7 +325,10 @@
 #'   get kinship `NA`: too little data to report a number. Default `30`.
 #' @param low_confidence_loci Pairs with fewer shared loci than this are
 #'   marked `low_confidence = TRUE`. Default `200`.
-#' @param outdir If given, write `kinship_pairwise.tsv` there. Default `NULL`.
+#' @param outdir If given, write the `pairwise` table there as
+#'   `kinship_pairwise.<method>.tsv` (`kinship_pairwise.king.tsv` or
+#'   `kinship_pairwise.beta.tsv`, so runs with the two methods do not overwrite
+#'   each other). Default `NULL`.
 #' @param verbose Print progress and a summary. Default `TRUE`.
 #' @return A list:
 #'   \describe{
@@ -423,7 +426,7 @@ kinship_check <- function(vcf, popmap = NULL, method = "king", threshold = 0.044
 
   if (!is.null(outdir)) {
     written <- .write_tables(list(pairwise = .round_table(pairwise)), outdir,
-                             c(pairwise = "kinship_pairwise.tsv"))
+                             c(pairwise = sprintf("kinship_pairwise.%s.tsv", method)))
     .inform(verbose, "  Wrote ", written)
   }
   list(pairwise = pairwise, flagged_pairs = flagged_pairs)

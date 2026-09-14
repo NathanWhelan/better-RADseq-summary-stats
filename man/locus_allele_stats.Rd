@@ -40,7 +40,7 @@ allele except the most common one.
 
 \strong{Which samples.} This uses every sample in \code{H}, including any that are
 not in your popmap (an outgroup, say). Run \code{\link[=filter_samples]{filter_samples()}} first to base
-it on the individuals you analyse.
+it on the individuals you analyze.
 }
 \examples{
 H <- read_stacks_vcf(system.file("extdata", "small.snps.vcf",

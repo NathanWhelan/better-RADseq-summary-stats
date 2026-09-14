@@ -18,8 +18,8 @@
 #  WHAT TO READ IN THE REPORT, IN ORDER
 #    1. the missingness confound check -- if call rate correlates with
 #       heterozygosity, the test measures library quality, not biology
-#    2. the overdispersion factor -- how badly a locus bootstrap would have
-#       misled on THESE data
+#    2. g2 -- whether individuals differ in inbreeding, which is why loci are
+#       the wrong replicate for this comparison
 #    3. the tests themselves: Welch's t, with Wilcoxon as a distribution-free
 #       check
 #
@@ -33,7 +33,6 @@
 #    .population_locus_sets() which loci each population uses (R/vcf_io.R)
 #    .population_summary()    per-population mean heterozygosity and F
 #    .missingness_confound()  does call rate track heterozygosity?
-#    .overdispersion()        excess variance among individuals
 #    .g2_by_population()      identity disequilibrium
 #    .pairwise_tests()        Welch / Wilcoxon / Hedges' g per pair
 #  Checked by tests/testthat/test-diversity-stats.R, test-regression.R
@@ -46,9 +45,9 @@
 #'
 #' Uses the INDIVIDUAL, not the locus, as the unit of replication (Welch's t,
 #' with Wilcoxon as a distribution-free check), and adds a missingness-confound
-#' check, an overdispersion check showing how badly a locus bootstrap would
-#' have misled on this dataset, and identity disequilibrium (g2) per
-#' population. Printing the result shows the main tables; `summary()` shows the
+#' check and identity disequilibrium (g2) per population, which shows whether
+#' individuals differ in inbreeding (the reason a locus-based comparison would
+#' mislead). Printing the result shows the main tables; `summary()` shows the
 #' full report; `outdir` also writes the tables to TSV files.
 #'
 #' @details
@@ -86,7 +85,7 @@
 #' missing data usually comes with allele dropout, which biases its
 #' heterozygosity low and its F high; and it lowers its population's call
 #' rate, so fewer loci clear `min_call`. Remove it from the popmap (or with
-#' [filter_samples()]) if it was not meant to be analysed.
+#' [filter_samples()]) if it was not meant to be analyzed.
 #'
 #' @inheritParams diversity_stats
 #' @param vcf Path to a Stacks VCF (`populations.snps.vcf` or
@@ -125,9 +124,6 @@
 #'       means, difference with Welch 95% CI, Welch and Wilcoxon p-values
 #'       (with Benjamini-Hochberg adjusted versions), Hedges' g.}
 #'     \item{pairwise_F_tests}{The same tests on `F`.}
-#'     \item{overdispersion}{Observed vs binomial SD of individual
-#'       heterozygosity per population, their variance ratio, and roughly how
-#'       much a locus bootstrap would understate the SE.}
 #'     \item{g2}{Identity disequilibrium per population, with bootstrap CI.}
 #'     \item{missingness_confound}{Correlation between an individual's call
 #'       rate and its heterozygosity, overall (`overall`) and within each
@@ -178,7 +174,7 @@
 #' res <- het_between_pops(vcf, popmap, min_call = 0.5)
 #' res                       # the main tables
 #' res$individual_heterozygosity
-#' summary(res)              # the full report, with the confound and overdispersion checks
+#' summary(res)              # the full report, with the confound check and g2 explained
 #' @export
 het_between_pops <- function(vcf, popmap, min_call = 0.9, min_loci = 50L, nboot_g2 = 1000L,
                              outdir = NULL, stem = NULL, seed = NULL, verbose = TRUE) {
@@ -201,11 +197,7 @@ het_between_pops <- function(vcf, popmap, min_call = 0.9, min_loci = 50L, nboot_
   H <- .resolve_H(vcf, verbose = verbose)
   pops <- .resolve_pops(popmap, H$samples, verbose = verbose)
   if (length(pops) < 2) stop("Need at least 2 populations.", call. = FALSE)
-  tiny <- names(pops)[lengths(pops) < 2]
-  if (length(tiny))
-    stop("Population(s) with fewer than 2 individuals: ", paste(tiny, collapse = ", "),
-         "\n  A test between populations needs at least 2 individuals in each. Drop these ",
-         "populations from the popmap or merge them.", call. = FALSE)
+  .stop_tiny_pops(pops, "A test between populations needs at least 2 individuals in each.")
 
   ## ---- 3. Individuals: failed-library check, pooled loci --------------------
   ## Every individual in the popmap is kept; one that looks like a failed
@@ -222,7 +214,6 @@ het_between_pops <- function(vcf, popmap, min_call = 0.9, min_loci = 50L, nboot_
 
   confound <- .missingness_confound(individuals$call_rate, individuals$het,
                                     table_ind$population, names(pops))
-  overdispersion <- .overdispersion(H, pops, locus_sets, per_pop$het_by_pop)
   g2 <- .g2_by_population(H, pops, locus_sets, nboot_g2)
 
   ## ---- 5. Tests: overall (3+ populations), then pairwise --------------------
@@ -254,7 +245,6 @@ het_between_pops <- function(vcf, popmap, min_call = 0.9, min_loci = 50L, nboot_
                  omnibus = omnibus,
                  pairwise_tests = tests$heterozygosity,
                  pairwise_F_tests = tests$F,
-                 overdispersion = overdispersion,
                  g2 = g2,
                  missingness_confound = confound,
                  settings = settings),
@@ -311,7 +301,7 @@ het_between_pops <- function(vcf, popmap, min_call = 0.9, min_loci = 50L, nboot_
             "is noisy, yet it counts as a full individual in population means and tests; (2) heavy ",
             "missing data usually comes with allele dropout, which biases its heterozygosity low ",
             "and its F high; (3) it lowers its population's call rate at every record, so fewer ",
-            "loci clear min_call.\n  If they were not meant to be analysed, remove them from the ",
+            "loci clear min_call.\n  If they were not meant to be analyzed, remove them from the ",
             "popmap (or with filter_samples()) and re-run.", call. = FALSE)
   }
   invisible(failed$sample)
@@ -432,46 +422,6 @@ het_between_pops <- function(vcf, popmap, min_call = 0.9, min_loci = 50L, nboot_
   overall <- data.frame(r = unname(test$estimate), p_value = test$p.value, n = length(het),
                         call_rate_gap = diff(range(tapply(call_rate, pop_of_individual, mean))))
   list(no_variation = FALSE, too_few = FALSE, overall = overall, within = within)
-}
-
-## Not exported. IS THE LOCUS BOOTSTRAP INVALID FOR *THIS* DATASET? That
-## depends on whether individuals vary in heterozygosity by MORE than
-## coin-flip (binomial) noise. If every individual had the same true
-## heterozygosity, individual j's heterozygosity would be a mean of L
-## Bernoulli draws, with variance sum_l h_l(1 - h_l) / L^2 (h_l = the locus's
-## heterozygote frequency in the population). The ratio of the observed
-## variance to that expectation is the overdispersion factor: 1 means no
-## excess variation, and a locus bootstrap understates the standard error of a
-## population mean by roughly sqrt(overdispersion).
-##
-## h_l is estimated from the same n_l individuals typed at the locus, and the
-## plug-in h_l(1 - h_l) is then too small by a factor (n_l - 1)/n_l, which
-## would make the ratio read about n/(n - 1) with no excess variation at all
-## (1.21 at n = 5, 1.07 at n = 10 in simulation). Multiplying each locus's
-## term by n_l/(n_l - 1) removes that; loci typed in fewer than 2 individuals
-## are left out, and so are individuals with no heterozygosity (not called at
-## any of these loci).
-.overdispersion <- function(H, pops, locus_sets, het_by_pop) {
-  do.call(rbind, lapply(names(pops), function(p) {
-    loci <- locus_sets[, p]
-    a1 <- H$A1[loci, pops[[p]], drop = FALSE]
-    a2 <- H$A2[loci, pops[[p]], drop = FALSE]
-    n_typed <- rowSums(!is.na(a1))
-    locus_het <- rowSums(a1 != a2, na.rm = TRUE) / n_typed
-    keep <- n_typed >= 2
-    n_typed <- n_typed[keep]
-    locus_het <- locus_het[keep]
-    expected_var <- if (length(locus_het))
-      sum(locus_het * (1 - locus_het) * n_typed / (n_typed - 1)) / length(locus_het)^2
-    else NA_real_
-    h <- het_by_pop[[p]][!is.na(het_by_pop[[p]])]
-    observed_var <- if (length(h) >= 2L) stats::var(h) else NA_real_
-    ## Monomorphic at every locus: 0/0, which is "undefined", not "no excess".
-    ratio <- if (isTRUE(expected_var > 0)) observed_var / expected_var else NA_real_
-    data.frame(population = p, n = length(h),
-               obs_sd = sqrt(observed_var), binomial_sd = sqrt(expected_var),
-               overdispersion = ratio, se_understated_by = sqrt(ratio))
-  }))
 }
 
 ## Not exported. Identity disequilibrium g2 in each population, on its own
@@ -685,8 +635,6 @@ het_between_pops <- function(vcf, popmap, min_call = 0.9, min_loci = 50L, nboot_
   omnibus = list(digits = 3, signif_cols = c(p_welch = 3, p_kruskal = 3)),
   pairwise_tests = list(digits = 4, round_cols = c(hedges_g = 2),
                         signif_cols = c(p_welch = 3, p_wilcox = 3, p_welch_BH = 3, p_wilcox_BH = 3)),
-  overdispersion = list(digits = 4, round_cols = c(obs_sd = 5, binomial_sd = 5,
-                                                   overdispersion = 1, se_understated_by = 1)),
   g2 = list(digits = 4)
 )
 
@@ -732,8 +680,8 @@ print.raddiv_het <- function(x, ...) {
   .show_pairwise(x$pairwise_F_tests, 10, "x$pairwise_F_tests")
   cat("\n")
   for (w in .het_warnings(x)) cat("NOTE:", w, "\n")
-  cat("Also in the result: $individual_heterozygosity, $overdispersion, $g2, $missingness_confound\n")
-  cat("summary() prints the full report, with the confound and overdispersion checks explained.\n")
+  cat("Also in the result: $individual_heterozygosity, $g2, $missingness_confound\n")
+  cat("summary() prints the full report, with the confound check and g2 explained.\n")
   invisible(x)
 }
 
@@ -751,11 +699,8 @@ print.raddiv_het <- function(x, ...) {
     out <- c(out, "call rate is positively correlated with heterozygosity (possible allele dropout).")
   if (!is.null(cf$overall) && cf$overall$call_rate_gap > 0.02)
     out <- c(out, "mean call rate differs between populations by more than 2 percentage points.")
-  od <- x$overdispersion$overdispersion
-  if (any(is.finite(od)) && max(od, na.rm = TRUE) >= 2)
-    out <- c(out, "individuals vary more than binomial noise; locus-based intervals would be too narrow.")
   if (any(x$g2$g2_lo > 0, na.rm = TRUE))
-    out <- c(out, "g2 > 0 in some population: report diversity_stats(se_individuals = TRUE).")
+    out <- c(out, "g2 > 0 in some population: individuals differ in inbreeding; report diversity_stats(se_individuals = TRUE)'s _se_combined.")
   out
 }
 
@@ -819,25 +764,11 @@ print.summary.raddiv_het <- function(x, ...) {
   cat("\n")
   note(.report_text$het_sd_among_individuals)
 
-  cat("\nOverdispersion check -- does the locus bootstrap fail on THIS dataset?\n")
-  note("(each population's own locus set, as in the summary above)")
-  od <- x$overdispersion
-  .print_table(.round_het_table(od, "overdispersion"))
-  cat("\n")
-  if (all(is.na(od$overdispersion))) {
-    note(.report_text$het_overdispersion_undefined)
-  } else {
-    worst <- max(od$overdispersion, na.rm = TRUE)
-    note(if (worst < 2) .report_text$het_overdispersion_small
-         else if (worst < 5) .report_text$het_overdispersion_moderate
-         else .report_text$het_overdispersion_large)
-  }
-  note(.report_text$het_van_dongen)
-
   cat("\nIdentity disequilibrium g2 (David et al. 2007) -- the standard measure of\n")
   cat("variance in inbreeding among individuals; 0 when individuals do not differ.\n")
   .print_table(.round_het_table(x$g2, "g2"))
   note(.report_text$het_g2)
+  note(.report_text$het_van_dongen)
 
   if (!is.null(x$omnibus)) {
     cat(sprintf("\nOverall test across all %d populations (loci that clear min_call in every one)\n",

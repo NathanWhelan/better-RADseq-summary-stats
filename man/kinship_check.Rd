@@ -37,7 +37,10 @@ get kinship \code{NA}: too little data to report a number. Default \code{30}.}
 \item{low_confidence_loci}{Pairs with fewer shared loci than this are
 marked \code{low_confidence = TRUE}. Default \code{200}.}
 
-\item{outdir}{If given, write \code{kinship_pairwise.tsv} there. Default \code{NULL}.}
+\item{outdir}{If given, write the \code{pairwise} table there as
+\verb{kinship_pairwise.<method>.tsv} (\code{kinship_pairwise.king.tsv} or
+\code{kinship_pairwise.beta.tsv}, so runs with the two methods do not overwrite
+each other). Default \code{NULL}.}
 
 \item{verbose}{Print progress and a summary. Default \code{TRUE}.}
 }

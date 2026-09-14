@@ -37,12 +37,14 @@ apply.
 > H<sub>e</sub> were computed from the SNP VCF and are also reported per
 > sequenced site (Schmidt et al. 2021); F<sub>IS</sub> and allelic richness
 > were computed from the haplotype VCF, with allelic and private allelic
-> richness rarefied to [g] gene copies (Kalinowski 2004). Standard errors
-> [and 95% confidence intervals] were obtained by [a delete-one-locus
-> jackknife / a bootstrap over RAD loci], so that linked SNPs were resampled
-> together. [Because individuals differed in inbreeding (identity
-> disequilibrium g2 = [value], 95% CI [..]; David et al. 2007), standard
-> errors from a delete-one-individual jackknife are also reported.]
+> richness rarefied to [g] gene copies (Kalinowski 2004). Standard errors for
+> H<sub>o</sub>, H<sub>e</sub> and F<sub>IS</sub> combine two sources of
+> uncertainty: a delete-one-locus jackknife over RAD loci (so that linked SNPs
+> were resampled together) and a delete-one-individual jackknife, added as
+> variances. Standard errors [and 95% confidence intervals] for allelic and
+> private allelic richness come from [a delete-one-locus jackknife / a
+> bootstrap over RAD loci]. [Individuals differed in inbreeding (identity
+> disequilibrium g2 = [value], 95% CI [..]; David et al. 2007).]
 >
 > Heterozygosity was compared between populations with Welch's *t*-test on
 > per-individual heterozygosity, so that individuals rather than loci were the
@@ -147,9 +149,9 @@ loci too. A sentence to adapt:
 
 **"Why is H<sub>e</sub> from the SNP data but F<sub>IS</sub> from the haplotype data?"**
 
-> Haplotype gene diversity has no fixed upper limit: a locus with more SNPs
-> can carry more haplotypes, so its value depends on read length, enzyme and
-> SNP calling. In simulations, varying only the number of SNPs per locus
+> Haplotype gene diversity has an upper limit that rises with the number of
+> SNPs in a locus (more SNPs allow more haplotypes), so its value depends on
+> read length, enzyme and SNP calling. In simulations, varying only the number of SNPs per locus
 > changed haplotype H<sub>e</sub> by 66% and per-SNP H<sub>e</sub> by 24%.
 > F<sub>IS</sub> is a ratio, so that scale cancels, and haplotype loci
 > estimate it more precisely. The ratio of H<sub>e</sub> between populations
@@ -216,23 +218,27 @@ loci too. A sentence to adapt:
 > the time when individuals differed moderately in inbreeding (SD of F = 0.10)
 > and about 80% of the time when they differed more, against a nominal 5%;
 > Welch's t on per-individual heterozygosity stayed near 5% (Van Dongen 1995
-> made the same point). The overdispersion of individual heterozygosity in our
-> data was [X], meaning a locus-based test would have understated the
-> standard error about [√X]-fold.
+> made the same point). In our data individuals differed in inbreeding
+> (g2 = [value], 95% CI [..]; David et al. 2007), which is when a locus-based
+> test goes wrong.
 
-**"Your confidence intervals resample loci, but individuals vary."**
+**"Which standard error do you report, and why?"** (or "Your confidence
+intervals resample loci, but individuals vary.")
 
-> We tested whether individuals differ in inbreeding (g2 = [value], 95% CI
-> [..]; David et al. 2007). [If the interval excluded 0:] We therefore report
-> standard errors from a delete-one-individual jackknife, which in simulation
-> kept 93–95% coverage where locus-based intervals fell to 28–66%. [If it
-> included 0:] Locus-based intervals are appropriate in that case; in
-> simulation they kept about 95% coverage when individuals did not differ.
-
-(If you report individual standard errors for allelic or private allelic
-richness, note that in simulation the one for private richness ran up to
-about 20% small, and both ran large when many loci had barely *g* gene
-copies; see `vignette("rationale")`, section 4.)
+> Population values are uncertain both because loci are a sample of the
+> genome and because individuals are a sample of the population (Nei &
+> Roychoudhury 1974). For H<sub>o</sub>, H<sub>e</sub> and F<sub>IS</sub> we
+> therefore report a standard error that combines a delete-one-locus jackknife
+> over RAD loci with a delete-one-individual jackknife, added as variances. In
+> simulations with a known truth, where both loci and individuals were
+> resampled, 95% intervals from this combined SE contained the true value
+> 90–99% of the time, while intervals from loci alone fell to 30–65% for
+> H<sub>o</sub> and F<sub>IS</sub> when individuals differed in inbreeding, and
+> intervals from individuals alone covered H<sub>e</sub> only 47–86% of the
+> time. For allelic and private allelic richness, the jackknife and bootstrap
+> over RAD loci already covered the truth (88–96%), so those are reported.
+> [Individuals in our data differed in inbreeding: g2 = [value], 95% CI [..];
+> David et al. 2007.]
 
 **"A non-significant result may just reflect low power."**
 
@@ -269,6 +275,9 @@ studies. *Bioinformatics* 26:2867–2873.
 
 Nei, M. & Chesser, R.K. (1983) Estimation of fixation indices and gene
 diversities. *Annals of Human Genetics* 47:253–259.
+
+Nei, M. & Roychoudhury, A.K. (1974) Sampling variances of heterozygosity and
+genetic distance. *Genetics* 76:379–390.
 
 Pearman, W.S., Urban, L. & Alexander, A. (2022) Commonly used Hardy–Weinberg
 equilibrium filtering schemes impact population structure inferences using

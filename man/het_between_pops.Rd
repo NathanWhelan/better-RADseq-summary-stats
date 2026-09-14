@@ -83,9 +83,6 @@ for 2 populations, where the pairwise test is the only test.}
 means, difference with Welch 95\% CI, Welch and Wilcoxon p-values
 (with Benjamini-Hochberg adjusted versions), Hedges' g.}
 \item{pairwise_F_tests}{The same tests on \code{F}.}
-\item{overdispersion}{Observed vs binomial SD of individual
-heterozygosity per population, their variance ratio, and roughly how
-much a locus bootstrap would understate the SE.}
 \item{g2}{Identity disequilibrium per population, with bootstrap CI.}
 \item{missingness_confound}{Correlation between an individual's call
 rate and its heterozygosity, overall (\code{overall}) and within each
@@ -103,9 +100,9 @@ files round them. With \code{outdir}, \code{individual_heterozygosity},
 \description{
 Uses the INDIVIDUAL, not the locus, as the unit of replication (Welch's t,
 with Wilcoxon as a distribution-free check), and adds a missingness-confound
-check, an overdispersion check showing how badly a locus bootstrap would
-have misled on this dataset, and identity disequilibrium (g2) per
-population. Printing the result shows the main tables; \code{summary()} shows the
+check and identity disequilibrium (g2) per population, which shows whether
+individuals differ in inbreeding (the reason a locus-based comparison would
+mislead). Printing the result shows the main tables; \code{summary()} shows the
 full report; \code{outdir} also writes the tables to TSV files.
 }
 \details{
@@ -143,7 +140,7 @@ on few loci yet counts as a full individual in the means and tests; heavy
 missing data usually comes with allele dropout, which biases its
 heterozygosity low and its F high; and it lowers its population's call
 rate, so fewer loci clear \code{min_call}. Remove it from the popmap (or with
-\code{\link[=filter_samples]{filter_samples()}}) if it was not meant to be analysed.
+\code{\link[=filter_samples]{filter_samples()}}) if it was not meant to be analyzed.
 }
 \examples{
 # A toy dataset shipped with the package (4 and 3 individuals -- far too
@@ -154,7 +151,7 @@ set.seed(1)
 res <- het_between_pops(vcf, popmap, min_call = 0.5)
 res                       # the main tables
 res$individual_heterozygosity
-summary(res)              # the full report, with the confound and overdispersion checks
+summary(res)              # the full report, with the confound check and g2 explained
 }
 \references{
 Cerca, J., Maurstad, M.F., Rochette, N.C., et al. (2021) Removing the bad

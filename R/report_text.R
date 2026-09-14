@@ -32,14 +32,15 @@
     "always available (no nboot needed), on the same loci axis as _lo/_hi."),
 
   diversity_se_ind_columns = c(
-    "_se_ind columns: delete-one-INDIVIDUAL jackknife -- the uncertainty from",
-    "which individuals were sampled, which the loci-based _se/_lo/_hi hold fixed.",
-    "Report _se_ind when individuals differ in inbreeding (g2 > 0; see",
-    "identity_disequilibrium() or the het_between_pops() report).",
-    "Ar_se_ind and privAr_se_ind: privAr_se_ind holds the OTHER populations'",
-    "individuals fixed and ran up to about 20% too small in simulation; both run",
-    "too large (up to ~2x) when many records have fewer than g + 2 gene copies,",
-    "which diversity_stats() warns about. See vignette(\"rationale\"), section 4."),
+    "_se_ind columns: jackknife over INDIVIDUALS (each left out in turn), holding the",
+    "loci fixed. _se_combined = sqrt(_se^2 + _se_ind^2): both sources of uncertainty",
+    "(which loci, which individuals). Report _se_combined for Ho, He and Fis; for Ar",
+    "and privAr the locus-based _se/_lo/_hi already cover both. See ?diversity_stats,",
+    "\"How standard errors are calculated\", and vignette(\"rationale\"), section 4."),
+
+  diversity_se_loci_only = c(
+    "These SEs hold the individuals fixed. For Ho, He and Fis, re-run with",
+    "se_individuals = TRUE and report _se_combined (?diversity_stats)."),
 
   diversity_ar_n = c(
     "(Ar needs only THAT population at >= g gene copies; privAr needs EVERY",
@@ -94,7 +95,9 @@
     "sequenced site instead of over variant records. That denominator is what",
     "makes it nucleotide diversity (pi). There is no column named `pi`.",
     "Compare against Stacks' `Pi` from the All-positions block -- not the",
-    "variant-positions block, and not `Exp_Het` (Schmidt et al. 2021)."),
+    "variant-positions block, and not `Exp_Het` (Schmidt et al. 2021).",
+    "`sites` must count the sequenced sites of the loci in these data. Stacks'",
+    "Sites does so only if nothing was filtered after populations (?diversity_stats)."),
 
   diversity_complete_case_representative = c(
     "them being representative. If missingness is concentrated in a few poor",
@@ -115,10 +118,17 @@
 
   diversity_take_haplotype = c(
     "TAKE FROM THIS RUN:  Fis, Ar, privAr.",
-    "NOT Ho / He: haplotype gene diversity has no fixed ceiling, so it moves",
-    "with read length, enzyme and filters and is not comparable across",
-    "studies. Run populations.snps.vcf for those. Fis is a ratio, so the",
-    "scale cancels -- which is why it belongs here."),
+    "NOT Ho / He: a haplotype locus's gene diversity has a ceiling that rises",
+    "with the number of SNPs in the tag, so it moves with read length, enzyme",
+    "and SNP calling and is not comparable across studies. Run",
+    "populations.snps.vcf for those. Fis is a ratio, so the scale cancels --",
+    "which is why it belongs here.",
+    "Ar and privAr depend on SNPs per locus too (more SNPs, more possible",
+    "haplotypes): compare them only among populations analyzed together (same",
+    "run, filters and g), never with other studies. Which population is richer",
+    "is reliable; how much richer also depends on SNPs per locus. The loci",
+    "averaged over are those variable in this run, so adding or dropping",
+    "populations from the Stacks run changes them."),
 
   diversity_take_snp = c(
     "TAKE FROM THIS RUN:  Ho, He, pct_poly, Ho_autosomal, He_autosomal.",
@@ -155,13 +165,13 @@
     "heavy missing data usually comes with allele dropout (heterozygosity biased low,",
     "F high); and it lowers its population's call rate, so fewer loci clear min_call.",
     "Remove them from the popmap (or with filter_samples()) if they were not meant",
-    "to be analysed."),
+    "to be analyzed."),
 
   het_confound_positive = c(
     "POSITIVE and significant: individuals with more missing data look LESS",
     "heterozygous, which is the allele-dropout signature. Re-run on a",
     "complete-data locus set (min_call = 1.0) before quoting the test",
-    "below; if the difference survives that, it is not a coverage artefact."),
+    "below; if the difference survives that, it is not a coverage artifact."),
 
   het_call_rate_gap = c(
     "WARNING: mean call rate differs between populations by more than 2",
@@ -172,29 +182,6 @@
     "the real uncertainty in a population mean -- and it does not shrink at all",
     "as you add loci, which is why locus-based tests can be invalid here."),
 
-  het_overdispersion_undefined = c(
-    "Overdispersion is undefined for every population (no variation in either",
-    "heterozygosity or per-locus heterozygote frequency) -- too degenerate a",
-    "dataset to say whether a locus bootstrap would fail here."),
-
-  het_overdispersion_small = c(
-    "Overdispersion is near 1: individuals differ about as much as coin-flip",
-    "noise alone predicts. For this dataset a locus bootstrap would be roughly",
-    "correctly calibrated, and the two approaches should broadly agree. The",
-    "individual-level test below remains the safer default."),
-
-  het_overdispersion_moderate = c(
-    "Overdispersion is moderate. Individuals vary by more than coin-flip noise,",
-    "so a locus bootstrap understates the standard error by roughly the factor",
-    "in the last column and its p-values are too small. Use the test below."),
-
-  het_overdispersion_large = c(
-    "Overdispersion is LARGE. Individuals differ far more than coin-flip noise,",
-    "so a locus bootstrap would understate the standard error by the factor in",
-    "the last column and reject far too often. Use the test below, and inspect",
-    "the per-individual table for outliers (a bad library looks like one",
-    "individual with unusually LOW heterozygosity)."),
-
   het_van_dongen = c(
     "This is the point made by Van Dongen (1995, Heredity 74:445-447): the unit",
     "of resampling changes what the bootstrap means, and loci are usually the",
@@ -202,9 +189,9 @@
 
   het_g2 = c(
     "95% CI: bootstrap over individuals (see ?identity_disequilibrium). A CI above",
-    "0 means individuals differ in inbreeding, so diversity_stats()'s locus-based",
-    "intervals are too narrow for population-level inference: report its",
-    "individual-jackknife SEs (se_individuals = TRUE) instead."),
+    "0 means individuals differ in inbreeding, so standard errors over loci alone",
+    "are too small for Ho and Fis: report diversity_stats(se_individuals = TRUE)'s",
+    "_se_combined."),
 
   het_omnibus = c(
     "Welch's one-way ANOVA (unequal variances allowed) and Kruskal-Wallis ask ONE",

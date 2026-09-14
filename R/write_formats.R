@@ -50,6 +50,18 @@
   .resolve_pops(popmap, H$samples, verbose = FALSE)
 }
 
+## Not exported. Stops, naming them, if any of `names` (sample or population
+## names) contains `pattern`, a character that would break `format_name`'s file
+## layout; `why` says what that character does there.
+.stop_on_unwritable_names <- function(names, pattern, format_name, why) {
+  bad <- unique(names[grepl(pattern, names)])
+  if (length(bad))
+    stop(format_name, " ", why, ", so these names can't be written: ",
+         paste0("\"", bad, "\"", collapse = ", "),
+         ". Rename them (in the VCF header or popmap) and re-run.", call. = FALSE)
+  invisible(NULL)
+}
+
 ## Not exported. Genepop and FSTAT write each allele as a zero-padded number
 ## of one FIXED width for the whole file: 2 digits when no record has more
 ## than 99 alleles, otherwise 3 (Genepop manual; FSTAT format description in
@@ -191,12 +203,8 @@ write_plink <- function(H, path_prefix, popmap = NULL, drop_multiallelic = FALSE
   pops <- .writer_pops(H, popmap, required = FALSE, "PLINK")
   ## .ped fields are whitespace-separated: a space inside a name would shift
   ## every later column.
-  ids <- c(H$samples, names(pops))
-  spaced <- unique(ids[grepl("[[:space:]]", ids)])
-  if (length(spaced))
-    stop("PLINK .ped files separate columns by white space, so these sample or population ",
-         "names can't be written: ", paste0("\"", spaced, "\"", collapse = ", "),
-         ". Rename them without spaces (in the VCF header or popmap) and re-run.", call. = FALSE)
+  .stop_on_unwritable_names(c(H$samples, names(pops)), "[[:space:]]", "PLINK .ped files",
+                            "separate columns by white space")
 
   multiallelic <- locus_allele_stats(H)$n_observed_alleles > 2L
   if (any(multiallelic)) {
@@ -252,7 +260,9 @@ write_plink <- function(H, path_prefix, popmap = NULL, drop_multiallelic = FALSE
 #' @details The file has a locus-name row, a sample-label column and a
 #'   population column, so the STRUCTURE run's `mainparams` should set
 #'   `MARKERNAMES=1`, `LABEL=1` and `POPDATA=1`. Without `popmap` the
-#'   population column is a placeholder `1` for everyone.
+#'   population column is a placeholder `1` for everyone. STRUCTURE separates
+#'   columns by white space, so a sample name containing a space stops the
+#'   function.
 #' @references
 #' Pritchard, J.K., Stephens, M. & Donnelly, P. (2000) Inference of population
 #' structure using multilocus genotype data. *Genetics* 155:945-959.
@@ -272,6 +282,10 @@ write_structure <- function(H, path, popmap = NULL, verbose = TRUE) {
   .check_string(path, "path")
   .check_flag(verbose, "verbose")
   pops <- .writer_pops(H, popmap, required = FALSE, "STRUCTURE")
+  ## STRUCTURE reads columns separated by white space: a space inside a sample
+  ## name would shift every genotype after it.
+  .stop_on_unwritable_names(H$samples, "[[:space:]]", "STRUCTURE files",
+                            "separate columns by white space")
   n_samp <- ncol(H$A1)
   pop_id <- if (!is.null(pops)) .pop_id_vector(H, pops) else rep(1L, n_samp)
   if (is.null(pops))
@@ -302,7 +316,8 @@ write_structure <- function(H, path, popmap = NULL, verbose = TRUE) {
 #' Writes the Genepop text layout: a title line, one locus-name line per
 #' record, then for each population a `POP` line followed by one line per
 #' individual (`name ,` then its genotypes). Missing genotypes are all zeros
-#' (e.g. `0000`), as in the Genepop manual.
+#' (e.g. `0000`), as in the Genepop manual. Genepop ends a name at the first
+#' comma, so a sample name containing a comma stops the function.
 #'
 #' @references
 #' Rousset, F. (2008) GENEPOP'007: a complete re-implementation of the GENEPOP
@@ -329,6 +344,9 @@ write_genepop <- function(H, path, popmap = NULL, title = "RADdiversity export",
   .check_flag(verbose, "verbose")
   pops <- .writer_pops(H, popmap, required = TRUE, "Genepop")
   .pop_id_vector(H, pops)                 # stops if a sample has no population
+  ## Genepop ends an individual's name at the first comma (spaces are allowed).
+  .stop_on_unwritable_names(H$samples, ",", "Genepop files",
+                            "end each individual's name at a comma")
   width <- .digit_width(H)
   codes <- .genotype_codes(H, width)
 

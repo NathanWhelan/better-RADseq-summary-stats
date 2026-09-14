@@ -367,5 +367,5 @@ test_that("the F column gives the direction of a departure", {
   colnames(A1) <- colnames(A2) <- paste0("s", 1:10)
   res <- hwe_test(sim_H(A1, A2), verbose = FALSE)
   expect_equal(res$F, c(-1, 1))
-  expect_message(hwe_test(sim_H(A1, A2)), "Wahlund")
+  suppressMessages(expect_message(hwe_test(sim_H(A1, A2)), "Wahlund"))
 })

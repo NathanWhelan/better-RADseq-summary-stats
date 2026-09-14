@@ -11,23 +11,22 @@
 #  Parts:
 #    file_choice   FIS precision from the haplotype VCF, all SNPs, and one
 #                  SNP per RAD locus
-#    snp_density   He from SNP and haplotype records as SNPs per locus vary,
-#                  and the between-population ratio
+#    snp_density   He and Ar from SNP and haplotype records as SNPs per locus
+#                  vary, and the between-population ratios
 #    denominator   pooled vs within-population denominator for He, and
 #                  thinning to one SNP per locus
-#    boot_modes    coverage of 95% intervals from boot = "loci",
-#                  "individuals" and "both"
 #    power         power of Welch's t on individual heterozygosity
 #
 #  Needs the package installed (or devtools::load_all()). Every part sets its
-#  own seed. Run time: a few minutes per part, boot_modes longest.
+#  own seed. Run time: a few minutes per part. The coverage of each kind of
+#  standard error and bootstrap is in inst/sims/uncertainty_sources.R.
 #
 ###############################################################################
 
 suppressMessages(library(RADdiversity))
 args <- commandArgs(trailingOnly = TRUE)
 parts <- if (length(args)) args else c("file_choice", "snp_density", "denominator",
-                                       "boot_modes", "power")
+                                       "power")
 
 ## ---------------------------------------------------------------------------
 ## Simulation engine: RAD loci with haplotypes, two populations
@@ -129,19 +128,27 @@ if ("snp_density" %in% parts) {
   out <- t(vapply(c(2L, 4L, 6L, 8L), function(max_snps) {
     rowMeans(replicate(5L, {
       d <- sim_rad(F = 0, founders = 4L, max_snps = max_snps)
-      s <- run_div(d$snps, d$pops)$per_population
-      h <- run_div(d$haps, d$pops)$per_population
-      c(mean_snps = nrow(d$snps$A1) / 1200, He_snp_A = s$He[1], He_snp_B = s$He[2],
-        He_hap_A = h$He[1], He_hap_B = h$He[2], Ho_snp_A = s$Ho[1], Ho_hap_A = h$Ho[1])
+      s <- run_div(d$snps, d$pops)
+      h <- run_div(d$haps, d$pops)
+      c(mean_snps = nrow(d$snps$A1) / 1200,
+        He_snp_A = s$per_population$He[1], He_snp_B = s$per_population$He[2],
+        He_hap_A = h$per_population$He[1], He_hap_B = h$per_population$He[2],
+        Ho_snp_A = s$per_population$Ho[1], Ho_hap_A = h$per_population$Ho[1],
+        Ar_snp_A = s$richness$Ar[1], Ar_snp_B = s$richness$Ar[2],
+        Ar_hap_A = h$richness$Ar[1], Ar_hap_B = h$richness$Ar[2])
     }))
-  }, numeric(7)))
+  }, numeric(11)))
   out <- cbind(max_snps = c(2, 4, 6, 8), out,
                ratio_snp = out[, "He_snp_A"] / out[, "He_snp_B"],
-               ratio_hap = out[, "He_hap_A"] / out[, "He_hap_B"])
+               ratio_hap = out[, "He_hap_A"] / out[, "He_hap_B"],
+               ratio_Ar_hap = out[, "Ar_hap_A"] / out[, "Ar_hap_B"])
   print(round(out, 4))
+  range_pct <- function(x) 100 * (max(x) / min(x) - 1)
   say("Range across SNP densities: SNP He A %.0f%%, haplotype He A %.0f%%",
-      100 * (max(out[, "He_snp_A"]) / min(out[, "He_snp_A"]) - 1),
-      100 * (max(out[, "He_hap_A"]) / min(out[, "He_hap_A"]) - 1))
+      range_pct(out[, "He_snp_A"]), range_pct(out[, "He_hap_A"]))
+  say("Range across SNP densities: SNP Ar A %.0f%%, haplotype Ar A %.0f%%, B %.0f%%; haplotype Ar ratio A/B %.2f to %.2f",
+      range_pct(out[, "Ar_snp_A"]), range_pct(out[, "Ar_hap_A"]), range_pct(out[, "Ar_hap_B"]),
+      min(out[, "ratio_Ar_hap"]), max(out[, "ratio_Ar_hap"]))
 }
 
 ## ---------------------------------------------------------------------------
@@ -165,36 +172,6 @@ if ("denominator" %in% parts) {
   print(round(colMeans(res), 4))
 }
 
-## ---------------------------------------------------------------------------
-## boot_modes: coverage of bootstrap intervals
-## ---------------------------------------------------------------------------
-if ("boot_modes" %in% parts) {
-  set.seed(404)
-  say("\n== boot_modes: biallelic loci with fixed frequencies; F = 0.1 for everyone; 150 replicates ==")
-  L <- 1500L
-  p <- stats::runif(L, 0.1, 0.9)
-  truth <- c(He = mean(2 * p * (1 - p)), Fis = 0.1)
-  one <- function(n, mode) {
-    ids <- c(sprintf("A%02d", seq_len(n)), sprintf("B%02d", seq_len(n)))
-    a1 <- matrix(1L + (stats::runif(L * 2 * n) < p), L)
-    ibd <- matrix(stats::runif(L * 2 * n) < 0.1, L)
-    a2 <- ifelse(ibd, a1, 1L + (stats::runif(L * 2 * n) < p))
-    storage.mode(a2) <- "integer"
-    dimnames(a1) <- dimnames(a2) <- list(NULL, ids)
-    H <- structure(list(A1 = a1, A2 = a2, locus = paste0("r", seq_len(L)),
-                        locus_raw = paste0("r", seq_len(L)), alleles = rep(list(c("A", "C")), L),
-                        n_alleles = rep(2L, L), samples = ids), class = "raddiv_vcf")
-    pops <- list(A = ids[seq_len(n)], B = ids[n + seq_len(n)])
-    r <- run_div(H, pops, g = 2 * n, nboot = 200, boot = mode)$per_population
-    c(He = truth[["He"]] >= r$He_lo[1] && truth[["He"]] <= r$He_hi[1],
-      Fis = truth[["Fis"]] >= r$Fis_lo[1] && truth[["Fis"]] <= r$Fis_hi[1])
-  }
-  for (n in c(10L, 15L)) for (mode in c("loci", "individuals", "both")) {
-    cover <- rowMeans(replicate(150L, one(n, mode)))
-    say("n = %2d  boot = %-11s  He coverage %5.1f%%   FIS coverage %5.1f%%", n, mode,
-        100 * cover[["He"]], 100 * cover[["Fis"]])
-  }
-}
 
 ## ---------------------------------------------------------------------------
 ## power: Welch's t on individual heterozygosity

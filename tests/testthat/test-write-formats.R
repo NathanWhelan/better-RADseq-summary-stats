@@ -69,7 +69,8 @@ test_that("write_plink() errors on a multiallelic locus unless drop_multiallelic
   )
   prefix <- tempfile()
   expect_error(write_plink(H, prefix, verbose = FALSE), "biallelic")
-  expect_message(write_plink(H, prefix, drop_multiallelic = TRUE, verbose = TRUE), "excluding")
+  suppressMessages(expect_message(write_plink(H, prefix, drop_multiallelic = TRUE, verbose = TRUE),
+                                  "excluding"))
   expect_length(readLines(paste0(prefix, ".map")), 0L)
 })
 
@@ -101,7 +102,7 @@ test_that("write_structure() writes 2 rows per individual and STRUCTURE's -9 mis
 test_that("write_structure() emits a placeholder population column when pops is NULL", {
   H <- make_H(A1 = rbind(c(1L, 1L)), A2 = rbind(c(1L, 1L)), samples = c("s1", "s2"))
   out <- tempfile()
-  expect_message(write_structure(H, out, verbose = TRUE), "placeholder")
+  suppressMessages(expect_message(write_structure(H, out, verbose = TRUE), "placeholder"))
   lines <- readLines(out)
   expect_true(all(grepl("^s\\d\\t1\\t", lines[-1])))  # every data row has population code "1"
 })
@@ -210,5 +211,21 @@ test_that("write_radpainter() writes a completely empty field for a missing geno
 
 test_that("write_radpainter() warns when H looks like per-site SNP data", {
   H <- make_H(A1 = rbind(c(1L, 2L)), A2 = rbind(c(1L, 2L)), samples = c("s1", "s2"))  # single-letter alleles
-  expect_message(write_radpainter(H, tempfile(), verbose = TRUE), "looks like SNP data")
+  suppressMessages(expect_message(write_radpainter(H, tempfile(), verbose = TRUE),
+                                  "looks like SNP data"))
+})
+
+test_that("writers stop on sample names their format cannot hold", {
+  A <- matrix(c(1L, 2L, 1L, 2L), 2, 2)
+  H <- make_H(A, A, locus = c("l1", "l2"), samples = c("ind 1", "ind,2"))
+  pops <- list(p1 = c("ind 1", "ind,2"))
+  ## STRUCTURE: white space separates columns.
+  expect_error(write_structure(H, tempfile(), verbose = FALSE), "ind 1")
+  ## Genepop: a comma ends the name, but a space is fine.
+  expect_error(write_genepop(H, tempfile(), popmap = pops, verbose = FALSE), "ind,2")
+  H_space <- make_H(A, A, locus = c("l1", "l2"), samples = c("ind 1", "ind 2"))
+  expect_no_error(write_genepop(H_space, tempfile(), popmap = list(p1 = c("ind 1", "ind 2")),
+                                verbose = FALSE))
+  ## PLINK: white space, in sample or population names.
+  expect_error(write_plink(H_space, tempfile(), verbose = FALSE), "white space")
 })

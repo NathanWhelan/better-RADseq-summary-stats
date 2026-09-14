@@ -14,11 +14,7 @@ individual_inbreeding(vcf, popmap, min_call = 0.9, verbose = TRUE)
 \code{\link[=read_popmap]{read_popmap()}}.}
 
 \item{min_call}{Use a locus for a population only if at least this fraction
-of that population's individuals is genotyped there. Default \code{0.9}.
-An individual that looks like a failed library (genotyped at fewer than 50
-records when the rest of its population has that many, or at under half of
-the records where the rest of its population is genotyped) is kept and named in a warning; see "Failed individuals" in
-\code{\link[=het_between_pops]{het_between_pops()}}.}
+of that population's individuals is genotyped there. Default \code{0.9}.}
 
 \item{verbose}{Print progress messages. Default \code{TRUE}.}
 }
@@ -47,6 +43,13 @@ populations (\code{\link[=het_between_pops]{het_between_pops()}} does this) asks
 inbreeding; comparing individual heterozygosity asks whether they differ in
 diversity. Negative values mean more heterozygosity than random mating
 predicts.
+
+An individual that looks like a failed library (genotyped at fewer than 50
+records when the rest of its population has that many, or at under half of
+the records where the rest of its population is genotyped) is kept and
+named in a warning; see "Failed individuals" in \code{\link[=het_between_pops]{het_between_pops()}}. A
+population with fewer than 2 individuals, or with no locus at \code{min_call},
+stops the function with a message naming it.
 }
 \examples{
 vcf    <- system.file("extdata", "small.haps.vcf", package = "RADdiversity")

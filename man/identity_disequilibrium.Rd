@@ -49,15 +49,17 @@ positive when they do.
 }
 \details{
 \strong{Why it matters for this package.} Standard errors and intervals that
-resample loci (\code{\link[=diversity_stats]{diversity_stats()}}) hold the sampled individuals fixed.
-With many loci that is also enough for population-level inference, as
-long as individuals are exchangeable (Nei & Roychoudhury 1974; Nei 1978).
-When individuals differ in inbreeding -- or include relatives --
-heterozygosity is correlated across loci within an individual and the
-locus-based intervals are too narrow. A g2 confidence interval that
-excludes 0 is the signal to use the individual-jackknife standard errors
-of \code{\link[=diversity_stats]{diversity_stats()}} (\code{se_individuals = TRUE}) and the individual-level
-tests of \code{\link[=het_between_pops]{het_between_pops()}}.
+resample loci (\code{\link[=diversity_stats]{diversity_stats()}}'s \verb{_se}, \verb{_lo}, \verb{_hi}) hold the sampled
+individuals fixed. When individuals are alike that costs little, because
+with many loci the chance of which individuals were caught averages out
+(Nei & Roychoudhury 1974; Nei 1978). When individuals differ in inbreeding,
+heterozygosity is correlated across loci within an individual and it does
+not average out: locus-based SEs for Ho and FIS are then too small. A g2
+interval above 0 is that signal. Report \verb{_se_combined} from
+\code{diversity_stats(se_individuals = TRUE)} (see "How standard errors are
+calculated" in \code{\link[=diversity_stats]{diversity_stats()}}) and compare populations with
+\code{\link[=het_between_pops]{het_between_pops()}}. Relatives in a sample also raise g2; screen for them
+with \code{\link[=kinship_check]{kinship_check()}}.
 
 \strong{Estimator.} From the definition, using every pair of distinct loci
 typed in the same individual (numerator) and in two different individuals
@@ -72,10 +74,11 @@ population.
 \strong{Failed individuals.} An individual that looks like a failed library
 (genotyped at fewer than 50 records when the rest of its population has
 that many, or at under half of the records where the rest of its population
-is genotyped) is kept and named in a warning:
-allele dropout lowers its heterozygosity at many loci at once, which looks
-like variance in inbreeding and inflates g2. See "Failed individuals" in
-\code{\link[=het_between_pops]{het_between_pops()}}.
+is genotyped) is kept and named in a warning: allele dropout lowers its
+heterozygosity at many loci at once, which looks like variance in
+inbreeding and inflates g2. See "Failed individuals" in
+\code{\link[=het_between_pops]{het_between_pops()}}. A population with fewer than 2 individuals, or with
+no locus at \code{min_call}, stops the function with a message naming it.
 }
 \examples{
 vcf    <- system.file("extdata", "small.haps.vcf", package = "RADdiversity")

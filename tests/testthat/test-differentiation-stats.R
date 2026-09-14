@@ -317,7 +317,7 @@ test_that(".to_hierfstat_df() writes 2 digits per allele unless a record has mor
 })
 
 test_that("pairs whose population names would give the same label keep their own values", {
-  ## "a" + "b__c" and "a__b" + "c" would both be labelled "a__b__c".
+  ## "a" + "b__c" and "a__b" + "c" would both be labeled "a__b__c".
   set.seed(21)
   ns <- c(a = 6, a__b = 6, b__c = 6, c = 6)
   freqs <- lapply(seq_along(ns), function(i) stats::runif(120, 0.05 * i, 0.2 * i))
@@ -345,4 +345,24 @@ test_that("pairs whose population names would give the same label keep their own
                 verbose = FALSE)$dxy$dxy
   expect_equal(pi_res$dxy$dxy[pi_res$dxy$pop1 == "a" & pi_res$dxy$pop2 == "b__c"], one_dxy("a", "b__c"))
   expect_equal(pi_res$dxy$dxy[pi_res$dxy$pop1 == "a__b" & pi_res$dxy$pop2 == "c"], one_dxy("a__b", "c"))
+})
+
+test_that("print() says why beta is missing", {
+  vcf <- fx("small.haps.vcf")
+  pm <- fx("small_popmap.tsv")
+  off <- differentiation_stats(vcf, pm, nboot = 0, beta = FALSE, verbose = FALSE)
+  expect_equal(off$settings$beta_status, "off")
+  expect_true(any(grepl("beta = FALSE", capture.output(print(off)))))
+  none <- testthat::with_mocked_bindings(
+    differentiation_stats(vcf, pm, nboot = 0, verbose = FALSE),
+    .hierfstat_available = function() FALSE, .package = "RADdiversity")
+  expect_equal(none$settings$beta_status, "no_hierfstat")
+  expect_true(any(grepl("needs the hierfstat package", capture.output(print(none)))))
+  skip_if_not_installed("hierfstat")
+  skipped <- testthat::with_mocked_bindings(
+    differentiation_stats(vcf, pm, nboot = 0, verbose = FALSE),
+    .to_hierfstat_df = function(...) NULL, .package = "RADdiversity")
+  expect_equal(skipped$settings$beta_status, "too_many_alleles")
+  expect_true(any(grepl("more than 99 alleles", capture.output(print(skipped)))))
+  expect_false(any(grepl("needs the hierfstat package", capture.output(print(skipped)))))
 })

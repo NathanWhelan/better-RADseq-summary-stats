@@ -23,8 +23,8 @@ stand-alone scripts:
   full report and write to the working directory.
 * Result tables keep full precision; printing and the TSV files round them
   as before. Tables that used to be hidden in the `"report"` attribute are now
-  list elements: `het_between_pops()` returns `population_summary`,
-  `overdispersion`, `g2` and `missingness_confound`, and `diversity_stats()`
+  list elements: `het_between_pops()` returns `population_summary`, `g2` and
+  `missingness_confound`, and `diversity_stats()`
   returns `estimator_comparison` and `he_difference`. Run settings are in
   `$settings`.
 * `seed` defaults to `NULL`: results use R's random-number stream, so
@@ -75,9 +75,8 @@ Found in a review of every estimator against the literature and the Stacks
   where that population has a genotyped individual, so a population absent
   from some records (Stacks' `-r` with 3 or more populations and a low `-p`)
   got an inflated value: 1.43× when absent from 30% of records. Each
-  population is now scaled by its own count of variant records (the file's
-  `Variant_Sites` when `sites` is `populations.sumstats_summary.tsv`), shown
-  in the new `variant_records` column. A warning is given when records were
+  population is now scaled by its own count of variant records in the data,
+  shown in the new `variant_records` column. A warning is given when records were
   removed in R before the per-site conversion. Datasets where every
   population is typed at every record are unchanged.
 * `differentiation_stats()`: F<sub>ST</sub> used records typed in only one
@@ -97,12 +96,129 @@ Found in a review of every estimator against the literature and the Stacks
   Stacks turns a SNP failing it into a fixed site, removing about 4/(N − 1)
   of π for N gene copies (21% at 10 diploids, 10% at 20).
 
+## Standard errors, per-site values and other changes from the last review
+
+Found by checking earlier advice against simulations with a known truth. On
+the shipped example data every previously reported number is unchanged; the
+changes are new columns, removed columns, and what the documentation tells
+you to report.
+
+* **Which standard error to report.** A population's value is uncertain
+  because loci are a sample of the genome and because individuals are a
+  sample of the population. The package used to advise the jackknife over
+  individuals *alone* when g2 > 0. The simulation behind that advice reused
+  the same loci in every repeat, so it never included the uncertainty from
+  which loci were typed. With new loci and individuals in every repeat
+  (`inst/sims/uncertainty_sources.R`), 95% intervals contained the true value:
+  * from the locus SE alone: He 93–97%, but Ho and FIS 30–65% in most
+    settings once individuals differed in inbreeding;
+  * from the individual SE alone: Ho and FIS 75–94%, but He 47–86%;
+  * from the combined SE, `sqrt(_se^2 + _se_ind^2)`: Ho, He and FIS 90–99%.
+  `diversity_stats(se_individuals = TRUE)` now adds `Ho_se_combined`,
+  `He_se_combined` and `Fis_se_combined`; report those. A bootstrap over
+  individuals was also checked and is not a substitute: its He intervals
+  contained the truth 6–8% of the time. How each SE is calculated is
+  explained in `?diversity_stats` ("How standard errors are calculated") and
+  `vignette("rationale")`, section 4.
+* **Ar and privAr no longer have individual SEs** (`Ar_se_ind` and
+  `privAr_se_ind` are removed, with their warnings). Their locus-based SE and
+  bootstrap interval covered the truth 88–96% of the time; their individual
+  SEs were too wide for Ar (1.4–1.5 times the true SE) and far too small for
+  privAr.
+* **The individual jackknife uses the same records in every replicate.** A
+  record with exactly `min_n` genotyped individuals used to drop out whenever
+  one of them was left out, which inflated the SEs: in a one-off simulation with 10 individuals per
+  population, 30% missing genotypes and `min_n = 5`, `He_se_ind` was 1.64
+  times its true value (1.35 after the change) and `Ho_se_ind` 1.23 (1.01).
+  Results at the default `min_n = 2` are unchanged. A new warning flags
+  populations where more than 5% of records have only 2 genotyped
+  individuals, the one case this cannot fix (He `_se_ind` 1.32 times its true
+  value at 6% such records, 1.10 at none).
+* **Per-site values (`Ho_autosomal`, `He_autosomal`) after filtering.** When
+  `sites` was `populations.sumstats_summary.tsv`, He was multiplied by the
+  file's `Variant_Sites`, which also counts SNPs removed after Stacks. That
+  treated each removed SNP as having the average He of those kept; after
+  `filter_mac(min_mac = 3)` it inflated per-site He by 41% in a simulation
+  with 20 diploids. He is now always multiplied by the SNP records in the
+  data, so removed SNPs add nothing (the same loss Stacks' own `--min-mac`
+  causes). Unfiltered data give the same result as before. New warnings say
+  when records or whole RAD loci were removed after reading (Stacks' `Sites`
+  still counts the sites of removed loci) and when the VCF's SNP count does not
+  match the Stacks file (for example a VCF thinned to one SNP per locus).
+  `?diversity_stats` now explains what `sites` must count.
+* **`het_between_pops()` no longer reports the overdispersion factor.** It
+  equals 1 + g2 × (mean heterozygosity)² ÷ (binomial variance), so it only
+  rescaled g2 by the number of loci, and missing genotypes inflated it (1.15
+  at 10% missing when individuals did not differ). g2, which handles missing
+  data, remains.
+* Haplotype allelic richness and private allelic richness depend on the
+  number of SNPs per RAD locus. As SNPs per locus rose from 1.3 to 3.3 in a
+  simulation (`inst/sims/vignette_sims.R`, part `snp_density`), haplotype Ar
+  rose by 51–70% and the ratio between two populations grew from 1.12 to
+  1.26. The printed result and the documentation now say to compare them only
+  among populations analyzed together (same run, filters and g), and that
+  which population is richer is reliable but the size of the difference is
+  not.
+* `write_structure()` stops on sample names containing white space, and
+  `write_genepop()` on sample names containing a comma, which would corrupt
+  those files.
+* Symbolic ALT alleles (`*`, `<*>`, `<NON_REF>`) no longer make a SNP VCF
+  count as haplotype data; `read_stacks_vcf()` counts records that have them.
+* `inst/sims/uncertainty_sources.R` replaces `inst/sims/coverage_se.R`,
+  `inst/sims/jackknife_richness.R` and the `boot_modes` part of
+  `inst/sims/vignette_sims.R`.
+
+## Production-readiness review
+
+None of these change a reported number on the shipped example data.
+
+* **R 4.0.0 or later is required** (was R 3.5). Before R 4.0, `data.frame()`
+  turned text into factors, and `het_between_pops()` would then have given
+  individuals the wrong `F` and `kinship_check()` the wrong population labels,
+  without any error.
+* **The data object records its filters.** Every `filter_*()` function adds
+  a row to `H$filter_log` (filter, settings, records and RAD loci removed,
+  calls masked, samples removed). `print(H)` lists the steps, and
+  `summary()` of a `diversity_stats()` result shows them, ready for a methods
+  section.
+* **No false per-site warning after a MAC or MAF filter.** After
+  `filter_mac(H, 3)` on the example data, `diversity_stats(sites = ...)` warned
+  that 48 "whole RAD loci were removed" and that per-site values were too low.
+  Those loci only lost their SNPs to the filter; their sites were still
+  sequenced, as with Stacks' `--min-mac`, so Stacks' `Sites` is right.
+  Following the old advice would have inflated `He_autosomal`. The loci
+  warning now fires only for loci removed by other filters (it names them),
+  and gives both possibilities for loci removed outside a `filter_*()`
+  function. The records-removed warning names the filters too, and after
+  `filter_thin_one_snp()` says to use the unthinned data.
+* **Populations that cannot be analyzed stop with a message** instead of
+  giving a row of `NA`: in `diversity_stats()`, a population with no record at
+  `min_n` (the message gives how far to lower it); in `individual_inbreeding()`
+  and `identity_disequilibrium()`, a population with fewer than 2 individuals
+  or no locus at `min_call`, as in `het_between_pops()`. These two functions
+  and `hwe_test()` also check that the popmap file exists before reading the
+  VCF.
+* **Popmap samples missing from the VCF are named** in a message (they used
+  to be dropped silently, so a typo made a population smaller). When no name
+  matches, the error shows a few names from both files.
+* `kinship_check(outdir = )` writes `kinship_pairwise.king.tsv` or
+  `kinship_pairwise.beta.tsv`, so runs with the two methods no longer
+  overwrite each other.
+* `print()` of a `differentiation_stats()` result says why beta is missing
+  (`beta = FALSE`, hierfstat not installed, more than 99 alleles, or
+  `pairwise.betas()` failed); it used to blame a missing hierfstat every time.
+  The reason is in `settings$beta_status`.
+* A haplotype VCF given `sites` is reported as needing the SNP VCF, whatever
+  the value of `sites`.
+* `?individual_inbreeding`: the note on failed libraries had ended up inside
+  the description of `min_call`.
+
 ## Corrections from the final pre-release review
 
 Each was confirmed by simulation or a constructed example before the change.
-On the shipped example data, the only reported numbers that change are
-`fis_by_call_rate`'s `Fis_se` and `het_between_pops()`'s `overdispersion`;
-Ho, He, FIS, Ar, privAr, F<sub>ST</sub>, D and π are identical.
+On the shipped example data, the only reported number that changes is
+`fis_by_call_rate`'s `Fis_se`; Ho, He, FIS, Ar, privAr, F<sub>ST</sub>, D and
+π are identical.
 
 * `differentiation_stats()`: **the global Jost's D now uses only records
   genotyped in every population.** A record missing some populations measures
@@ -119,19 +235,6 @@ Ho, He, FIS, Ar, privAr, F<sub>ST</sub>, D and π are identical.
   individual (no variance among individuals can be estimated there, but its
   heterozygosity was added to the denominator). Counted in
   `settings$fst_records_skipped`.
-* `diversity_stats(se_individuals = TRUE)`: a warning when `Ar_se_ind` and
-  `privAr_se_ind` are probably too large. When more than 5% of a population's
-  records with a defined Ar have fewer than g + 2 gene copies, deleting one
-  individual drops those records from some jackknife replicates, which made
-  these SEs up to 2.0× the true value in simulation
-  (`inst/sims/jackknife_richness.R`); the warning names a smaller g to use
-  for them. `privAr_se_ind` holds the other populations' individuals fixed
-  and ran up to about 20% small; this is stated in a note and the help page.
-  He and FIS individual SEs were accurate throughout.
-* `het_between_pops()`: the overdispersion factor read about n/(n − 1) with
-  no excess variation (1.21 at n = 5) because the binomial variance used the
-  plug-in h(1 − h); each locus's term is now multiplied by n/(n − 1). On the
-  example data the factor falls from 4.79 and 17.60 to 4.46 and 15.77.
 * `diversity_stats()`: `fis_by_call_rate`'s `Fis_se` counted loci with no
   record in the call-rate group as jackknife blocks, inflating the SE
   (by 12% for a group with 5 loci). Only the group's own loci are used now.
@@ -198,7 +301,7 @@ Ho, He, FIS, Ar, privAr, F<sub>ST</sub>, D and π are identical.
   The `filter_*()` functions and `write_*()` functions use every sample in
   `H`, including ones left out of the popmap (an outgroup, say); running
   `filter_samples()` first bases filtering, and exported files, on the
-  analysed individuals only.
+  analyzed individuals only.
 * `?read_stacks_vcf` gains "What Stacks writes": the CHROM, POS and ID
   columns of Stacks 2.68's SNP and haplotype VCFs, de novo and
   reference-aligned, and how each is grouped into RAD loci.
@@ -231,15 +334,17 @@ Ho, He, FIS, Ar, privAr, F<sub>ST</sub>, D and π are identical.
   are inbred (the pixy estimator, `pi`, runs low by FIS/(2n − 1)).
 * `hwe_test()` adds a per-locus `F` column (sign of any departure: deficit or
   excess) and a message when all samples are tested as one group.
-* `read_stacks_vcf()` records `n_records_read`, which filters leave unchanged.
+* `read_stacks_vcf()` records `n_records_read` and `n_loci_read`, which
+  filters leave unchanged.
 * `individual_inbreeding()`, and a test on individual F in
   `het_between_pops()` (`pairwise_F_tests`): whether populations differ in
   inbreeding, next to whether they differ in diversity.
 * `identity_disequilibrium()`: g2 per population, also reported by
-  `het_between_pops()`. `diversity_stats(se_individuals = TRUE)` adds
-  delete-one-individual jackknife SEs, for when individuals differ in
-  inbreeding (`inst/sims/coverage_se.R` shows why locus-based intervals are
-  then too narrow).
+  `het_between_pops()`.
+* `diversity_stats(se_individuals = TRUE)` adds, for Ho, He and FIS, a
+  jackknife SE over individuals (`_se_ind`) and `_se_combined`, which puts
+  the uncertainty from which loci and which individuals were sampled
+  together. See "Standard errors" below.
 * `pi_allsites()`: pi, dxy, Da and per-individual heterozygosity per
   sequenced site from an all-sites VCF (Stacks `populations --vcf-all`),
   handling missing data site by site.

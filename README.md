@@ -43,7 +43,7 @@ install.packages("RADdiversity")        # once the package is on CRAN
 remotes::install_github("NathanWhelan/better-RADseq-summary-stats")
 ```
 
-R ≥ 3.5; base R is enough. Optional: `hierfstat` (Weir & Goudet's beta in
+R ≥ 4.0; base R is enough. Optional: `hierfstat` (Weir & Goudet's beta in
 `differentiation_stats()`, and `hierfstat_check = TRUE` cross-checks).
 
 ## Quick start
@@ -122,6 +122,9 @@ populations --in-path ./stacks_out --popmap popmap.tsv -O ./out \
   for diversity statistics avoids the issue.
 * `--vcf-all` (Stacks ≥ 2.62) writes an all-sites VCF, which `pi_allsites()`
   uses to compute nucleotide diversity directly.
+* Per-site values read `Sites` from `populations.sumstats_summary.tsv`. That
+  count fits only data not filtered after `populations`; if you remove whole
+  RAD loci later, give `sites` for the loci you kept (`?diversity_stats`).
 
 Data filtered elsewhere, or with other settings, work too:
 `vignette("workflow")` has a table of what common upstream filters change and
@@ -154,7 +157,7 @@ locus (`populations.haps.vcf`). They answer different questions:
 |---|---|---|
 | H<sub>o</sub>, H<sub>e</sub>, per-site values (π) | `.snps` | per-site values are on a scale other studies can compare |
 | F<sub>IS</sub> | `.haps` | a ratio, so the scale cancels; multi-allelic loci are more precise |
-| allelic richness, private allelic richness | `.haps` | on biallelic SNPs richness can only be 1 or 2 |
+| allelic richness, private allelic richness | `.haps` | on biallelic SNPs richness can only be 1 or 2; depends on SNPs per locus, so compare only populations analyzed together (same run, filters and *g*): which is richer is reliable, how much richer is not |
 | between-population tests | either -- say which | |
 
 H<sub>o</sub> and H<sub>e</sub> are **not** comparable between the two files
@@ -164,25 +167,30 @@ which of its numbers to take.
 
 ## Which standard error to report
 
-* `_se`, `_lo`, `_hi` resample **RAD loci**. They hold the sampled individuals
-  fixed: "what if I had typed different loci in these same animals?".
-* `_se_ind` (`diversity_stats(se_individuals = TRUE)`) is a
-  delete-one-**individual** jackknife: the uncertainty from which individuals
-  were sampled.
+A population's value is uncertain for two reasons: you typed some of the
+genome's RAD loci, and you caught some of the population's individuals.
 
-With many loci and exchangeable individuals the locus-based intervals are
-enough. When individuals differ in inbreeding they are not
-(`inst/sims/coverage_se.R`; 2 × 15 individuals, 1,000 loci, mean F = 0.1):
+* `_se`, `_lo`, `_hi` resample **RAD loci** and hold the individuals fixed.
+* `_se_ind` (`diversity_stats(se_individuals = TRUE)`) is a jackknife over
+  **individuals** that holds the loci fixed.
+* `_se_combined` puts both together: `sqrt(_se^2 + _se_ind^2)`.
 
-| SD of F among individuals | coverage of 95% interval, H<sub>o</sub>: locus SE / individual SE | F<sub>IS</sub>: locus SE / individual SE |
-|---|---|---|
-| 0    | 98.8% / 94.2% | 95.5% / 94.2% |
-| 0.10 | 65.5% / 94.5% | 54.2% / 93.0% |
-| 0.25 | 37.0% / 93.0% | 27.5% / 93.5% |
+**Report `_se_combined` for H<sub>o</sub>, H<sub>e</sub> and F<sub>IS</sub>,
+and `_se` (or `_lo`, `_hi`) for A<sub>r</sub> and privA<sub>r</sub>.** In
+simulations with a known truth (`inst/sims/uncertainty_sources.R`; 2 × 15
+individuals, 1,000 loci, new loci and individuals in every repeat), 95%
+intervals contained the true value this often:
 
-So: check g2 (`identity_disequilibrium()`, also printed by
-`het_between_pops()`). If its interval excludes 0, report `_se_ind`. Either
-way, never compare populations by overlapping intervals -- use
+| | locus SE | individual SE | combined SE |
+|---|---|---|---|
+| H<sub>o</sub> | 41–96% | 88–91% | 93–98% |
+| H<sub>e</sub> | 95–96% | 72–77% | 98–99% |
+| F<sub>IS</sub> | 31–94% | 92–93% | 93–98% |
+
+The low locus-SE values are for populations whose individuals differ in
+inbreeding. `vignette("rationale")`, section 4, explains how each SE is
+calculated and why A<sub>r</sub> and privA<sub>r</sub> use the locus SE.
+Never compare populations by overlapping intervals -- use
 `het_between_pops()`.
 
 ## Glossary
@@ -206,6 +214,8 @@ way, never compare populations by overlapping intervals -- use
 * **jackknife / bootstrap** -- recompute a statistic with one unit left out /
   with units resampled; here the unit is a RAD locus (or, for `_se_ind`, an
   individual).
+* **standard error (SE)** -- how much a number would change if the study were
+  repeated; estimate ± 1.96 SE is a 95% confidence interval.
 
 ## What this package does not do
 

@@ -1,5 +1,5 @@
 ## het_between_pops(): which individuals and loci each part uses, the
-## failed-individual warning, and the populations it cannot analyse.
+## failed-individual warning, and the populations it cannot analyze.
 
 ## `ns` individuals per population, `n_rec` records under HWE, no missing data.
 het_data <- function(ns, n_rec = 300) {
@@ -42,11 +42,11 @@ test_that("an individual with no call at its population's loci is left out, with
   summary_B <- res$population_summary[res$population_summary$population == "B", ]
   expect_equal(summary_B$n, 9L)
   expect_true(all(is.finite(unlist(summary_B[, c("mean_het", "sd", "se", "min", "max")]))))
-  expect_true(is.finite(res$overdispersion$overdispersion[2]))
+  expect_true(is.finite(res$g2$g2[res$g2$population == "B"]))
   expect_equal(res$pairwise_tests$n2, 9L)
 })
 
-test_that("a population it cannot analyse stops with a message that says why", {
+test_that("a population it cannot analyze stops with a message that says why", {
   set.seed(1)
   d <- het_data(c(8, 1))
   expect_error(het_between_pops(sim_H(d$A1, d$A2), d$pops, verbose = FALSE),

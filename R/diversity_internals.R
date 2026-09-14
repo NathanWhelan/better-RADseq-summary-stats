@@ -10,7 +10,7 @@
 #                              population (calls .one_pop_record_stats())
 #    .diversity_pieces()       those per-record values as sums-and-counts
 #    .diversity_from_sums()    summed pieces -> the reported statistics
-#    .jack_individuals()       delete-one-individual standard errors
+#    .jack_individuals()       delete-one-individual standard errors (Ho, He, FIS)
 #    .boot_individuals()       the boot = "individuals"/"both" bootstrap
 #    .diversity_tables()       the result tables
 #    .hierfstat_crosscheck()   optional comparison with hierfstat
@@ -83,6 +83,16 @@
     if (!any(keep))
       stop("No record has >= min_n typed individuals in any population. Lower min_n ",
            "(currently ", min_n, ") or check that genotypes were parsed.", call. = FALSE)
+    ## A population with no usable record would come back as a row of NAs
+    ## that looks like a result, so stop and say how far min_n must come down.
+    empty <- colnames(n_typed)[colSums(meets_min_n) == 0L]
+    if (length(empty))
+      stop("No record has >= min_n = ", min_n, " genotyped individuals in population(s): ",
+           paste(sprintf("%s (at most %d genotyped at any record, of %d individuals)", empty,
+                         apply(n_typed[, empty, drop = FALSE], 2L, max),
+                         as.integer(pop_sizes[empty])), collapse = ", "),
+           ".\n  Lower min_n to at most the number shown (min_n cannot go below 2), or remove ",
+           "these populations from the popmap.", call. = FALSE)
   }
   list(keep = keep, cells_used = cells_used, cells_total = cells_total)
 }
@@ -110,6 +120,12 @@
 ##   min_n             fewer genotyped individuals than this -> NA everywhere
 ##   g                 rarefaction size in gene copies
 ##   p_drawn           Pr(allele appears in g copies), if already computed
+##   use               which records this population uses (default: those with
+##                     n_typed >= min_n). The individual jackknife passes the
+##                     full sample's choice, so every replicate uses the same
+##                     records (see .jack_individuals()).
+##   richness          FALSE skips Ar and Pr (returned as NA), for callers
+##                     that need only Ho and He
 ## Returns a list of per-record vectors:
 ##   Ho         observed heterozygosity
 ##   Hs         Nei & Chesser (1983) gene diversity (hs_nei_chesser())
@@ -119,7 +135,8 @@
 ##              (rare_richness(), rare_private())
 ##   n_present  number of distinct alleles present
 .one_pop_record_stats <- function(counts, n_typed, n_het, absent_elsewhere, min_n, g,
-                                  p_drawn = .p_sampled_mat(counts, g)) {
+                                  p_drawn = .p_sampled_mat(counts, g),
+                                  use = n_typed >= min_n, richness = TRUE) {
   n_copies <- rowSums(counts)
   sum_p2 <- rowSums((counts / n_copies)^2)     # sum of squared allele frequencies
 
@@ -133,10 +150,14 @@
   ## number drawn here AND absent from every other population (Pr). A record
   ## with fewer than g copies in any population has NA here (see
   ## .p_sampled_mat()).
-  Ar <- rowSums(p_drawn)
-  Pr <- rowSums(p_drawn * absent_elsewhere)
+  if (richness) {
+    Ar <- rowSums(p_drawn)
+    Pr <- rowSums(p_drawn * absent_elsewhere)
+  } else {
+    Ar <- Pr <- rep(NA_real_, length(n_copies))
+  }
 
-  too_few <- n_typed < min_n
+  too_few <- !use
   Ho[too_few] <- NA_real_
   Hs[too_few] <- NA_real_
   Hp[too_few] <- NA_real_
@@ -330,28 +351,48 @@
 ## ---------------------------------------------------------------------------
 
 ## Not exported. Delete-one-INDIVIDUAL jackknife standard errors of each
-## population's Ho, He, FIS, Ar and privAr (diversity_stats(se_individuals =
-## TRUE)): the uncertainty from which individuals were sampled, which the
-## locus jackknife and bootstrap hold fixed. For each individual of
-## population p, its two gene copies and its heterozygosity are removed from
-## p's per-record counts, and p's statistics are recomputed with the same
-## functions as the point estimate. The other populations do not change.
-## Nobody is duplicated, so this avoids the small-sample bias that rules out
-## a bootstrap over individuals (vignette("rationale"), "Why not bootstrap individuals?").
+## population's Ho, He and FIS (diversity_stats(se_individuals = TRUE)): how
+## much each value would change if different individuals had been sampled,
+## with the loci held fixed. The locus jackknife and bootstrap answer the
+## opposite question (different loci, same individuals); diversity_stats()
+## combines the two into `_se_combined` (see "How standard errors are
+## calculated" in ?diversity_stats).
+##
+## How: for each individual of population p, its two gene copies and its
+## heterozygosity are removed from p's per-record counts, and p's Ho, He and
+## FIS are recomputed with the same functions as the point estimate. The
+## other populations do not change. Nobody is duplicated, which avoids the
+## small-sample bias that rules out a bootstrap over individuals.
 ##   SE = sqrt( (n - 1)/n * sum_i (theta_(-i) - mean_i theta_(-i))^2 )
+##
+## THE SAME RECORDS IN EVERY REPLICATE. Which records a population uses is
+## decided once, on the full sample (n_typed >= min_n), and kept for every
+## replicate. Deciding it again in each replicate would make a record with
+## exactly min_n genotyped individuals vanish whenever one of them is left
+## out. The estimate then jumps, and a delete-one jackknife overstates the SE
+## when the estimate jumps (Shao & Wu 1989): in a simulation run during the
+## review that made this change, with min_n = 5 of 10 individuals and 30%
+## missing genotypes, the He SE came out 1.64 times its true value, and 1.35
+## with the record set fixed. A record is still lost
+## in a replicate where He becomes undefined, i.e. only one genotyped
+## individual is left; .jackknife_boundary() counts how often that can happen.
+##
+## Ar and privAr have no individual SE: their locus SE and bootstrap interval
+## already covered the truth in simulation, while their individual jackknife
+## did not (inst/sims/uncertainty_sources.R).
 ## Inputs are for the records `rows` of H (see the SHAPES note at the top).
 ## Returns list(se = named SEs, full = the same statistics recomputed from
 ## everyone, which must equal the point estimates).
-.jack_individuals <- function(H, pops, rows, counts, n_typed, n_het, min_n, g) {
-  p_drawn <- lapply(counts, .p_sampled_mat, g = g)
-  reported <- c("Ho_", "He_", "Fis_", "Ar_", "Pr_")
+.jack_individuals <- function(H, pops, rows, counts, n_typed, n_het, min_n) {
+  reported <- c("Ho_", "He_", "Fis_")
   se <- full <- numeric(0)
 
   for (p in seq_along(pops)) {
-    absent <- .absent_elsewhere(p_drawn, p)
-    ## Population p's five statistics from its (possibly reduced) counts.
+    use <- n_typed[, p] >= min_n            # decided once, on the full sample
+    ## Population p's three statistics from its (possibly reduced) counts.
     stats_of <- function(C, n, h) {
-      rs <- .one_pop_record_stats(C, n, h, absent, min_n, g)
+      rs <- .one_pop_record_stats(C, n, h, absent_elsewhere = NULL, min_n = min_n, g = NA,
+                                  p_drawn = NULL, use = use, richness = FALSE)
       stats <- .diversity_from_sums(colSums(.diversity_pieces(rs)), "x")
       stats[1L, paste0(reported, "x")]
     }
@@ -377,46 +418,29 @@
   list(se = se, full = full)
 }
 
-## Not exported. When are the individual-jackknife SEs of Ar and privAr
-## unreliable? Rarefaction needs at least g gene copies. At a record where a
-## population has only g or g + 1 copies, deleting one typed individual (2
-## copies) leaves fewer than g, so the record drops out of
-## some jackknife replicates and not others. The replicates then average over
-## different records, which adds spread that has nothing to do with sampling
-## individuals: in simulation (inst/sims/jackknife_richness.R) the Ar SE came
-## out up to about twice the true value when many records sat there.
+## Not exported. The one case the fixed record set cannot rescue: a record a
+## population uses with exactly 2 genotyped individuals. Leaving out either
+## of them leaves 1, where He and FIS are undefined, so that record drops out
+## of those two replicates and the individual SEs come out too large, mainly
+## He's: with 6 individuals per population, He's SE was 1.32 times its true
+## value when 6% of records were like this and 1.10 when none were, while Ho
+## and FIS changed little (inst/sims/uncertainty_sources.R, part boundary).
+## Returns, per population, the share of the records it uses that have
+## exactly 2 genotyped individuals (NA if it uses none).
 ##   n_typed  records x populations, genotyped individuals (used records)
-##   Ar       records x populations, Ar from .record_stats() (NA = undefined)
-##   g, min_n as in diversity_stats()
-##   threshold  largest acceptable share of such records
-## Returns list(share = per population, the share of its records with a
-## defined Ar that have fewer than g + 2 gene copies; suggest_g = the largest g
-## (>= 2) at which every population's share is at most `threshold`, or NA).
-.jackknife_boundary <- function(n_typed, Ar, g, min_n, threshold) {
-  copies <- 2L * n_typed
-  share_at <- function(g_try, defined) {
-    vapply(seq_len(ncol(copies)), function(p) {
-      used <- copies[defined[, p], p]
-      if (length(used)) mean(used < g_try + 2) else NA_real_
-    }, numeric(1))
-  }
-  share <- stats::setNames(share_at(g, !is.na(Ar)), colnames(n_typed))
-  suggest_g <- NA_integer_
-  for (g_try in rev(seq_len(g)[-1])) {
-    defined <- copies >= g_try & n_typed >= min_n
-    shares <- share_at(g_try, defined)
-    if (all(is.na(shares) | shares <= threshold)) {
-      suggest_g <- g_try
-      break
-    }
-  }
-  list(share = share, suggest_g = suggest_g)
+##   min_n    as in diversity_stats()
+.jackknife_boundary <- function(n_typed, min_n) {
+  share <- vapply(seq_len(ncol(n_typed)), function(p) {
+    used <- n_typed[n_typed[, p] >= min_n, p]
+    if (length(used)) mean(used == 2L) else NA_real_
+  }, numeric(1))
+  stats::setNames(share, colnames(n_typed))
 }
 
-## Not exported. Largest share of a population's Ar-defined records with
-## fewer than g + 2 gene copies before diversity_stats(se_individuals = TRUE) warns
-## that Ar_se_ind and privAr_se_ind are probably too large (calibrated in
-## inst/sims/jackknife_richness.R).
+## Not exported. Largest share of a population's records with exactly 2
+## genotyped individuals before diversity_stats(se_individuals = TRUE) warns
+## that its individual SEs are probably too large (calibrated in
+## inst/sims/uncertainty_sources.R).
 .jackknife_boundary_share <- 0.05
 
 ## Not exported. The boot = "individuals" / "both" bootstrap (comparison
@@ -488,7 +512,7 @@
 ## Not exported. Builds diversity_stats()' result tables, full precision.
 ##   point, se_loci  named vectors from .diversity_from_sums() / jackknife
 ##   ci              statistics x 2 matrix (bootstrap interval; NA if none)
-##   se_ind          individual-jackknife SEs, or NULL
+##   se_ind          individual-jackknife SEs of Ho, He and FIS, or NULL
 ##   ar_n, pr_n      records with a defined Ar / privAr, per population
 ##   sites, variant_records, ok_sites
 ##                   per population: sequenced sites, variant records with data
@@ -517,7 +541,10 @@
     priv_total = value("PrTot_"), priv_total_se = se("PrTot_"),
     priv_total_lo = lo("PrTot_"), priv_total_hi = hi("PrTot_"), row.names = NULL)
 
-  ## Individual-jackknife SEs go right after their locus-based counterparts.
+  ## Individual-jackknife SEs, and the combined SE to report, go right after
+  ## their locus-based counterparts: Ho_se, Ho_se_ind, Ho_se_combined, ...
+  ## The combined SE adds the two sources of uncertainty (which loci, which
+  ## individuals) as variances: sqrt(se_loci^2 + se_ind^2).
   if (!is.null(se_ind)) {
     insert_after <- function(df, after, name, values) {
       df[[name]] <- unname(values)
@@ -525,12 +552,14 @@
       df[c(names(df)[seq_len(position)], name,
            setdiff(names(df)[-seq_len(position)], name))]
     }
-    se_i <- function(prefix) se_ind[paste0(prefix, pop_names)]
-    per_population <- insert_after(per_population, "Ho_se", "Ho_se_ind", se_i("Ho_"))
-    per_population <- insert_after(per_population, "He_se", "He_se_ind", se_i("He_"))
-    per_population <- insert_after(per_population, "Fis_se", "Fis_se_ind", se_i("Fis_"))
-    richness <- insert_after(richness, "Ar_se", "Ar_se_ind", se_i("Ar_"))
-    richness <- insert_after(richness, "privAr_se", "privAr_se_ind", se_i("Pr_"))
+    for (stat in c("Ho", "He", "Fis")) {
+      individual <- unname(se_ind[paste0(stat, "_", pop_names)])
+      combined <- sqrt(se(paste0(stat, "_"))^2 + individual^2)
+      per_population <- insert_after(per_population, paste0(stat, "_se"),
+                                     paste0(stat, "_se_ind"), individual)
+      per_population <- insert_after(per_population, paste0(stat, "_se_ind"),
+                                     paste0(stat, "_se_combined"), combined)
+    }
   }
 
   ## The same parameter with the estimator behind Stacks' `Pi`, side by side.

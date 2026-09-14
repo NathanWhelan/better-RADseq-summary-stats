@@ -17,17 +17,17 @@ sim_H <- function(n, L, F = 0, seed = 1, prefix = "s") {
 
 test_that("F is ~0 under random mating and ~F under inbreeding", {
   H0 <- sim_H(30, 3000, F = 0)
-  f0 <- individual_inbreeding(H0, list(pop = H0$samples))$F
+  f0 <- individual_inbreeding(H0, list(pop = H0$samples), verbose = FALSE)$F
   expect_lt(abs(mean(f0)), 0.02)
   H2 <- sim_H(30, 3000, F = 0.2, seed = 2)
-  f2 <- individual_inbreeding(H2, list(pop = H2$samples))$F
+  f2 <- individual_inbreeding(H2, list(pop = H2$samples), verbose = FALSE)$F
   expect_lt(abs(mean(f2) - 0.2), 0.03)
 })
 
 test_that("an individual heterozygous everywhere has F < 0", {
   H <- sim_H(20, 500)
   H$A1[, 1] <- 1L; H$A2[, 1] <- 2L
-  f <- individual_inbreeding(H, list(pop = H$samples))
+  f <- individual_inbreeding(H, list(pop = H$samples), verbose = FALSE)
   expect_lt(f$F[f$sample == "s1"], 0)
 })
 
@@ -38,7 +38,7 @@ test_that("with complete data, the population mean of F equals diversity_stats()
   H <- A; H$A1 <- cbind(A$A1, B$A1); H$A2 <- cbind(A$A2, B$A2); H$samples <- c(A$samples, B$samples)
   pops <- list(popA = A$samples, popB = B$samples)
   pm <- tempfile(); writeLines(paste0(H$samples, "\t", rep(names(pops), lengths(pops))), pm)
-  f <- individual_inbreeding(H, pops)
+  f <- individual_inbreeding(H, pops, verbose = FALSE)
   fis <- suppressMessages(diversity_stats(H, pm, g = 4, nboot = 0, stem = "f"))$per_population
   for (p in names(pops))
     expect_lt(abs(mean(f$F[f$population == p]) - fis$Fis[fis$population == p]), 1e-10)
@@ -62,4 +62,17 @@ test_that("individual_inbreeding() validates its inputs", {
   H <- sim_H(5, 50)
   expect_error(individual_inbreeding(H, list(H$samples)), "named list")
   expect_error(individual_inbreeding(H, list(pop = H$samples), min_call = 2), "min_call")
+  expect_error(individual_inbreeding(H, "no_such_popmap.tsv"), "Popmap file not found")
+})
+
+test_that("individual_inbreeding() stops for a population it cannot analyze", {
+  H <- sim_H(5, 50)
+  expect_error(individual_inbreeding(H, list(pop = H$samples[1:4], lone = H$samples[5]),
+                                     verbose = FALSE),
+               "fewer than 2 individuals: lone")
+  H$A1[, 1:2] <- NA
+  H$A2[, 1:2] <- NA
+  expect_error(individual_inbreeding(H, list(a = H$samples[1:2], b = H$samples[3:5]),
+                                     verbose = FALSE),
+               "individuals of population\\(s\\): a \\(highest call rate 0%\\)")
 })

@@ -25,6 +25,13 @@ population's sample IDs.
 Reads a two-column, no-header, tab-separated popmap (\verb{sample_id <TAB> population}) into a list of sample IDs per population. Every function that
 takes a \code{popmap} argument accepts either the file path or this list.
 }
+\details{
+The file is read with the same rules as Stacks: blank lines and lines
+starting with \verb{#} are skipped, and a third column (Stacks' optional
+population group) is allowed and ignored. A line with only one column,
+more than three, or columns separated by spaces instead of a TAB stops with
+the line number and its text.
+}
 \examples{
 popmap <- system.file("extdata", "small_popmap.tsv", package = "RADdiversity")
 pops <- read_popmap(popmap)

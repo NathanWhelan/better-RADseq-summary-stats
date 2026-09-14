@@ -30,7 +30,8 @@ enumeration) and under \code{method = "chisq"}.}
 
 \item{stop_after}{Stop drawing for a locus once this many draws at least
 as extreme as the observed table have been seen (Besag & Clifford
-1991). Default \code{20}. \code{Inf} always uses all \code{n_draws} draws.}
+1991). A whole number, default \code{20}; \code{Inf} always uses all \code{n_draws}
+draws.}
 
 \item{seed}{Random seed for the Monte Carlo draws. Default \code{NULL}: use R's
 current random-number stream (call \code{set.seed()} first for reproducible

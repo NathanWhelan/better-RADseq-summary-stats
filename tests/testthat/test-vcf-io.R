@@ -43,6 +43,26 @@ test_that("read_popmap() splits samples by population", {
   expect_equal(lengths(pops), c(popA = 4L, popB = 3L))
 })
 
+test_that("read_popmap() follows Stacks' rules and explains malformed lines", {
+  write_pm <- function(lines) { f <- tempfile(fileext = ".tsv"); writeLines(lines, f); f }
+  ## A third (group) column, a comment, a blank line, CRLF endings and IDs
+  ## that look numeric are all fine.
+  ok <- write_pm(c("# my popmap", "001\tnorth\tgroup1\r", "", "002\tnorth\tgroup1",
+                   "003\tsouth\tgroup2"))
+  expect_message(pops <- read_popmap(ok), "third \\(group\\) column")
+  expect_equal(pops, list(north = c("001", "002"), south = "003"))
+  ## A line with no population column names the line.
+  expect_error(read_popmap(write_pm(c("s1\tpopA", "s2")), verbose = FALSE),
+               "line 2: \"s2\" \\(no population column\\)")
+  ## Space-separated columns get a hint.
+  expect_error(read_popmap(write_pm(c("s1 popA", "s2 popB")), verbose = FALSE),
+               "separated by spaces")
+  ## Four columns.
+  expect_error(read_popmap(write_pm("s1\tpopA\tg\textra"), verbose = FALSE), "4 columns")
+  ## An empty population.
+  expect_error(read_popmap(write_pm(c("s1\t\tg")), verbose = FALSE), "empty sample or population")
+})
+
 test_that("printing the data object gives a short summary, not the matrices", {
   H <- read_stacks_vcf(fx("small.haps.vcf"), verbose = FALSE)
   expect_s3_class(H, "raddiv_vcf")
@@ -172,4 +192,36 @@ test_that("diversity_stats()/het_between_pops() accept a pre-parsed H list in pl
   ))
   expect_s3_class(het_result, "raddiv_het")
   expect_true(file.exists(file.path(outdir, "individual_heterozygosity.test.tsv")))
+})
+
+test_that("a Stacks 2.68 de novo haplotype VCF (ID '.', POS 0) is read as one locus per record", {
+  ## The layout VcfHapsExport::write_batch() writes: CHROM = locus ID, POS = 0,
+  ## ID = ".", haplotype alleles joined from the SNP columns, INFO snp_columns.
+  ## Locus 12 has one SNP (single-base alleles), the others several.
+  f <- tempfile(fileext = ".vcf")
+  set.seed(4)
+  samp <- c(paste0("n", 1:5), paste0("s", 1:5))
+  rec <- function(chrom, ref, alt, cols) {
+    k <- length(strsplit(alt, ",")[[1]])
+    gts <- vapply(1:10, function(i) paste(sort(sample(0:k, 2, TRUE)), collapse = "/"), "")
+    gts[3] <- "./."
+    paste(c(chrom, "0", ".", ref, alt, ".", "PASS", paste0("snp_columns=", cols), "GT", gts),
+          collapse = "\t")
+  }
+  writeLines(c("##fileformat=VCFv4.2", "##source=\"Stacks v2.68\"",
+               paste(c("#CHROM", "POS", "ID", "REF", "ALT", "QUAL", "FILTER", "INFO", "FORMAT",
+                       samp), collapse = "\t"),
+               rec("3", "ACG", "TCG,ATG", "12,40,77"),
+               rec("7", "GT", "AT,GC,AC", "5,61"),
+               rec("12", "C", "T", "33"),
+               rec("15", "TTA", "CTA", "8,9,90")), f)
+  msgs <- capture_messages(H <- read_stacks_vcf(f))
+  expect_true(any(grepl("RAD loci from CHROM \\+ POS", msgs)))
+  expect_equal(length(unique(H$locus_raw)), 4L)
+  expect_true(RADdiversity:::.is_haplotype_H(H))
+  expect_true(all(is.na(H$A1[, "n3"])))
+  pm <- list(north = samp[1:5], south = samp[6:10])
+  res <- suppressWarnings(diversity_stats(H, pm, g = 4, nboot = 0, verbose = FALSE))
+  expect_true(res$settings$is_haplotype)
+  expect_equal(res$settings$n_loci, 4L)
 })

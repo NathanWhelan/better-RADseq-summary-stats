@@ -21,13 +21,16 @@ test_that("scalar arguments are checked with a message naming the argument", {
   expect_error(filter_max_het(haps(), max_ho = 2), "`max_ho`")
   expect_error(kinship_check(haps(), threshold = "high"), "`threshold`")
   expect_error(hwe_test(haps(), stop_after = 0), "`stop_after`")
+  expect_error(hwe_test(haps(), stop_after = 2.5), "whole number >= 1, or Inf")
 })
 
 test_that("verbose = FALSE silences every progress message", {
   vcf <- fx("small.haps.vcf")
   pm <- fx("small_popmap.tsv")
-  expect_no_message(diversity_stats(vcf, pm, g = 4, nboot = 10, se_individuals = TRUE,
-                                    verbose = FALSE))
+  ## (The toy data trigger the warning about Ar/privAr individual SEs; this
+  ## test is about messages only.)
+  expect_no_message(suppressWarnings(diversity_stats(vcf, pm, g = 4, nboot = 10,
+                                                     se_individuals = TRUE, verbose = FALSE)))
   expect_no_message(het_between_pops(vcf, pm, min_call = 0.5, verbose = FALSE))
   expect_no_message(differentiation_stats(vcf, pm, nboot = 10, verbose = FALSE))
   expect_no_message(individual_inbreeding(vcf, pm, min_call = 0.5, verbose = FALSE))

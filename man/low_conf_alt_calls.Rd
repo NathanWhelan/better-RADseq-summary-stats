@@ -8,8 +8,9 @@ low_conf_alt_calls(H, min_alt_reads = 2)
 }
 \arguments{
 \item{H}{The object returned by \code{\link[=read_stacks_vcf]{read_stacks_vcf()}} (optionally filtered).
-It must still contain \verb{$fields}, the raw VCF columns, which hold the AD
-(allele depth) values.}
+The allele depths come from \code{H$ad_ref} and \code{H$ad_alt}, which
+\code{\link[=read_stacks_vcf]{read_stacks_vcf()}} fills from each call's \code{AD} (allele depth) field; they
+are \code{NULL} for a VCF without \code{AD}, in which case nothing is flagged.}
 
 \item{min_alt_reads}{A call with this many or fewer reads supporting its
 ALT allele(s) is flagged. Default \code{2}.}

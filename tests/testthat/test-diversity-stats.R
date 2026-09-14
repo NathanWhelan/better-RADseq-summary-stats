@@ -201,6 +201,33 @@ test_that("diversity_stats() ignores sites= entirely (autosomal NULL) on a haplo
   expect_null(out$autosomal)
 })
 
+test_that("a multi-allelic SNP does not turn a SNP VCF into haplotype data", {
+  ## GATK and freebayes can emit sites such as A -> C,T. Every allele is still
+  ## one base, so every record is one site and per-site values are given.
+  set.seed(3)
+  n <- 6
+  samp <- c(paste0("a", 1:n), paste0("b", 1:n))
+  gt <- function() sample(c("0/0", "0/1", "1/1"), 2 * n, TRUE, prob = c(0.4, 0.4, 0.2))
+  lines <- c("##fileformat=VCFv4.2",
+             paste(c("#CHROM", "POS", "ID", "REF", "ALT", "QUAL", "FILTER", "INFO", "FORMAT", samp),
+                   collapse = "\t"))
+  for (i in 1:60)
+    lines <- c(lines, paste(c("chr1", i * 2000, ".", "A", "C", ".", "PASS", ".", "GT", gt()),
+                            collapse = "\t"))
+  lines <- c(lines, paste(c("chr1", 999999, ".", "A", "C,T", ".", "PASS", ".", "GT",
+                            "0/2", gt()[-1]), collapse = "\t"))
+  vcf <- tempfile(fileext = ".vcf"); writeLines(lines, vcf)
+  pm <- list(A = samp[1:n], B = samp[n + 1:n])
+  H <- read_stacks_vcf(vcf, verbose = FALSE)
+  expect_false(RADdiversity:::.is_haplotype_H(H))
+  res <- diversity_stats(H, pm, g = 4, nboot = 0, sites = 1e5, verbose = FALSE)
+  expect_false(res$settings$is_haplotype)
+  expect_false(is.null(res$autosomal))
+  ## The same record with multi-base (haplotype) alleles is haplotype data.
+  H$alleles[[61]] <- c("AG", "CT", "TC")
+  expect_true(RADdiversity:::.is_haplotype_H(H))
+})
+
 test_that("per-site values scale each population by its own variant records (Stacks' -r pruning)", {
   ## Three populations; population C is blanked at 30% of records, as Stacks'
   ## -r does with -p below the number of populations. Stacks' `Sites` for C
@@ -285,6 +312,27 @@ test_that("fis_by_call_rate is flat without dropout and rises with it", {
   expect_gt(a$Fis[a$call_rate == "<75%"], a$Fis[a$call_rate == "100%"] + 0.1)
 })
 
+test_that("fis_by_call_rate's SE uses only the loci in each call-rate group", {
+  ## 600 loci, all fully typed except 5 with one missing individual in popA:
+  ## the "90-99%" group of popA has 5 loci, and its SE must be the jackknife
+  ## over those 5 alone, not over all 600 (which would inflate it by ~12%).
+  set.seed(11)
+  L <- 600; n <- 10
+  g <- sim_genotypes(stats::runif(L, 0.2, 0.8), 2 * n)
+  samp <- c(paste0("a", 1:n), paste0("b", 1:n))
+  dimnames(g$A1) <- dimnames(g$A2) <- list(NULL, samp)
+  g$A1[1:5, 1] <- NA; g$A2[1:5, 1] <- NA
+  pops <- list(popA = samp[1:n], popB = samp[n + 1:n])
+  tab <- diversity_stats(sim_H(g$A1, g$A2), pops, g = 10, nboot = 0,
+                         verbose = FALSE)$fis_by_call_rate
+  row <- tab[tab$population == "popA" & tab$call_rate == "90-99%", ]
+  expect_equal(row$n_records, 5L)
+  ## The same group computed on its own 5 loci:
+  few <- sim_H(g$A1[1:5, ], g$A2[1:5, ])
+  alone <- diversity_stats(few, pops, g = 10, nboot = 0, verbose = FALSE)$per_population
+  expect_equal(row$Fis_se, alone$Fis_se[1], tolerance = 1e-10)
+})
+
 test_that("diversity_stats() notices data that were filtered by minor allele count", {
   set.seed(5)
   L <- 2000; n <- 30
@@ -307,6 +355,22 @@ test_that("diversity_stats() notices data that were filtered by minor allele cou
   expect_equal(pf$min_allele_count, 3L)
   ## Described in summary() as information, not raised as a warning.
   expect_true(any(grepl("filtered by minor allele count", capture.output(summary(res)))))
+
+  ## A VCF sample outside the popmap (an outgroup) carrying singletons at
+  ## every record does not hide the filter: the check uses popmap samples.
+  out1 <- matrix(1L, nrow(filtered_H$A1), 1, dimnames = list(NULL, "outgroup"))
+  out2 <- out1
+  out2[, 1] <- ifelse(filtered_H$A1[, 1] == 1L, 2L, 1L)   # heterozygous everywhere
+  with_outgroup <- filtered_H
+  with_outgroup$A1 <- cbind(filtered_H$A1, out1)
+  with_outgroup$A2 <- cbind(filtered_H$A2, out2)
+  with_outgroup$samples <- c(filtered_H$samples, "outgroup")
+  pf2 <- diversity_stats(with_outgroup, pops, g = 20, nboot = 0,
+                         verbose = FALSE)$settings$prior_filters
+  expect_true(pf2$looks_mac_filtered)
+  expect_equal(pf2$n_samples, 30L)
+  expect_true(any(grepl("over the 30 individuals in the popmap",
+                        capture.output(summary(res)))))
 })
 
 test_that("het_between_pops() returns the expected structure on a small fixture", {

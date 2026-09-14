@@ -136,10 +136,10 @@ what to report.
 | do populations differ in diversity? in inbreeding? | `het_between_pops()` |
 | each individual's inbreeding coefficient | `individual_inbreeding()` |
 | do individuals differ in inbreeding (g2)? | `identity_disequilibrium()` |
-| F<sub>ST</sub>, Jost's D, Weir & Goudet's beta | `differentiation_stats()` |
+| F<sub>ST</sub>, Jost's D, Weir & Goudet's beta (global D uses only records typed in every population) | `differentiation_stats()` |
 | are there close relatives in the sample? | `kinship_check()` |
 | Hardy–Weinberg departures (a report, never a filter) | `hwe_test()` |
-| read and filter | `read_stacks_vcf()`, `read_popmap()`, `filter_call_rate()`, `filter_genotype_depth()`, `filter_maf()`, `filter_mac()`, `filter_max_het()`, `filter_thin_one_snp()`, `filter_low_conf_alt()`, `locus_allele_stats()`, `low_conf_alt_calls()`, `low_conf_alt_sensitivity()` |
+| read and filter | `read_stacks_vcf()`, `read_popmap()`, `filter_samples()`, `filter_call_rate()`, `filter_genotype_depth()`, `filter_maf()`, `filter_mac()`, `filter_max_het()`, `filter_thin_one_snp()`, `filter_low_conf_alt()`, `locus_allele_stats()`, `low_conf_alt_calls()`, `low_conf_alt_sensitivity()` |
 | export | `write_vcf()`, `write_plink()`, `write_structure()`, `write_genepop()`, `write_fstat()`, `write_radpainter()` |
 | read Stacks' `sumstats_summary.tsv` | `read_sumstats_summary()` |
 | the individual estimators | `?estimators` |

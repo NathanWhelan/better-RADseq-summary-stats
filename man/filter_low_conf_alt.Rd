@@ -14,8 +14,9 @@ filter_low_conf_alt(
 }
 \arguments{
 \item{H}{The object returned by \code{\link[=read_stacks_vcf]{read_stacks_vcf()}} (optionally filtered).
-It must still contain \verb{$fields}, the raw VCF columns, which hold the AD
-(allele depth) values.}
+The allele depths come from \code{H$ad_ref} and \code{H$ad_alt}, which
+\code{\link[=read_stacks_vcf]{read_stacks_vcf()}} fills from each call's \code{AD} (allele depth) field; they
+are \code{NULL} for a VCF without \code{AD}, in which case nothing is flagged.}
 
 \item{min_alt_reads}{A call with this many or fewer reads supporting its
 ALT allele(s) is flagged. Default \code{2}.}
@@ -57,6 +58,10 @@ threshold. Before \code{\link[=diversity_stats]{diversity_stats()}}, \code{\link
 \code{\link[=individual_inbreeding]{individual_inbreeding()}}, use \code{\link[=filter_genotype_depth]{filter_genotype_depth()}}, which masks by
 depth whatever the genotype. The message reports the share of heterozygous
 calls masked, so the imbalance can be seen.
+
+\strong{Which samples.} This uses every sample in \code{H}, including any that are
+not in your popmap (an outgroup, say). Run \code{\link[=filter_samples]{filter_samples()}} first to base
+it on the individuals you analyse.
 }
 \examples{
 # A tiny VCF: ind2's ALT call at locus_1 is supported by only 1 read.

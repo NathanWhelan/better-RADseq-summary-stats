@@ -35,9 +35,9 @@ in chunks.}
 loci are the unit that standard errors and bootstrap intervals resample,
 so that linked SNPs on one RAD tag move together.
 \itemize{
-\item \code{"auto"} (default): the ID column when every record has one (Stacks
-writes the locus number, or \code{locus:column:strand} in a SNP VCF), and
-\code{"window"} otherwise.
+\item \code{"auto"} (default): the ID column when every record has one, and
+\code{"window"} otherwise. For Stacks output both give one locus per Stacks
+locus; see "What Stacks writes" below.
 \item \code{"ID"}: the ID column, up to its first \code{:}.
 \item \code{"CHROM"}: one locus per CHROM value, for de novo formats that put the
 locus there (some Stacks 2 versions, ipyrad, dDocent).

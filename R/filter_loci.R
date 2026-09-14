@@ -19,6 +19,12 @@
 #  (min_call), which are documented with those functions. The filters here
 #  clean a dataset BEFORE analysis or export.
 #
+#  WHICH SAMPLES. The filters use EVERY sample in H, including samples that
+#  are not in the popmap (an outgroup, a failed library), whereas every
+#  analysis uses only the popmap's samples. filter_samples() removes the
+#  others from H, so that filters and exported files see only the analysed
+#  individuals.
+#
 #  A NOTE FOR READERS NEW TO R: `NA` is R's code for a missing value, and a
 #  "logical" vector is a vector of TRUE/FALSE values. `H$A1` and `H$A2` are
 #  matrices with one row per VCF record and one column per sample;
@@ -60,6 +66,91 @@
   H
 }
 
+## Not exported. The sample-wise twin of .subset_H(): keeps the samples
+## (columns) `keep` in every per-sample element of H. `keep` is either a
+## TRUE/FALSE vector with one value per sample (H's column order is kept) or
+## a vector of sample names (the samples come out in that order). Records are
+## untouched, so `n_records_read` stays as it is.
+.subset_samples <- function(H, keep) {
+  if (is.character(keep)) {
+    if (anyNA(keep) || !all(keep %in% H$samples))
+      stop(".subset_samples(): every name in `keep` must be a sample of H.", call. = FALSE)
+    keep <- match(keep, H$samples)
+  } else if (!is.logical(keep) || length(keep) != length(H$samples) || anyNA(keep)) {
+    stop(".subset_samples(): `keep` must be a TRUE/FALSE vector with one entry per ",
+         "sample in H, or a vector of sample names.", call. = FALSE)
+  }
+  H$A1 <- H$A1[, keep, drop = FALSE]
+  H$A2 <- H$A2[, keep, drop = FALSE]
+  ## The depth matrices are absent from a hand-built H, or from a VCF with no
+  ## DP or AD.
+  for (name in c("depth", "ad_ref", "ad_alt"))
+    if (!is.null(H[[name]])) H[[name]] <- H[[name]][, keep, drop = FALSE]
+  H$samples <- H$samples[keep]
+  H
+}
+
+#' Keep only the individuals in a popmap
+#'
+#' Removes from `H` every sample that is not in `popmap`: its genotypes, read
+#' depths and allele depths. Records are kept as they are.
+#'
+#' Every analysis function uses only the popmap's individuals, but the
+#' `filter_*()` functions and [locus_allele_stats()] work on EVERY sample in
+#' `H`, and the `write_*()` functions write every sample. A sample left out
+#' of the popmap on purpose -- an outgroup, a failed library, a replicate --
+#' still counts towards minor allele frequencies, call rates and
+#' heterozygosity there, and still appears in exported files. Run
+#' `filter_samples()` first to filter, and export, only the individuals you
+#' analyse.
+#'
+#' Removing samples can leave records with no genotyped individual, or with
+#' only one allele among the remaining individuals; the message counts them.
+#' Remove them with [filter_call_rate()] or `filter_mac(H, min_mac = 1)` if
+#' needed.
+#'
+#' @param H The object returned by [read_stacks_vcf()] (optionally filtered).
+#' @param popmap A popmap file path or the list returned by [read_popmap()].
+#' @param verbose Print which samples were removed. Default `TRUE`.
+#' @return `H` with only the samples in `popmap`, in their original order.
+#' @examples
+#' H <- read_stacks_vcf(system.file("extdata", "small.snps.vcf",
+#'                                  package = "RADdiversity"), verbose = FALSE)
+#' # A popmap that leaves out one individual:
+#' pops <- list(popA = c("popA_1", "popA_2", "popA_3"),
+#'              popB = c("popB_1", "popB_2", "popB_3"))
+#' H_pop <- filter_samples(H, pops)
+#' H_pop$samples
+#' # Filters now see only these individuals:
+#' H_pop <- filter_mac(H_pop, min_mac = 1)
+#' @export
+filter_samples <- function(H, popmap, verbose = TRUE) {
+  H <- .resolve_H(H, verbose = FALSE)
+  .check_flag(verbose, "verbose")
+  pops <- .resolve_pops(popmap, H$samples, verbose = FALSE)
+  ids <- unlist(pops, use.names = FALSE)
+  keep <- H$samples %in% ids
+  if (all(keep)) {
+    .inform(verbose, "filter_samples(): every sample in H is in the popmap; nothing removed.")
+    return(H)
+  }
+  removed <- H$samples[!keep]
+  H <- .subset_samples(H, keep)
+  typed <- rowSums(!is.na(H$A1))
+  n_observed <- rowSums(.allele_counts(H$A1, H$A2, k = max(1L, H$n_alleles)) > 0L)
+  .inform(verbose, sprintf("filter_samples(): kept %d of %d samples; removed %d not in the popmap: %s%s",
+                           sum(keep), length(keep), length(removed),
+                           paste(utils::head(removed, 10), collapse = ", "),
+                           if (length(removed) > 10) ", ..." else ""))
+  if (any(typed == 0L | n_observed < 2L))
+    .inform(verbose, sprintf(paste0("  Among the remaining samples, %s of %s records have no ",
+                                    "genotype and %s have only one allele; filter_call_rate() ",
+                                    "or filter_mac(H, min_mac = 1) removes them."),
+                             .big(sum(typed == 0L)), .big(length(typed)),
+                             .big(sum(typed > 0L & n_observed < 2L))))
+  H
+}
+
 ## Not exported. The "N of M records kept (x%)" message every filter prints.
 .report_kept <- function(verbose, what, kept, n_rec) {
   .inform(verbose, sprintf("%s: %s of %s records kept (%.1f%%)", what, .big(sum(kept)),
@@ -79,6 +170,10 @@
 #' biallelic record this is the usual minor allele frequency (MAF); at a
 #' multi-allelic (haplotype) record it is the combined frequency of every
 #' allele except the most common one.
+#'
+#' **Which samples.** This uses every sample in `H`, including any that are
+#' not in your popmap (an outgroup, say). Run [filter_samples()] first to base
+#' it on the individuals you analyse.
 #'
 #' @param H The object returned by [read_stacks_vcf()] (optionally filtered).
 #' @return A data frame with one row per record, in the order of `H`:
@@ -132,7 +227,12 @@ locus_allele_stats <- function(H) {
 
 ## Not exported. What the data look filtered at, for data that may have been
 ## filtered before they reached this package (a Stacks run with --min-mac,
-## -R, --max-obs-het; vcftools; dDocent). Returns a list:
+## -R, --max-obs-het; vcftools; dDocent). Computed over the popmap's
+## individuals only (`pops`), the same individuals every statistic of
+## diversity_stats() uses: a VCF sample left out of the popmap, such as an
+## outgroup, could otherwise supply or remove the rare alleles this looks
+## for. Returns a list:
+##   n_samples         individuals it was computed over
 ##   n_variable        records with at least 2 observed alleles
 ##   min_allele_count  over variable records, copies of the rarest observed
 ##                     allele (for a SNP, the minor allele count)
@@ -150,7 +250,10 @@ locus_allele_stats <- function(H) {
 ## SNPs and not one allele seen once or twice has almost certainly had rare
 ## alleles removed. Nothing here can detect an HWE filter.
 .prior_filter_signals <- function(H, pops) {
-  counts <- .allele_counts(H$A1, H$A2)
+  ids <- unlist(pops, use.names = FALSE)
+  A1 <- H$A1[, ids, drop = FALSE]
+  A2 <- H$A2[, ids, drop = FALSE]
+  counts <- .allele_counts(A1, A2)
   observed <- counts > 0L
   n_observed <- rowSums(observed)
   variable <- n_observed >= 2L
@@ -162,11 +265,11 @@ locus_allele_stats <- function(H) {
     rarest <- ifelse(column > 0L, pmin(rarest, column), rarest)
   }
   n_variable <- sum(variable)
-  call_rate_pooled <- rowMeans(!is.na(H$A1))
+  call_rate_pooled <- rowMeans(!is.na(A1))
   typed <- .typed_by_pop(H, pops)
   call_by_pop <- vapply(names(pops), function(p) min(typed[, p]) / length(pops[[p]]), numeric(1))
-  ho <- rowMeans(H$A1 != H$A2, na.rm = TRUE)
-  list(n_variable = n_variable,
+  ho <- rowMeans(A1 != A2, na.rm = TRUE)
+  list(n_samples = length(ids), n_variable = n_variable,
        min_allele_count = if (n_variable) min(rarest) else NA_integer_,
        rare_share = if (n_variable) mean(rarest <= 2L) else NA_real_,
        looks_mac_filtered = n_variable >= 200L && all(rarest > 2L),
@@ -204,6 +307,10 @@ locus_allele_stats <- function(H) {
 #' the threshold used, and compare diversity values only between datasets
 #' filtered the same way. [diversity_stats()]'s `summary()` shows the lowest
 #' allele count remaining in the data.
+#'
+#' **Which samples.** This uses every sample in `H`, including any that are
+#' not in your popmap (an outgroup, say). Run [filter_samples()] first to base
+#' it on the individuals you analyse.
 #'
 #' @references
 #' Linck, E. & Battey, C.J. (2019) Minor allele frequency thresholds strongly
@@ -254,6 +361,10 @@ filter_maf <- function(H, min_maf, allele_stats = NULL, verbose = TRUE) {
 #' diploids, 10% at 20), so `min_mac = 3` lowers per-site diversity by about
 #' that much.
 #'
+#' **Which samples.** This uses every sample in `H`, including any that are
+#' not in your popmap (an outgroup, say). Run [filter_samples()] first to base
+#' it on the individuals you analyse.
+#'
 #' @references
 #' Linck, E. & Battey, C.J. (2019) Minor allele frequency thresholds strongly
 #' affect population structure inference with genomic data sets. *Molecular
@@ -292,6 +403,11 @@ filter_mac <- function(H, min_mac, allele_stats = NULL, verbose = TRUE) {
 #'
 #' This is independent of the call-rate rule inside [het_between_pops()] and
 #' the `min_n` / `complete_case` rules of [diversity_stats()].
+#'
+#' **Which samples.** Without `popmap`, the pooled call rate counts every
+#' sample in `H`, including any that are not in your popmap; with `popmap`,
+#' only the popmap's samples are used. Run [filter_samples()] first to remove
+#' the other samples from `H` altogether.
 #'
 #' @inheritParams filter_maf
 #' @param min_call Minimum fraction of individuals genotyped to keep a record,
@@ -357,6 +473,10 @@ filter_call_rate <- function(H, min_call, popmap = NULL, rule = "all", verbose =
 #' variable loci, and it misses paralogs at low frequency. HDplot (McKinney et
 #' al. 2017), which combines heterozygosity with read-ratio deviation, is the
 #' more specific tool.
+#'
+#' **Which samples.** This uses every sample in `H`, including any that are
+#' not in your popmap (an outgroup, say). Run [filter_samples()] first to base
+#' it on the individuals you analyse.
 #'
 #' @references
 #' McKinney, G.J., Waples, R.K., Seeb, L.W. & Seeb, J.E. (2017) Paralogs are
@@ -458,10 +578,6 @@ filter_thin_one_snp <- function(H, method = "first", seed = NULL, verbose = TRUE
 #
 ###############################################################################
 
-## Not exported. One subfield of every genotype cell of H, as text: `tag` is
-## a FORMAT name such as "DP". Returns a records x samples character matrix,
-## NA where the record's FORMAT lacks the tag or the cell is too short (the
-## VCF specification lets trailing subfields be dropped) or holds ".".
 ## Not exported. Read depth of every genotype call of H: the DP subfield, or
 ## the sum of AD where DP is absent, as read_stacks_vcf() stored it in
 ## H$depth (see .parse_vcf_chunk() in R/vcf_io.R). A records x samples
@@ -504,8 +620,9 @@ filter_thin_one_snp <- function(H, method = "first", seed = NULL, verbose = TRUE
 #'
 #' @inheritParams filter_maf
 #' @param H The object returned by [read_stacks_vcf()] (optionally filtered).
-#'   It must still contain `$fields`, the raw VCF columns, which hold the
-#'   depths.
+#'   The read depths come from `H$depth`, which [read_stacks_vcf()] fills from
+#'   each call's `DP` (or the sum of its `AD`); it is `NULL` for a VCF with
+#'   neither, such as a Stacks haplotype VCF.
 #' @param min_dp Calls with fewer reads than this are masked (e.g. `6`).
 #' @param max_dp Calls with more reads than this are masked. Default `Inf`:
 #'   no upper limit.
@@ -650,9 +767,14 @@ filter_genotype_depth <- function(H, min_dp, max_dp = Inf, verbose = TRUE) {
 #' depth whatever the genotype. The message reports the share of heterozygous
 #' calls masked, so the imbalance can be seen.
 #'
+#' **Which samples.** This uses every sample in `H`, including any that are
+#' not in your popmap (an outgroup, say). Run [filter_samples()] first to base
+#' it on the individuals you analyse.
+#'
 #' @param H The object returned by [read_stacks_vcf()] (optionally filtered).
-#'   It must still contain `$fields`, the raw VCF columns, which hold the AD
-#'   (allele depth) values.
+#'   The allele depths come from `H$ad_ref` and `H$ad_alt`, which
+#'   [read_stacks_vcf()] fills from each call's `AD` (allele depth) field; they
+#'   are `NULL` for a VCF without `AD`, in which case nothing is flagged.
 #' @param min_alt_reads A call with this many or fewer reads supporting its
 #'   ALT allele(s) is flagged. Default `2`.
 #' @param mode `"mask"` (default): set only the flagged calls to missing.

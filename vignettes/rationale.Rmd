@@ -436,6 +436,39 @@ The rule that follows:
 4. Either way, compare populations with `het_between_pops()`, not by
    whether intervals overlap.
 
+### Individual standard errors for Ar and privAr
+
+The individual jackknife is less reliable for the two rarefied statistics
+(`inst/sims/jackknife_richness.R`: two populations of 10, 3,000 loci with four
+alleles, 200 replicates per row). The table gives the average reported
+`_se_ind` divided by the true standard error of the estimate (1 is right).
+"Near g" is the share of a population's records with a defined Ar that have
+fewer than *g* + 2 gene copies.
+
+| missing genotypes | *g* | near *g* | Ar | privAr | He | FIS |
+|---|---|---|---|---|---|---|
+| 0% | 10 | 0% | 1.21 | 0.78 | 1.10 | 1.06 |
+| 0% | 18 | 0% | 1.23 | 0.93 | 1.04 | 0.95 |
+| 1% | 18 | 9% | 1.28 | 0.91 | 0.95 | 0.97 |
+| 3% | 18 | 24% | 1.58 | 1.24 | 1.09 | 1.00 |
+| 10% | 10 | 0.1% | 1.20 | 0.86 | 1.14 | 1.04 |
+| 10% | 12 | 1% | 1.27 | 0.93 | 1.09 | 1.02 |
+| 10% | 14 | 6% | 1.40 | 0.90 | 1.05 | 1.10 |
+| 10% | 16 | 21% | 1.53 | 1.05 | 1.00 | 1.06 |
+| 10% | 18 | 53% | 2.01 | 1.80 | 0.98 | 1.03 |
+
+Two things go wrong. First, `privAr_se_ind` deletes only the population's
+own individuals, but private richness also depends on which individuals were
+sampled in the *other* populations, which it holds fixed; it runs too small,
+by up to about 20%. Second, at a record with fewer than *g* + 2 gene copies,
+deleting one individual leaves fewer than *g*, so the record drops out of
+some jackknife replicates and not others. Those replicates then average over
+different records, and both SEs grow, to about twice the true value when half
+the records sit there. `diversity_stats()` warns when more than 5% of a
+population's records do, and names a smaller *g* to use for these two SEs.
+The Ar SE otherwise runs about 20% large, as delete-one jackknife variances
+tend to. He and FIS individual SEs were accurate in every setting.
+
 ### Why not bootstrap individuals?
 
 `diversity_stats(boot = "individuals")` resamples individuals within each
@@ -584,6 +617,18 @@ random mating, so with a heterozygote deficit D is biased slightly upward.
 Weir & Goudet's (2017) beta, via hierfstat, is a third measure; it is a point
 estimate only, and slow on large datasets (`beta = FALSE` skips it).
 
+**The global D uses only records genotyped in every population.** Jost's D
+for *k* populations measures differentiation among those *k* populations. A
+record where some of them are untyped measures it among a different, smaller
+set, and averaging such records in biases the global D: for three completely
+differentiated populations (true D = 1), one of them untyped at half the
+records, it came out at 0.875 (package tests). So the global D skips those
+records, and `D_records` in the result, `print()` and `summary()` report how
+many records it rests on. Each pairwise D uses every record typed in both of
+its populations, and FST uses every record typed in at least two
+populations, because Weir & Cockerham's estimator handles a varying number of
+populations per record.
+
 Report D (or beta) alongside FST for haplotype data. Intervals for FST and D
 come from the same bootstrap over RAD loci as everything else.
 
@@ -658,6 +703,7 @@ Checked against the named versions; later versions may differ.
 | resampling unit | RAD loci (individuals for `_se_ind`) | loci as rows (`boot.ppfis`, `boot.ppfst`, `boot.vc`) | individuals (`divBasic`) | none; SD/√sites |
 | rarefied private richness | yes, with SE | no | no | no |
 | FST at records typed in one population | skipped | kept (`wc`) | — | skipped |
+| global D at records missing a population | skipped | — | — | — |
 
 ## Appendix C. Where the numbers come from
 
@@ -671,6 +717,7 @@ Checked against the named versions; later versions may differ.
 | FIS precision by file | `inst/sims/vignette_sims.R`, part `file_choice` |
 | haplotype vs SNP He as SNP density varies | `inst/sims/vignette_sims.R`, part `snp_density` |
 | coverage of locus and individual SEs | `inst/sims/coverage_se.R` |
+| accuracy of individual SEs for Ar and privAr | `inst/sims/jackknife_richness.R` |
 | coverage of bootstrap modes | `inst/sims/vignette_sims.R`, part `boot_modes` |
 | false-positive rate of a locus bootstrap | `het_between_pops_selftest()` |
 | power of Welch's test | `inst/sims/vignette_sims.R`, part `power` |

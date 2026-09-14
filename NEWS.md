@@ -86,7 +86,8 @@ Found in a review of every estimator against the literature and the Stacks
   population absent from 30% of records). Such records are now skipped, as
   in VCFtools and Stacks' own pairwise F<sub>ST</sub>; `hierfstat::wc()` keeps
   them, so the two now differ on such data. The count skipped is in
-  `settings$fst_records_skipped`. Jost's D was already computed this way.
+  `settings$fst_records_skipped`. Pairwise D was already computed this way;
+  for the global D see the next section.
 * `kinship_check(method = "beta")` computed beta against the whole pooled
   sample, so with differentiated populations most unrelated same-population
   pairs were flagged (277 of 378 in a simulation at F<sub>ST</sub> = 0.1). The
@@ -96,7 +97,67 @@ Found in a review of every estimator against the literature and the Stacks
   Stacks turns a SNP failing it into a fixed site, removing about 4/(N − 1)
   of π for N gene copies (21% at 10 diploids, 10% at 20).
 
+## Corrections from the final pre-release review
+
+Each was confirmed by simulation or a constructed example before the change.
+On the shipped example data, the only reported numbers that change are
+`fis_by_call_rate`'s `Fis_se` and `het_between_pops()`'s `overdispersion`;
+Ho, He, FIS, Ar, privAr, F<sub>ST</sub>, D and π are identical.
+
+* `differentiation_stats()`: **the global Jost's D now uses only records
+  genotyped in every population.** A record missing some populations measures
+  differentiation among a different set of populations, and averaging it in
+  biased the global D low: 0.875 instead of 1 for three completely
+  differentiated populations with one untyped at half the records. The
+  number of records used is in the new `D_records` column of `$global`, and
+  `print()`, `summary()` and the progress messages state the rule. Pairwise D
+  (which already required both populations) and datasets where every
+  population is typed at every record are unchanged. If no record is typed
+  in every population, the global D is `NA` with a warning.
+* `differentiation_stats()`: F<sub>ST</sub> and the global F<sub>IS</sub> also
+  skip records where every typed population has a single genotyped
+  individual (no variance among individuals can be estimated there, but its
+  heterozygosity was added to the denominator). Counted in
+  `settings$fst_records_skipped`.
+* `diversity_stats(se_individuals = TRUE)`: a warning when `Ar_se_ind` and
+  `privAr_se_ind` are probably too large. When more than 5% of a population's
+  records with a defined Ar have fewer than g + 2 gene copies, deleting one
+  individual drops those records from some jackknife replicates, which made
+  these SEs up to 2.0× the true value in simulation
+  (`inst/sims/jackknife_richness.R`); the warning names a smaller g to use
+  for them. `privAr_se_ind` holds the other populations' individuals fixed
+  and ran up to about 20% small; this is stated in a note and the help page.
+  He and FIS individual SEs were accurate throughout.
+* `het_between_pops()`: the overdispersion factor read about n/(n − 1) with
+  no excess variation (1.21 at n = 5) because the binomial variance used the
+  plug-in h(1 − h); each locus's term is now multiplied by n/(n − 1). On the
+  example data the factor falls from 4.79 and 17.60 to 4.46 and 15.77.
+* `diversity_stats()`: `fis_by_call_rate`'s `Fis_se` counted loci with no
+  record in the call-rate group as jackknife blocks, inflating the SE
+  (by 12% for a group with 5 loci). Only the group's own loci are used now.
+* Haplotype detection: one multi-allelic SNP (e.g. `A` -> `C,T`, as GATK or
+  freebayes emit) made a whole SNP VCF count as haplotype data, silently
+  dropping `Ho_autosomal`/`He_autosomal`. A file is now haplotype data only
+  when some allele is longer than one base. The toy `small.haps.vcf` now has
+  multi-base haplotype alleles like real Stacks output; its genotypes, and
+  every number computed from it, are unchanged.
+* `diversity_stats()`'s summary of what the data look filtered at is now
+  computed over the popmap's individuals only, like every statistic.
+* `read_popmap()` follows Stacks' popmap rules: an optional third (group)
+  column is accepted, and a line with one column, more than three, or spaces
+  instead of a TAB stops with the line number and text.
+* `hwe_test(stop_after = )` must be a whole number or `Inf`.
+
 ## New
+
+* `filter_samples(H, popmap)` removes the samples that are not in the popmap.
+  The `filter_*()` functions and `write_*()` functions use every sample in
+  `H`, including ones left out of the popmap (an outgroup, say); running
+  `filter_samples()` first bases filtering, and exported files, on the
+  analysed individuals only.
+* `?read_stacks_vcf` gains "What Stacks writes": the CHROM, POS and ID
+  columns of Stacks 2.68's SNP and haplotype VCFs, de novo and
+  reference-aligned, and how each is grouped into RAD loci.
 
 * `het_between_pops()` returns `omnibus` for 3 or more populations: one
   overall test of whether any population differs in heterozygosity or F

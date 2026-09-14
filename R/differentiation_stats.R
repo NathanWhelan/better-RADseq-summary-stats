@@ -24,13 +24,15 @@
 #  and hierfstat has no function that accepts a resampled locus set.
 #  tests/testthat/test-differentiation-stats.R compares this implementation
 #  with hierfstat::wc() and hierfstat::pairwise.WCfst(); on records typed in
-#  at least two of the compared populations they agree to machine precision.
-#  They differ, deliberately, at records typed in only ONE of the compared
-#  populations: this package skips those for FST (as VCFtools and Stacks' own
-#  pairwise Fst do), while hierfstat keeps their within-population variance
-#  and so pulls FST toward 0 (see fst_block() below). hierfstat is used at run
-#  time only for beta and, with hierfstat_check = TRUE, a printed comparison
-#  of the global FST.
+#  at least two of the compared populations (with more than one individual
+#  per population on average) they agree to machine precision. They differ,
+#  deliberately, at records typed in only ONE of the compared populations,
+#  or with a single individual in each typed population: this package skips
+#  those for FST (VCFtools and Stacks' own pairwise Fst also skip records
+#  typed in one population), while hierfstat keeps their within-population
+#  variance and so pulls FST toward 0 (see fst_block() below). hierfstat is
+#  used at run time only for beta and, with hierfstat_check = TRUE, a printed
+#  comparison of the global FST.
 #
 #  Jost's D follows the five-step formula of the mmod package's HsHt()
 #  function (Winter 2012; MIT license, see inst/NOTICE), rewritten for this
@@ -42,6 +44,13 @@
 #  populations (the same assumption behind Stacks' `Pi`; see R/estimators.R).
 #  With a heterozygote deficit Hs is underestimated by about F/(2N - 1), so D
 #  is biased upward, most noticeably when Ht - Hs is small.
+#
+#  WHICH RECORDS D USES. A pairwise D uses every record typed in both
+#  populations of the pair. The global D uses only records typed in EVERY
+#  population: a record missing some populations measures differentiation
+#  among a different set of populations, and averaging it in biases the
+#  global D (see d_block() below). The result table's `D_records` column and
+#  print() say how many records that is.
 #
 #  PRECISION: a bootstrap over whole RAD loci (the locus_raw groups) for a 95%
 #  interval, and a delete-one-locus jackknife for a standard error, both from
@@ -152,10 +161,11 @@
     v[undefined] <- NA_real_
     v
   })
-  ## How many of the compared populations have data at each record: FST uses
-  ## a record only where at least 2 do (see fst_block() in
-  ## differentiation_stats()).
+  ## How many of the compared populations have data at each record, and their
+  ## mean sample size: FST uses a record only where at least 2 populations
+  ## have data and n-bar > 1 (see fst_block() in differentiation_stats()).
   out$n_pops_with_data <- n_pops_with_data
+  out$n_mean <- n_mean
   out
 }
 
@@ -187,7 +197,9 @@
 ## Cockerham, Jost's formula weights populations EQUALLY. The five steps
 ## (harmonic-mean n -> HpS -> Hs_est -> HpT -> Ht_est) follow the mmod
 ## package's HsHt() function (Winter 2012; see inst/NOTICE). A record with
-## fewer than 2 populations genotyped is NA.
+## fewer than 2 populations genotyped is NA. `n_pops_with_data` is returned
+## too: the global D uses only records where EVERY population has data (see
+## d_block() in differentiation_stats()).
 .jost_hsht <- function(dc) {
   n_typed <- dc$n_typed
   has_data <- n_typed > 0
@@ -214,7 +226,7 @@
   too_few <- n_pops_with_data < 2
   Hs_est[too_few] <- NA_real_
   Ht_est[too_few] <- NA_real_
-  list(Hs = Hs_est, Ht = Ht_est)
+  list(Hs = Hs_est, Ht = Ht_est, n_pops_with_data = n_pops_with_data)
 }
 
 ## Not exported. Jost's D from Hs_est and Ht_est SUMMED over `n` loci: average
@@ -254,18 +266,32 @@
 #' on one RAD tag. The FST/FIS formula is Weir & Cockerham's (1984) published
 #' estimator; the package tests check it against `hierfstat::wc()`.
 #'
-#' **Records typed in only one population.** FST (global and pairwise) uses
-#' a record only where at least two of the compared populations have a
+#' **Records used for FST.** FST (global and pairwise) and the global FIS use a
+#' record only where at least two of the compared populations have a
 #' genotyped individual. A record typed in only one of them carries no
 #' information about differences between populations, but including it
 #' would add its within-population variance to FST's denominator and pull
 #' FST toward 0. Such records are common when a Stacks run has 3 or more
 #' populations and `-p` below their number. VCFtools and Stacks' own
 #' pairwise FST skip them too; `hierfstat::wc()` and `pairwise.WCfst()` do
-#' not, so on such data their FST is lower than this function's. Jost's D
-#' uses the same records as FST. Missing individuals within a typed
-#' population are handled by the estimator itself and are not affected. The
-#' number of skipped records is in `settings$fst_records_skipped`.
+#' not, so on such data their FST is lower than this function's. Records
+#' where every typed population has a single genotyped individual are also
+#' skipped for FST and FIS, because no variance among individuals can be
+#' estimated there. Missing individuals within a typed population are
+#' handled by the estimator itself and are not affected. The number of
+#' skipped records is in `settings$fst_records_skipped`.
+#'
+#' **Records used for global D.** The global D uses ONLY records typed in
+#' every population; each pairwise D uses the records typed in both
+#' populations of its pair. Jost's D for k populations measures
+#' differentiation among those k populations, and a record missing some of
+#' them measures it among a different set: averaging such records in biased
+#' the global D low (0.875 instead of 1 for three completely differentiated
+#' populations, one of them untyped at half the records). The global table's
+#' `D_records` column, `print()` and `summary()` give the number of records
+#' used. With 3 or more populations and much missing data this can be a
+#' small share of the records; report pairwise D as well. If no record is
+#' typed in every population, the global D is `NA` with a warning.
 #'
 #' **Combining loci for D.** Hs and Ht are averaged over loci and one D is
 #' computed from the averages (mmod's `global.het`), not averaged over
@@ -302,9 +328,12 @@
 #' @return An object of class `raddiv_differentiation`, a list of:
 #'   \describe{
 #'     \item{global}{One row: `FST`, `FIS` and `D`, each with jackknife SE
-#'       (`_se`) and 95% bootstrap interval (`_lo`, `_hi`).}
+#'       (`_se`) and 95% bootstrap interval (`_lo`, `_hi`), and `D_records`,
+#'       the number of records the global D uses: only those typed in every
+#'       population (see Details).}
 #'     \item{pairwise}{One row per pair of populations: FST, beta and D, with
-#'       standard errors and bootstrap intervals.}
+#'       standard errors and bootstrap intervals. Each pair's D uses the
+#'       records typed in both of its populations.}
 #'     \item{pairwise_fst, pairwise_beta, pairwise_D}{The pairwise point
 #'       estimates as symmetric matrices (`NA` on the diagonal).
 #'       `pairwise_beta` is `NULL` when hierfstat is not installed or
@@ -377,10 +406,14 @@ differentiation_stats <- function(vcf, popmap, nboot = 10000L, beta = TRUE,
   ## ---- 4. Pieces summed per RAD locus ---------------------------------------
   ## Each comparison contributes a small block of columns. A record where a
   ## component is undefined adds 0 to every sum and to the count `n`.
-  ##   FST block (4 columns): n, a, b, c   (records where a, b, c are defined
-  ##                                        AND >= 2 compared populations are typed)
-  ##   FIS block (3 columns): n, b, c      (global only; where b, c are defined)
-  ##   D block   (3 columns): n, Hs, Ht    (records where Hs and Ht are defined)
+  ##   FST block (4 columns): n, a, b, c   (records where a, b, c are defined,
+  ##                                        >= 2 compared populations are typed,
+  ##                                        and n-bar > 1)
+  ##   FIS block (3 columns): n, b, c      (global only; where b, c are defined
+  ##                                        and n-bar > 1)
+  ##   D block   (3 columns): n, Hs, Ht    (pairwise: records where Hs and Ht
+  ##                                        are defined; global: only records
+  ##                                        typed in EVERY population)
   ##
   ## WHY FST SKIPS A RECORD WHERE ONLY ONE COMPARED POPULATION IS TYPED. Such a
   ## record says nothing about differences between populations (a = 0), but
@@ -391,27 +424,46 @@ differentiation_stats <- function(vcf, popmap, nboot = 10000L, beta = TRUE,
   ## while the site is kept for the others. hierfstat::wc() and
   ## pairwise.WCfst() keep b and c at these records (and so dilute FST);
   ## VCFtools --weir-fst-pop and Stacks' own pairwise Fst skip them, as this
-  ## package does. Jost's D already needs 2 populations, so FST and D now use
-  ## the same records. Ordinary missing data -- some individuals missing, both
+  ## package does. Ordinary missing data -- some individuals missing, both
   ## populations typed -- is unaffected: Weir & Cockerham's unequal-sample-size
   ## terms handle it.
+  ##
+  ## WHY FST AND FIS ALSO SKIP A RECORD WITH n-bar <= 1 (every typed population
+  ## has exactly one genotyped individual). There, b (variance among
+  ## individuals within populations) cannot be estimated and is set to 0, and
+  ## a is 0, but c (heterozygosity) is still added, pulling FST and FIS toward
+  ## 0. hierfstat::wc() keeps such records (dropping its own undefined a and
+  ## b there but keeping c); this package skips them, since no variance among
+  ## individuals can be estimated from one individual per population.
+  informative <- function(w) w$n_pops_with_data >= 2 & !is.na(w$n_mean) & w$n_mean > 1
   fst_block <- function(w) {
-    ok <- is.finite(w$comp_a) & is.finite(w$comp_b) & is.finite(w$comp_c) &
-      w$n_pops_with_data >= 2
+    ok <- is.finite(w$comp_a) & is.finite(w$comp_b) & is.finite(w$comp_c) & informative(w)
     cbind(ok, ifelse(ok, w$comp_a, 0), ifelse(ok, w$comp_b, 0), ifelse(ok, w$comp_c, 0))
   }
-  ## Records typed in only one of the compared populations, per comparison
-  ## (reported in settings and summary()).
-  one_pop_only <- function(w) sum(is.finite(w$comp_b) & w$n_pops_with_data < 2)
+  ## Records with genotypes that FST skips, per comparison (reported in
+  ## settings and summary()).
+  fst_skipped <- function(w) sum(is.finite(w$comp_c) & !informative(w))
   fis_block <- function(w) {
-    ok <- is.finite(w$comp_b) & is.finite(w$comp_c)
+    ok <- is.finite(w$comp_b) & is.finite(w$comp_c) & !is.na(w$n_mean) & w$n_mean > 1
     cbind(ok, ifelse(ok, w$comp_b, 0), ifelse(ok, w$comp_c, 0))
   }
-  d_block <- function(j) {
+  ## WHY THE GLOBAL D USES ONLY RECORDS TYPED IN EVERY POPULATION. Jost's D
+  ## for k populations measures differentiation among those k populations,
+  ## and its final step multiplies by k/(k - 1). A record typed in only k' < k
+  ## of them gives Hs and Ht for a different, smaller set of populations, so
+  ## averaging it in mixes quantities: with three completely differentiated
+  ## populations (true D = 1) and one of them untyped at half the records,
+  ## global D came out as 0.875. Requiring all k populations makes every
+  ## record estimate the same quantity. A pairwise D (k = 2) already requires
+  ## both populations, so it is unaffected.
+  d_block <- function(j, need_all = NULL) {
     ok <- is.finite(j$Hs) & is.finite(j$Ht)
+    if (!is.null(need_all)) ok <- ok & j$n_pops_with_data == need_all
     cbind(ok, ifelse(ok, j$Hs, 0), ifelse(ok, j$Ht, 0))
   }
-  blocks <- c(list(fst_block(wc_global), fis_block(wc_global), d_block(jost_global)),
+  d_global_block <- d_block(jost_global, need_all = n_pops)
+  d_records_global <- as.integer(sum(d_global_block[, 1]))
+  blocks <- c(list(fst_block(wc_global), fis_block(wc_global), d_global_block),
               lapply(wc_pairs, fst_block), lapply(jost_pairs, d_block))
   ## Where each block's columns sit in the combined matrix.
   block_end <- cumsum(vapply(blocks, ncol, integer(1)))
@@ -460,9 +512,9 @@ differentiation_stats <- function(vcf, popmap, nboot = 10000L, beta = TRUE,
   if (.hierfstat_available() && (beta || hierfstat_check)) {
     if (hierfstat_check) {
       ## Compared on the records this package's global FST uses (>= 2
-      ## populations typed); see "Records typed in only one population" in
+      ## populations typed, n-bar > 1); see "Records used for FST" in
       ## ?differentiation_stats for why the others differ.
-      fst_rows <- which(wc_global$n_pops_with_data >= 2)
+      fst_rows <- which(informative(wc_global))
       wc <- tryCatch(hierfstat::wc(.to_hierfstat_df(H, pops, fst_rows)), error = function(e) e)
       if (inherits(wc, "error")) {
         warning("Skipped the hierfstat::wc() cross-check: it failed with \"",
@@ -493,8 +545,10 @@ differentiation_stats <- function(vcf, popmap, nboot = 10000L, beta = TRUE,
     stats::setNames(data.frame(point[[name]], se[[name]], ci[name, "lo"], ci[name, "hi"]),
                     paste0(label, c("", "_se", "_lo", "_hi")))
   }
+  ## D_records: how many records the global D rests on (those typed in every
+  ## population), so the table itself says so.
   global <- cbind(with_uncertainty("FST", "FST"), with_uncertainty("FIS", "FIS"),
-                  with_uncertainty("D", "D"))
+                  with_uncertainty("D", "D"), D_records = d_records_global)
   pairwise <- do.call(rbind, lapply(seq_len(n_pairs), function(k) {
     p1 <- pairs[[k]][1]
     p2 <- pairs[[k]][2]
@@ -522,19 +576,41 @@ differentiation_stats <- function(vcf, popmap, nboot = 10000L, beta = TRUE,
   }
 
   fst_records_skipped <- stats::setNames(
-    c(one_pop_only(wc_global), vapply(wc_pairs, one_pop_only, integer(1))),
+    c(fst_skipped(wc_global), vapply(wc_pairs, fst_skipped, integer(1))),
     c("global", pair_labels))
   if (any(fst_records_skipped > 0))
-    .inform(verbose, sprintf("  FST skipped records typed in only one compared population: %s",
+    .inform(verbose, sprintf("  FST skipped records typed in fewer than 2 compared populations or with one individual per population: %s",
                              paste(sprintf("%s %s", names(fst_records_skipped)[fst_records_skipped > 0],
                                            .big(fst_records_skipped[fst_records_skipped > 0])),
                                    collapse = ", ")))
+  .inform(verbose, "  ", .d_records_sentence(d_records_global, n_rec, n_pops))
+  if (d_records_global == 0L)
+    warning("Global D is NA: no record is genotyped in all ", n_pops, " populations, and the ",
+            "global D uses only such records (see ?differentiation_stats, \"Records used ",
+            "for global D\"). Pairwise D in $pairwise uses every record typed in both ",
+            "populations of a pair.", call. = FALSE)
   settings <- list(n_pops = n_pops, n_records = n_rec, n_loci = n_loci, nboot = nboot,
                    is_haplotype = .is_haplotype_H(H), fst_records_skipped = fst_records_skipped,
+                   d_records_global = d_records_global,
+                   d_records_skipped_global = n_rec - d_records_global,
                    beta = beta, seed = seed, files = written)
   structure(list(global = global, pairwise = pairwise, pairwise_fst = matrix_of("pFST_"),
                  pairwise_beta = beta_matrix, pairwise_D = matrix_of("pD_"), settings = settings),
             class = "raddiv_differentiation")
+}
+
+## Not exported. The sentence that tells the user which records the global D
+## rests on, used in the progress messages, print() and summary().
+.d_records_sentence <- function(d_records, n_records, n_pops) {
+  sprintf(paste("global D uses only the %s of %s records typed in %s;",
+                "pairwise D uses the records typed in both populations of the pair"),
+          .big(d_records), .big(n_records),
+          if (n_pops == 2) "both populations" else sprintf("all %d populations", n_pops))
+}
+
+## Not exported. TRUE when the global D rests on fewer than half the records.
+.d_records_few <- function(st) {
+  !is.null(st$d_records_global) && st$d_records_global < 0.5 * st$n_records
 }
 
 #' @rdname differentiation_stats
@@ -550,8 +626,12 @@ print.raddiv_differentiation <- function(x, ...) {
   cat("  FST, FIS: Weir & Cockerham (1984); D: Jost (2008); _se: jackknife over RAD loci",
       if (st$nboot > 0) sprintf("; _lo/_hi: 95%% bootstrap interval, %s replicates", .big(st$nboot)),
       "\n", sep = "")
+  if (!is.null(st$d_records_global))
+    cat("  ", .d_records_sentence(st$d_records_global, st$n_records, st$n_pops), "\n", sep = "")
   cat("\n$global\n")
   .print_table(.round_table(x$global))
+  if (.d_records_few(st))
+    cat("NOTE: global D rests on fewer than half the records (only those typed in every population); see summary().\n")
   cat("\n$pairwise\n")
   if (nrow(x$pairwise) <= 10) {
     .print_table(.round_table(x$pairwise))
@@ -591,9 +671,15 @@ print.summary.raddiv_differentiation <- function(x, ...) {
   cat("\n")
   .print_table(.round_table(res$global))
   note(.report_text$differentiation_se_columns)
+  if (!is.null(st$d_records_global)) {
+    note(paste0(.d_records_sentence(st$d_records_global, st$n_records, st$n_pops), "."),
+         .report_text$differentiation_d_global_records)
+    if (.d_records_few(st))
+      note("NOTE: global D rests on fewer than half the records here; report pairwise D as well.")
+  }
   skipped <- st$fst_records_skipped
   if (!is.null(skipped) && any(skipped > 0))
-    note(sprintf("FST skipped records typed in only one compared population (%s):",
+    note(sprintf("FST skipped records typed in fewer than 2 compared populations, or with one individual per typed population (%s):",
                  paste(sprintf("%s %s", names(skipped)[skipped > 0], .big(skipped[skipped > 0])),
                        collapse = ", ")),
          .report_text$differentiation_one_pop_records)

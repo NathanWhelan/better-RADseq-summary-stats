@@ -50,6 +50,27 @@ test_that("Ar/privAr individual SEs are NA when removing one individual leaves f
   expect_false(anyNA(res$per_population$He_se_ind))
 })
 
+test_that("a warning flags Ar/privAr individual SEs inflated by records near g", {
+  ## 10 individuals per population, 10% missing genotypes: at g = 18 about
+  ## half of the records with a defined Ar have 18 copies, so deleting one
+  ## individual drops them; at g = 6 almost none do.
+  d <- sim_two_pops(rep(0.1, 20), 500, seed = 6)
+  set.seed(6)
+  miss <- matrix(stats::runif(length(d$H$A1)) < 0.1, nrow(d$H$A1))
+  d$H$A1[miss] <- NA; d$H$A2[miss] <- NA
+  expect_warning(res <- suppressMessages(diversity_stats(d$H, d$popmap, g = 18, nboot = 0,
+                                                         stem = "j", se_individuals = TRUE)),
+                 "probably too large")
+  expect_true(all(res$settings$jackknife_boundary > 0.3))
+  expect_true(any(grepl("probably too large", capture.output(print(res)))))
+  expect_no_warning(small_g <- suppressMessages(
+    diversity_stats(d$H, d$popmap, g = 6, nboot = 0, stem = "j", se_individuals = TRUE)))
+  expect_true(all(small_g$settings$jackknife_boundary < 0.05))
+  ## The privAr caveat is a note on every se_individuals run, not a warning.
+  expect_true(any(grepl("privAr_se_ind holds the other populations",
+                        capture.output(print(small_g)))))
+})
+
 test_that("the report explains the _se_ind columns only when they are there", {
   d <- sim_two_pops(rep(0.1, 12), 200, seed = 5)
   expect_true(any(grepl("_se_ind columns", capture.output(print(summary(run_ind(d)))))))

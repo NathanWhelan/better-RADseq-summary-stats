@@ -144,9 +144,12 @@ VCF's sample names.
 * the number of samples and populations is what you expect (a sample missing
   from the popmap is excluded and reported);
 * "records on RAD loci": here `r format(nrow(H$A1), big.mark = ",")` SNPs sit on
-  `r length(unique(H$locus_raw))` loci. If this reads 1.00 records per locus
-  for RAD data, the locus assignment failed; see `locus_from` in
-  `?read_stacks_vcf`;
+  `r length(unique(H$locus_raw))` loci. If a SNP VCF reads 1.00 records per
+  locus for RAD data, the locus assignment failed; see `locus_from` in
+  `?read_stacks_vcf`. A haplotype VCF always reads 1.00 (one record per
+  locus), and a de novo one from Stacks says the loci came from "CHROM +
+  POS", because Stacks leaves its ID column empty; both are expected (see
+  "What Stacks writes" in `?read_stacks_vcf`);
 * the missing genotype rate (`r sprintf("%.1f%%", 100 * mean(is.na(H$A1)))`
   here).
 
@@ -156,7 +159,12 @@ popmap path or this list.
 ## 3. Optional: filter records and genotypes
 
 **What.** Filters take the data object and return a filtered one, so they
-chain. Look before filtering:
+chain. They use **every sample in the VCF**, including any left out of the
+popmap (an outgroup or a failed library, say), whereas the analyses use only
+the popmap's individuals. If the VCF holds such samples, remove them first
+with `H <- filter_samples(H, pops)`, so that allele frequencies and call
+rates, and any file written with a `write_*()` function, describe only the
+individuals you analyse. Look before filtering:
 
 ```{r}
 allele_stats <- locus_allele_stats(H)
@@ -229,7 +237,12 @@ for (g in c(10, 20)) {
 on. At `g = 20` private richness rests on far fewer loci than at `g = 10`,
 because only loci with at least 10 typed individuals in *both* populations
 count. Pick the largest `g` that keeps most loci (here 16, eight individuals'
-worth), and report it.
+worth), and report it. If you will also report individual standard errors for
+Ar and privAr (`se_individuals = TRUE`, section 6), a `g` well below twice the
+smallest population keeps them accurate: `diversity_stats()` warns, and
+suggests a smaller `g`, when too many records sit within two gene copies of
+`g` (`vignette("rationale")`, "Individual standard errors for Ar and
+privAr").
 
 ### The haplotype run
 
@@ -316,7 +329,9 @@ div_ind <- diversity_stats(haps, pops, g = 16, nboot = 0, se_individuals = TRUE,
 div_ind$per_population[, c("population", "Fis", "Fis_se", "Fis_se_ind")]
 ```
 
-`Fis_se_ind` is about
+If a warning about `Ar_se_ind` and `privAr_se_ind` appears here, it concerns
+only those two columns (some of south's loci have only 16 or 17 gene copies); the
+FIS standard errors shown are not affected. `Fis_se_ind` is about
 `r round(min(div_ind$per_population$Fis_se_ind / div_ind$per_population$Fis_se), 1)`
 to `r round(max(div_ind$per_population$Fis_se_ind / div_ind$per_population$Fis_se), 1)`
 times `Fis_se`: most of the uncertainty comes from which individuals were
@@ -388,6 +403,17 @@ Cockerham's, pooled over populations.
 **Reading the output.** FST of `r round(dif$global$FST, 3)` is modest
 differentiation. On haplotype data report D (or beta) alongside FST. On large
 datasets, `beta = FALSE` skips the slow hierfstat step.
+
+**Which records D uses.** The global D uses **only records genotyped in every
+population**; `D_records` in `dif$global` says how many (here
+`r dif$global$D_records` of `r dif$settings$n_records`), and printing the
+result says it too. A record missing some populations measures
+differentiation among a different set of populations, so it is left out of
+the global D. Each pairwise D in `dif$pairwise` uses every record typed in
+both populations of its pair. With three or more populations and a Stacks
+run with `-p` below their number, the global D can rest on a small share of
+the records; report pairwise D as well. FST uses every record typed in at
+least two populations (`?differentiation_stats`).
 
 ## 9. Nucleotide diversity from an all-sites VCF
 

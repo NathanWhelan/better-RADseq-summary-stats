@@ -320,3 +320,38 @@ test_that("filter_genotype_depth() masks by depth alone, whatever the genotype",
   H_gt <- read_stacks_vcf(fx("small.haps.vcf"), verbose = FALSE)
   expect_error(filter_genotype_depth(H_gt, min_dp = 6, verbose = FALSE), "readable depth")
 })
+
+## ---------------------------------------------------------------------------
+## filter_samples()
+## ---------------------------------------------------------------------------
+
+test_that("filter_samples() keeps only popmap samples, with depths lined up", {
+  H <- read_stacks_vcf(fx("small_ad.haps.vcf"), verbose = FALSE)
+  pops <- list(popA = c("popA_1", "popA_3", "popA_4"), popB = c("popB_1", "popB_2", "popB_3"))
+  expect_message(H2 <- filter_samples(H, pops), "removed 1 not in the popmap: popA_2")
+  expect_equal(H2$samples, setdiff(H$samples, "popA_2"))
+  expect_equal(colnames(H2$A1), H2$samples)
+  expect_equal(H2$depth, H$depth[, H2$samples])
+  expect_equal(H2$ad_alt, H$ad_alt[, H2$samples])
+  expect_equal(nrow(H2$A1), nrow(H$A1))
+  expect_identical(H2$n_records_read, H$n_records_read)
+  ## Nothing to remove: H comes back unchanged.
+  expect_identical(filter_samples(H2, pops, verbose = FALSE), H2)
+  ## Exported files hold only the popmap samples.
+  out <- tempfile(fileext = ".vcf")
+  write_vcf(H2, out, verbose = FALSE)
+  header <- strsplit(grep("^#CHROM", readLines(out), value = TRUE), "\t")[[1]]
+  expect_equal(header[-(1:9)], H2$samples)
+})
+
+test_that("filter_samples() changes what a filter sees when an outgroup carries rare alleles", {
+  ## Record 1: the only ALT copies are in the outgroup, so it is variable only
+  ## because of a sample outside the popmap.
+  H <- make_H(A1 = rbind(c(1L, 1L, 1L, 2L), c(1L, 2L, 1L, 2L)),
+              A2 = rbind(c(1L, 1L, 1L, 2L), c(2L, 2L, 1L, 1L)),
+              samples = c("a1", "a2", "b1", "outgroup"))
+  pops <- list(A = c("a1", "a2"), B = "b1")
+  expect_equal(nrow(filter_mac(H, min_mac = 1, verbose = FALSE)$A1), 2L)
+  expect_message(H_pop <- filter_samples(H, pops), "have only one allele")
+  expect_equal(filter_mac(H_pop, min_mac = 1, verbose = FALSE)$locus, "locus_2")
+})

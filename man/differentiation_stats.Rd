@@ -68,9 +68,12 @@ your session's random-number stream as it was.}
 An object of class \code{raddiv_differentiation}, a list of:
 \describe{
 \item{global}{One row: \code{FST}, \code{FIS} and \code{D}, each with jackknife SE
-(\verb{_se}) and 95\% bootstrap interval (\verb{_lo}, \verb{_hi}).}
+(\verb{_se}) and 95\% bootstrap interval (\verb{_lo}, \verb{_hi}), and \code{D_records},
+the number of records the global D uses: only those typed in every
+population (see Details).}
 \item{pairwise}{One row per pair of populations: FST, beta and D, with
-standard errors and bootstrap intervals.}
+standard errors and bootstrap intervals. Each pair's D uses the
+records typed in both of its populations.}
 \item{pairwise_fst, pairwise_beta, pairwise_D}{The pairwise point
 estimates as symmetric matrices (\code{NA} on the diagonal).
 \code{pairwise_beta} is \code{NULL} when hierfstat is not installed or
@@ -102,18 +105,32 @@ resamples SNP rows independently and so ignores the linkage between SNPs
 on one RAD tag. The FST/FIS formula is Weir & Cockerham's (1984) published
 estimator; the package tests check it against \code{hierfstat::wc()}.
 
-\strong{Records typed in only one population.} FST (global and pairwise) uses
-a record only where at least two of the compared populations have a
+\strong{Records used for FST.} FST (global and pairwise) and the global FIS use a
+record only where at least two of the compared populations have a
 genotyped individual. A record typed in only one of them carries no
 information about differences between populations, but including it
 would add its within-population variance to FST's denominator and pull
 FST toward 0. Such records are common when a Stacks run has 3 or more
 populations and \code{-p} below their number. VCFtools and Stacks' own
 pairwise FST skip them too; \code{hierfstat::wc()} and \code{pairwise.WCfst()} do
-not, so on such data their FST is lower than this function's. Jost's D
-uses the same records as FST. Missing individuals within a typed
-population are handled by the estimator itself and are not affected. The
-number of skipped records is in \code{settings$fst_records_skipped}.
+not, so on such data their FST is lower than this function's. Records
+where every typed population has a single genotyped individual are also
+skipped for FST and FIS, because no variance among individuals can be
+estimated there. Missing individuals within a typed population are
+handled by the estimator itself and are not affected. The number of
+skipped records is in \code{settings$fst_records_skipped}.
+
+\strong{Records used for global D.} The global D uses ONLY records typed in
+every population; each pairwise D uses the records typed in both
+populations of its pair. Jost's D for k populations measures
+differentiation among those k populations, and a record missing some of
+them measures it among a different set: averaging such records in biased
+the global D low (0.875 instead of 1 for three completely differentiated
+populations, one of them untyped at half the records). The global table's
+\code{D_records} column, \code{print()} and \code{summary()} give the number of records
+used. With 3 or more populations and much missing data this can be a
+small share of the records; report pairwise D as well. If no record is
+typed in every population, the global D is \code{NA} with a warning.
 
 \strong{Combining loci for D.} Hs and Ht are averaged over loci and one D is
 computed from the averages (mmod's \code{global.het}), not averaged over

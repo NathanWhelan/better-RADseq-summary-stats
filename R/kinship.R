@@ -366,9 +366,7 @@ kinship_check <- function(vcf, popmap = NULL, method = "king", threshold = 0.044
   if (!is.null(popmap)) {
     pops <- .resolve_pops(popmap, H$samples, verbose = verbose)
     ids <- unlist(pops, use.names = FALSE)
-    H$A1 <- H$A1[, ids, drop = FALSE]
-    H$A2 <- H$A2[, ids, drop = FALSE]
-    H$samples <- ids
+    H <- .subset_samples(H, ids)          # popmap order
     pop_of <- stats::setNames(rep(names(pops), lengths(pops)), ids)
   }
   n_samp <- length(H$samples)

@@ -343,14 +343,25 @@ het_between_pops <- function(vcf, popmap, min_call = 0.9, min_loci = 50L, nboot_
 ## variance to that expectation is the overdispersion factor: 1 means no
 ## excess variation, and a locus bootstrap understates the standard error of a
 ## population mean by roughly sqrt(overdispersion).
+##
+## h_l is estimated from the same n_l individuals typed at the locus, and the
+## plug-in h_l(1 - h_l) is then too small by a factor (n_l - 1)/n_l, which
+## would make the ratio read about n/(n - 1) with no excess variation at all
+## (1.21 at n = 5, 1.07 at n = 10 in simulation). Multiplying each locus's
+## term by n_l/(n_l - 1) removes that; loci typed in fewer than 2 individuals
+## are left out.
 .overdispersion <- function(H, pops, locus_sets, het_by_pop) {
   do.call(rbind, lapply(names(pops), function(p) {
     loci <- locus_sets[, p]
     a1 <- H$A1[loci, pops[[p]], drop = FALSE]
     a2 <- H$A2[loci, pops[[p]], drop = FALSE]
-    locus_het <- rowMeans(a1 != a2, na.rm = TRUE)
-    locus_het <- locus_het[is.finite(locus_het)]
-    expected_var <- sum(locus_het * (1 - locus_het)) / length(locus_het)^2
+    n_typed <- rowSums(!is.na(a1))
+    locus_het <- rowSums(a1 != a2, na.rm = TRUE) / n_typed
+    keep <- n_typed >= 2
+    n_typed <- n_typed[keep]
+    locus_het <- locus_het[keep]
+    expected_var <- sum(locus_het * (1 - locus_het) * n_typed / (n_typed - 1)) /
+      length(locus_het)^2
     observed_var <- stats::var(het_by_pop[[p]])
     ## Monomorphic at every locus: 0/0, which is "undefined", not "no excess".
     ratio <- if (expected_var > 0) observed_var / expected_var else NA_real_

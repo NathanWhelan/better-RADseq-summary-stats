@@ -35,7 +35,11 @@
     "_se_ind columns: delete-one-INDIVIDUAL jackknife -- the uncertainty from",
     "which individuals were sampled, which the loci-based _se/_lo/_hi hold fixed.",
     "Report _se_ind when individuals differ in inbreeding (g2 > 0; see",
-    "identity_disequilibrium() or the het_between_pops() report)."),
+    "identity_disequilibrium() or the het_between_pops() report).",
+    "Ar_se_ind and privAr_se_ind: privAr_se_ind holds the OTHER populations'",
+    "individuals fixed and ran up to about 20% too small in simulation; both run",
+    "too large (up to ~2x) when many records have fewer than g + 2 gene copies,",
+    "which diversity_stats() warns about. See vignette(\"rationale\"), section 4."),
 
   diversity_ar_n = c(
     "(Ar needs only THAT population at >= g gene copies; privAr needs EVERY",
@@ -66,7 +70,8 @@
     "only between datasets filtered the same way."),
 
   diversity_prior_filters = c(
-    "These describe the data as given (an HWE filter cannot be detected). See",
+    "These describe the popmap's individuals as given; samples in the VCF but not",
+    "in the popmap are left out (an HWE filter cannot be detected). See",
     "vignette(\"workflow\"), \"If your data were already filtered\"."),
 
   diversity_fis_by_call_rate = c(
@@ -226,9 +231,18 @@
     "as diversity_stats()); _lo/_hi: bootstrap 95% CI over the same RAD loci."),
 
   differentiation_one_pop_records = c(
-    "they say nothing about differences between populations, and keeping them",
-    "would pull FST toward 0 (hierfstat::wc() keeps them; VCFtools and Stacks'",
-    "own Fst skip them). See ?differentiation_stats."),
+    "they say nothing about differences between populations (or, with one",
+    "individual per population, about variation among individuals), and keeping",
+    "them would pull FST toward 0 (hierfstat::wc() keeps them; VCFtools and",
+    "Stacks' own Fst skip records typed in one population). See ?differentiation_stats."),
+
+  differentiation_d_global_records = c(
+    "Why: Jost's D for k populations measures differentiation among those k",
+    "populations. A record typed in only some of them measures it among a",
+    "different set, and averaging such records in biased the global D low",
+    "(0.875 instead of 1 for three completely differentiated populations, one",
+    "of them untyped at half the records). Pairwise D is not affected: each",
+    "pair uses every record typed in both of its populations."),
 
   differentiation_haplotype = c(
     "This is a HAPLOTYPE VCF: prefer D (or beta) over FST here -- FST's",

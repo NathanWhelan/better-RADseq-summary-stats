@@ -22,9 +22,9 @@ read_stacks_vcf(
 loci are the unit that standard errors and bootstrap intervals resample,
 so that linked SNPs on one RAD tag move together.
 \itemize{
-\item \code{"auto"} (default): the ID column when every record has one (Stacks
-writes the locus number, or \code{locus:column:strand} in a SNP VCF), and
-\code{"window"} otherwise.
+\item \code{"auto"} (default): the ID column when every record has one, and
+\code{"window"} otherwise. For Stacks output both give one locus per Stacks
+locus; see "What Stacks writes" below.
 \item \code{"ID"}: the ID column, up to its first \code{:}.
 \item \code{"CHROM"}: one locus per CHROM value, for de novo formats that put the
 locus there (some Stacks 2 versions, ipyrad, dDocent).
@@ -79,9 +79,19 @@ their records are grouped into RAD loci.
 \itemize{
 \item Diploid calls only. Haploid (\code{0}) and polyploid (\code{0/0/1}) calls are read
 as missing, and the message lists them.
-\item A record with multi-base alleles (an indel or MNP) makes the object look
-like a haplotype VCF, which switches off the per-site conversion in
-\code{\link[=diversity_stats]{diversity_stats()}}. Remove indels from a SNP VCF first.
+\item The SNP-VCF analyses were designed for biallelic SNPs, which is what
+Stacks writes. Multi-allelic SNPs (e.g. \code{A} -> \verb{C,T}, which GATK,
+freebayes and ipyrad can emit) are counted correctly by Ho, He, FIS and
+rarefaction, and do not change how the file is treated; but
+\code{\link[=kinship_check]{kinship_check()}} and \code{\link[=write_plink]{write_plink()}} leave them out, and the report's
+note that allelic richness is "capped at 2" on SNPs assumes biallelic
+sites.
+\item An object is treated as haplotype data (one record spanning several
+sites) when any allele is longer than one base; otherwise every record is
+taken to be one site. A record with multi-base alleles (an indel or MNP)
+therefore makes a SNP VCF look like a haplotype VCF, which switches off
+the per-site conversion in \code{\link[=diversity_stats]{diversity_stats()}}. Remove indels and MNPs
+from a SNP VCF first.
 \item With \code{locus_from = "auto"}, a VCF whose ID column is unique per SNP
 (e.g. \code{rs} numbers) makes every SNP its own locus, so linked SNPs are
 resampled as if independent. The message says how many records share each
@@ -89,6 +99,40 @@ locus; if it is 1.00 for RAD data, use \code{locus_from = "window"} or
 \code{"CHROM"}.
 }
 }
+\section{What Stacks writes}{
+
+The columns that identify a record differ between Stacks' two VCFs and
+between de novo and reference-aligned runs (Stacks 2.68,
+\code{export_formats.cc}):\tabular{llll}{
+   file \tab CHROM \tab POS \tab ID \cr
+   \code{populations.snps.vcf}, de novo \tab locus ID \tab column in the locus \tab \code{locus:column} \cr
+   \code{populations.snps.vcf}, reference-aligned \tab chromosome \tab position \tab \code{locus:column:strand} \cr
+   \code{populations.haps.vcf}, de novo \tab locus ID \tab \code{0} \tab \code{.} \cr
+   \code{populations.haps.vcf}, reference-aligned \tab chromosome \tab locus position \tab \code{locus:1:strand} \cr
+}
+
+\itemize{
+\item In a SNP VCF every record has an ID, so \code{locus_from = "auto"} takes the
+locus from the ID (the part before the first \code{:}), and SNPs of one RAD
+locus are grouped together.
+\item In a de novo haplotype VCF the ID is \code{.}, so \code{"auto"} falls back to
+\code{"window"}. Each record has its own CHROM (its locus ID), so each record
+becomes its own RAD locus, which is correct: the progress message then
+reads "RAD loci from CHROM + POS ... (1.00 per locus)". In a
+reference-aligned haplotype VCF the ID gives the locus.
+\item Each haplotype allele is the bases at the locus's SNP columns, joined
+(listed in the INFO field as \verb{snp_columns=}). A locus with one SNP
+therefore has single-base alleles and a locus with several SNPs has
+multi-base alleles; the file is treated as haplotype data when any
+allele has more than one base.
+\item A haplotype genotype is written as missing (\code{./.}) when any of its SNPs
+was not called in that individual, and only loci with at least two
+haplotypes are written.
+\item The haplotype VCF has genotypes only (no \code{DP} or \code{AD}), so
+\code{\link[=filter_genotype_depth]{filter_genotype_depth()}} and \code{\link[=filter_low_conf_alt]{filter_low_conf_alt()}} need the SNP VCF.
+}
+}
+
 \examples{
 H <- read_stacks_vcf(system.file("extdata", "small.haps.vcf",
                                  package = "RADdiversity"))

@@ -29,7 +29,8 @@
   unassigned <- setdiff(H$samples, ids)
   if (length(unassigned))
     stop("These samples are in H but not in `popmap`: ", paste(unassigned, collapse = ", "),
-         ". Every sample must be assigned to a population; remove the others from H first.",
+         ". Every sample must be assigned to a population; remove the others from H first ",
+         "with filter_samples(H, popmap).",
          call. = FALSE)
   pop_number <- stats::setNames(rep(seq_along(pops), lengths(pops)), ids)
   unname(pop_number[H$samples])

@@ -38,6 +38,11 @@ overall while being poorly covered in one population (see \code{rule}).
 \details{
 This is independent of the call-rate rule inside \code{\link[=het_between_pops]{het_between_pops()}} and
 the \code{min_n} / \code{complete_case} rules of \code{\link[=diversity_stats]{diversity_stats()}}.
+
+\strong{Which samples.} Without \code{popmap}, the pooled call rate counts every
+sample in \code{H}, including any that are not in your popmap; with \code{popmap},
+only the popmap's samples are used. Run \code{\link[=filter_samples]{filter_samples()}} first to remove
+the other samples from \code{H} altogether.
 }
 \examples{
 H <- read_stacks_vcf(system.file("extdata", "small.haps.vcf",

@@ -37,6 +37,10 @@ affects inferences of population structure (Linck & Battey 2019). Report
 the threshold used, and compare diversity values only between datasets
 filtered the same way. \code{\link[=diversity_stats]{diversity_stats()}}'s \code{summary()} shows the lowest
 allele count remaining in the data.
+
+\strong{Which samples.} This uses every sample in \code{H}, including any that are
+not in your popmap (an outgroup, say). Run \code{\link[=filter_samples]{filter_samples()}} first to base
+it on the individuals you analyse.
 }
 \examples{
 H <- read_stacks_vcf(system.file("extdata", "small.snps.vcf",

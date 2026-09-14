@@ -22,7 +22,8 @@ Goudet's beta.
 each individual, and whether individuals differ in inbreeding.
 \item \code{\link[=kinship_check]{kinship_check()}} and \code{\link[=hwe_test]{hwe_test()}}: a relatedness screen and an exact
 Hardy-Weinberg test (a report, never a filter).
-\item \code{\link[=read_stacks_vcf]{read_stacks_vcf()}}, \code{\link[=read_popmap]{read_popmap()}}, the \verb{filter_*()} functions and the
+\item \code{\link[=read_stacks_vcf]{read_stacks_vcf()}}, \code{\link[=read_popmap]{read_popmap()}}, the \verb{filter_*()} functions (with
+\code{\link[=filter_samples]{filter_samples()}} to keep only the popmap's individuals) and the
 \verb{write_*()} functions: read, filter and export.
 }
 

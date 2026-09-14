@@ -92,8 +92,15 @@ errors (\code{Ho_se_ind}, \code{He_se_ind}, \code{Fis_se_ind}, \code{Ar_se_ind},
 which the locus-based \verb{_se}, \verb{_lo} and \verb{_hi} leave out. Report these when
 individuals differ in inbreeding or include relatives (check with
 \code{\link[=identity_disequilibrium]{identity_disequilibrium()}}: g2 > 0). The Ar/privAr ones need
-\code{g <= 2 * (n - 1)} for every population and are \code{NA} otherwise. Default
-\code{FALSE}.}
+\code{g <= 2 * (n - 1)} for every population and are \code{NA} otherwise. Two
+caveats for those two, from simulation (\code{vignette("rationale")}, section
+4): \code{privAr_se_ind} deletes only that population's individuals and holds
+the other populations' fixed, although private richness depends on them
+too, so it runs too small (by up to about 20\%); and when many records
+have fewer than \code{g + 2} gene copies (missing data with \code{g} close to
+\code{2 * (n - 1)}), deleting one individual drops them from some jackknife
+replicates, and both come out too large (up to about twice the true
+value); a warning then suggests a smaller \code{g} for them. Default \code{FALSE}.}
 
 \item{hierfstat_check}{If \code{TRUE} and the \code{hierfstat} package is installed,
 also compute per-record Ho/Hs with \code{hierfstat::basic.stats()} and
@@ -166,6 +173,12 @@ Run it twice: \code{populations.snps.vcf} gives Ho, He, \code{pct_poly} and the
 per-sequenced-site values; \code{populations.haps.vcf} gives FIS, Ar and
 privAr. The printed result says which numbers to take from each file. See
 \code{vignette("rationale")}, section 3.
+
+The SNP-VCF side was designed for biallelic SNPs, as Stacks writes them.
+A VCF whose alleles are all single bases is treated as one site per record
+even if a few SNPs are multi-allelic (as GATK or freebayes can emit), and
+those sites are counted correctly; a VCF with any multi-base allele is
+treated as haplotype data (see "Assumptions" in \code{\link[=read_stacks_vcf]{read_stacks_vcf()}}).
 }
 \examples{
 # A toy dataset shipped with the package: 80 RAD loci, 2 populations of 4

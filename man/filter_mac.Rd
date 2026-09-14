@@ -32,6 +32,10 @@ site frequency spectrum, sites with a minor allele count of 2 or less carry
 about 4/(N - 1) of nucleotide diversity for N gene copies (21\% at 10
 diploids, 10\% at 20), so \code{min_mac = 3} lowers per-site diversity by about
 that much.
+
+\strong{Which samples.} This uses every sample in \code{H}, including any that are
+not in your popmap (an outgroup, say). Run \code{\link[=filter_samples]{filter_samples()}} first to base
+it on the individuals you analyse.
 }
 \examples{
 H <- read_stacks_vcf(system.file("extdata", "small.snps.vcf",

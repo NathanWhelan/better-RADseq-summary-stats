@@ -8,8 +8,9 @@ low_conf_alt_sensitivity(H, thresholds = c(1, 2, 3, 4, 5, 10))
 }
 \arguments{
 \item{H}{The object returned by \code{\link[=read_stacks_vcf]{read_stacks_vcf()}} (optionally filtered).
-It must still contain \verb{$fields}, the raw VCF columns, which hold the AD
-(allele depth) values.}
+The allele depths come from \code{H$ad_ref} and \code{H$ad_alt}, which
+\code{\link[=read_stacks_vcf]{read_stacks_vcf()}} fills from each call's \code{AD} (allele depth) field; they
+are \code{NULL} for a VCF without \code{AD}, in which case nothing is flagged.}
 
 \item{thresholds}{The \code{min_alt_reads} values to try. Default
 \code{c(1, 2, 3, 4, 5, 10)}.}

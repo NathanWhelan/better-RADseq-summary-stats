@@ -14,7 +14,8 @@
 #'   each individual, and whether individuals differ in inbreeding.
 #' * [kinship_check()] and [hwe_test()]: a relatedness screen and an exact
 #'   Hardy-Weinberg test (a report, never a filter).
-#' * [read_stacks_vcf()], [read_popmap()], the `filter_*()` functions and the
+#' * [read_stacks_vcf()], [read_popmap()], the `filter_*()` functions (with
+#'   [filter_samples()] to keep only the popmap's individuals) and the
 #'   `write_*()` functions: read, filter and export.
 #'
 #' Every analysis function takes `vcf` (a file path or the object from

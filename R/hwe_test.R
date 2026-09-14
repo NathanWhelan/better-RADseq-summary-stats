@@ -394,7 +394,8 @@
 #'   enumeration) and under `method = "chisq"`.
 #' @param stop_after Stop drawing for a locus once this many draws at least
 #'   as extreme as the observed table have been seen (Besag & Clifford
-#'   1991). Default `20`. `Inf` always uses all `n_draws` draws.
+#'   1991). A whole number, default `20`; `Inf` always uses all `n_draws`
+#'   draws.
 #' @param seed Random seed for the Monte Carlo draws. Default `NULL`: use R's
 #'   current random-number stream (call `set.seed()` first for reproducible
 #'   p-values). A number makes the result reproducible on its own and leaves
@@ -424,7 +425,13 @@ hwe_test <- function(vcf, popmap = NULL, method = "exact", n_draws = 10000L,
                      stop_after = 20, seed = NULL, verbose = TRUE) {
   .check_choice(method, "method", c("exact", "chisq"))
   n_draws <- .check_count(n_draws, "n_draws", min = 1)
-  .check_number(stop_after, "stop_after", min = 1)
+  ## A whole number of extreme draws (the p-value is stop_after / draws), or
+  ## Inf to always use all n_draws.
+  if (!identical(stop_after, Inf))
+    stop_after <- tryCatch(.check_count(stop_after, "stop_after", min = 1),
+                           error = function(e)
+                             stop("`stop_after` must be a whole number >= 1, or Inf (got: ",
+                                  .show_value(stop_after), ").", call. = FALSE))
   .check_seed(seed)
   .check_flag(verbose, "verbose")
   H <- .resolve_H(vcf, verbose = verbose)

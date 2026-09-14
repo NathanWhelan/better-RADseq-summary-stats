@@ -168,6 +168,77 @@ test_that("FST and D increase as two populations' allele frequencies diverge fur
 })
 
 ## ---------------------------------------------------------------------------
+## Which records the global D and FST use
+## ---------------------------------------------------------------------------
+
+## Three populations, each fixed for its own allele at every record (true
+## D = 1, FST = 1). Population c is untyped at the records in `untyped_c`.
+three_fixed_pops <- function(L = 400, n = 10, untyped_c = seq_len(L / 2)) {
+  ids <- paste0(rep(c("a", "b", "c"), each = n), seq_len(n))
+  A <- matrix(rep(rep(1:3, each = n), L), L, byrow = TRUE, dimnames = list(NULL, ids))
+  A[untyped_c, ids[2 * n + seq_len(n)]] <- NA
+  H <- structure(list(A1 = A, A2 = A, locus = paste0("r", seq_len(L)),
+                      locus_raw = paste0("L", seq_len(L)),
+                      alleles = rep(list(c("A", "C", "G")), L), n_alleles = rep(3L, L),
+                      samples = ids), class = "raddiv_vcf")
+  list(H = H, pops = list(a = ids[1:n], b = ids[n + 1:n], c = ids[2 * n + 1:n]))
+}
+
+test_that("global D uses only records typed in every population, and says so", {
+  d <- three_fixed_pops()
+  res <- differentiation_stats(d$H, d$pops, nboot = 0, beta = FALSE, verbose = FALSE)
+  ## Averaging in the records without population c gave 0.875 before this fix.
+  expect_equal(res$global$D, 1)
+  expect_equal(res$pairwise$D, c(1, 1, 1))
+  complete <- differentiation_stats(RADdiversity:::.subset_H(d$H, 201:400), d$pops,
+                                    nboot = 0, beta = FALSE, verbose = FALSE)
+  expect_equal(res$global$D, complete$global$D)
+  expect_equal(res$global$D_records, 200L)
+  expect_equal(res$settings$d_records_skipped_global, 200L)
+  printed <- capture.output(print(res))
+  expect_true(any(grepl("global D uses only the 200 of 400 records typed in all 3 populations",
+                        printed, fixed = TRUE)))
+  expect_true(any(grepl("global D uses only", capture.output(print(summary(res))))))
+  msgs <- capture_messages(differentiation_stats(d$H, d$pops, nboot = 0, beta = FALSE))
+  expect_true(any(grepl("global D uses only", msgs)))
+})
+
+test_that("global D is NA, with a warning, when no record is typed in every population", {
+  d <- three_fixed_pops(L = 20, untyped_c = 1:20)
+  d$H$A1[, d$pops$c] <- 1L; d$H$A2[, d$pops$c] <- 1L        # c typed everywhere ...
+  d$H$A1[1:20, d$pops$b] <- NA; d$H$A2[1:20, d$pops$b] <- NA # ... but b nowhere
+  d$H$A1[1:10, d$pops$b] <- 2L; d$H$A2[1:10, d$pops$b] <- 2L # b back at 1-10
+  d$H$A1[1:10, d$pops$a] <- NA; d$H$A2[1:10, d$pops$a] <- NA # a missing at 1-10
+  expect_warning(res <- differentiation_stats(d$H, d$pops, nboot = 0, beta = FALSE,
+                                              verbose = FALSE), "Global D is NA")
+  expect_true(is.na(res$global$D))
+  expect_equal(res$global$D_records, 0L)
+  ## a and b are never typed together; a-c and b-c each have 10 records.
+  expect_equal(is.na(res$pairwise$D), c(TRUE, FALSE, FALSE))
+})
+
+test_that("FST and FIS skip records with a single genotyped individual per population", {
+  set.seed(8)
+  L <- 800; n <- 12
+  p_anc <- stats::rbeta(L, 2, 2)
+  X <- sim_genotypes(sim_diverged_freqs(p_anc, 0.1), n)
+  Y <- sim_genotypes(sim_diverged_freqs(p_anc, 0.1), n)
+  ids <- c(paste0("x", 1:n), paste0("y", 1:n))
+  A1 <- cbind(X$A1, Y$A1); A2 <- cbind(X$A2, Y$A2)
+  colnames(A1) <- colnames(A2) <- ids
+  pops <- list(X = ids[1:n], Y = ids[n + 1:n])
+  ## 300 extra records: one heterozygous individual typed in each population.
+  B1 <- matrix(NA_integer_, 300, 2 * n, dimnames = list(NULL, ids)); B2 <- B1
+  B1[, c(1, n + 1)] <- 1L; B2[, c(1, n + 1)] <- 2L
+  base <- differentiation_stats(sim_H(A1, A2), pops, nboot = 0, beta = FALSE, verbose = FALSE)
+  more <- differentiation_stats(sim_H(rbind(A1, B1), rbind(A2, B2)), pops, nboot = 0,
+                                beta = FALSE, verbose = FALSE)
+  expect_equal(more$global$FST, base$global$FST, tolerance = 1e-12)
+  expect_equal(more$global$FIS, base$global$FIS, tolerance = 1e-12)
+  expect_equal(unname(more$settings$fst_records_skipped), c(300, 300))
+})
+
+## ---------------------------------------------------------------------------
 ## Precision columns (jackknife SE always present; bootstrap CI only if
 ## nboot > 0) and the returned-object shape.
 ## ---------------------------------------------------------------------------

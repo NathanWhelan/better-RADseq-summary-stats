@@ -305,9 +305,15 @@
       n_records <- sum(in_group & pieces[, 1] > 0)
       if (!n_records) return(NULL)
       S <- rowsum(pieces * in_group, locus_index, reorder = TRUE)
+      ## Only RAD loci with a record in this group take part in the
+      ## jackknife. A locus with none would be a block whose removal changes
+      ## nothing, and counting such blocks inflates the SE by
+      ## sqrt(k (L - 1) / (L (k - 1))) for k loci with data among L in total
+      ## (12% when a group has 5 loci).
+      S <- S[S[, 1] > 0, , drop = FALSE]
       f <- function(totals) .diversity_from_sums(totals, "x")
       point <- f(colSums(S))[1L, ]
-      se <- .jack_block_sums(S, f)
+      se <- if (nrow(S) >= 2L) .jack_block_sums(S, f) else c(Fis_x = NA_real_)
       data.frame(population = p, call_rate = g, n_records = n_records,
                  He = unname(point["He_x"]), Fis = unname(point["Fis_x"]),
                  Fis_se = unname(se["Fis_x"]))
@@ -370,6 +376,48 @@
   }
   list(se = se, full = full)
 }
+
+## Not exported. When are the individual-jackknife SEs of Ar and privAr
+## unreliable? Rarefaction needs at least g gene copies. At a record where a
+## population has only g or g + 1 copies, deleting one typed individual (2
+## copies) leaves fewer than g, so the record drops out of
+## some jackknife replicates and not others. The replicates then average over
+## different records, which adds spread that has nothing to do with sampling
+## individuals: in simulation (inst/sims/jackknife_richness.R) the Ar SE came
+## out up to about twice the true value when many records sat there.
+##   n_typed  records x populations, genotyped individuals (used records)
+##   Ar       records x populations, Ar from .record_stats() (NA = undefined)
+##   g, min_n as in diversity_stats()
+##   threshold  largest acceptable share of such records
+## Returns list(share = per population, the share of its records with a
+## defined Ar that have fewer than g + 2 gene copies; suggest_g = the largest g
+## (>= 2) at which every population's share is at most `threshold`, or NA).
+.jackknife_boundary <- function(n_typed, Ar, g, min_n, threshold) {
+  copies <- 2L * n_typed
+  share_at <- function(g_try, defined) {
+    vapply(seq_len(ncol(copies)), function(p) {
+      used <- copies[defined[, p], p]
+      if (length(used)) mean(used < g_try + 2) else NA_real_
+    }, numeric(1))
+  }
+  share <- stats::setNames(share_at(g, !is.na(Ar)), colnames(n_typed))
+  suggest_g <- NA_integer_
+  for (g_try in rev(seq_len(g)[-1])) {
+    defined <- copies >= g_try & n_typed >= min_n
+    shares <- share_at(g_try, defined)
+    if (all(is.na(shares) | shares <= threshold)) {
+      suggest_g <- g_try
+      break
+    }
+  }
+  list(share = share, suggest_g = suggest_g)
+}
+
+## Not exported. Largest share of a population's Ar-defined records with
+## fewer than g + 2 gene copies before diversity_stats(se_individuals = TRUE) warns
+## that Ar_se_ind and privAr_se_ind are probably too large (calibrated in
+## inst/sims/jackknife_richness.R).
+.jackknife_boundary_share <- 0.05
 
 ## Not exported. The boot = "individuals" / "both" bootstrap (comparison
 ## modes only; see ?diversity_stats). Each replicate:

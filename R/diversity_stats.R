@@ -44,6 +44,12 @@
 #' privAr. The printed result says which numbers to take from each file. See
 #' `vignette("rationale")`, section 3.
 #'
+#' The SNP-VCF side was designed for biallelic SNPs, as Stacks writes them.
+#' A VCF whose alleles are all single bases is treated as one site per record
+#' even if a few SNPs are multi-allelic (as GATK or freebayes can emit), and
+#' those sites are counted correctly; a VCF with any multi-base allele is
+#' treated as haplotype data (see "Assumptions" in [read_stacks_vcf()]).
+#'
 #' @param vcf Path to `populations.snps.vcf` or `populations.haps.vcf`
 #'   (optionally gzip-compressed), or the object returned by
 #'   [read_stacks_vcf()], optionally passed through `filter_*()` functions.
@@ -99,8 +105,15 @@
 #'   which the locus-based `_se`, `_lo` and `_hi` leave out. Report these when
 #'   individuals differ in inbreeding or include relatives (check with
 #'   [identity_disequilibrium()]: g2 > 0). The Ar/privAr ones need
-#'   `g <= 2 * (n - 1)` for every population and are `NA` otherwise. Default
-#'   `FALSE`.
+#'   `g <= 2 * (n - 1)` for every population and are `NA` otherwise. Two
+#'   caveats for those two, from simulation (`vignette("rationale")`, section
+#'   4): `privAr_se_ind` deletes only that population's individuals and holds
+#'   the other populations' fixed, although private richness depends on them
+#'   too, so it runs too small (by up to about 20%); and when many records
+#'   have fewer than `g + 2` gene copies (missing data with `g` close to
+#'   `2 * (n - 1)`), deleting one individual drops them from some jackknife
+#'   replicates, and both come out too large (up to about twice the true
+#'   value); a warning then suggests a smaller `g` for them. Default `FALSE`.
 #' @param hierfstat_check If `TRUE` and the `hierfstat` package is installed,
 #'   also compute per-record Ho/Hs with `hierfstat::basic.stats()` and
 #'   allelic richness with `hierfstat::allelic.richness()`, and report the
@@ -326,6 +339,7 @@ diversity_stats <- function(vcf, popmap, g, nboot = 10000L, boot = "loci", sites
 
   ## ---- 7. Optional: jackknife over individuals ------------------------------
   se_ind <- NULL
+  jackknife_boundary <- NULL
   if (se_individuals) {
     .inform(verbose, "Delete-one-individual jackknife over ", .big(sum(pop_sizes)),
             " individuals ...")
@@ -339,7 +353,29 @@ diversity_stats <- function(vcf, popmap, g, nboot = 10000L, boot = "loci", sites
     if (g > 2L * (min(pop_sizes) - 1L))
       .inform(verbose, "  Ar/privAr individual SEs are NA for populations with fewer than ",
               "g/2 + 1 individuals: removing one leaves fewer than g = ", g,
-              " gene copies. Use g <= ", 2L * (min(pop_sizes) - 1L), " to get them.")
+              " gene copies. Use g <= ", 2L * (min(pop_sizes) - 1L), " to get them ",
+              "(with missing data, a smaller g still; see the warning if one is given).")
+    .inform(verbose, "  Note: privAr_se_ind holds the OTHER populations' individuals fixed, so it ",
+            "leaves out part of the uncertainty (up to about 20% too small in simulation; ",
+            "see ?diversity_stats).")
+    ## Ar/privAr SEs are inflated when many records sit within 2 gene copies
+    ## of g (see .jackknife_boundary()). Only populations whose SEs exist.
+    boundary <- .jackknife_boundary(n_typed, rs$Ar, g, min_n_used, .jackknife_boundary_share)
+    has_se <- is.finite(se_ind[paste0("Ar_", pop_names)])
+    jackknife_boundary <- boundary$share
+    inflated <- pop_names[has_se & is.finite(boundary$share) &
+                            boundary$share > .jackknife_boundary_share]
+    if (length(inflated))
+      warning("Ar_se_ind and privAr_se_ind are probably too large for ",
+              paste(sprintf("%s (%.0f%% of its records with a defined Ar)", inflated,
+                            100 * boundary$share[inflated]), collapse = ", "),
+              ": those records have fewer than g + 2 = ", g + 2L, " gene copies, so deleting one ",
+              "individual drops them from some jackknife replicates, which made these SEs up ",
+              "to about twice the true value in simulation (vignette(\"rationale\"), section 4). ",
+              if (!is.na(boundary$suggest_g) && boundary$suggest_g >= 2L)
+                paste0("For these two SEs, re-run with g = ", boundary$suggest_g, " or less. ")
+              else "For these two SEs, re-run with a smaller g. ",
+              "The Ho, He and FIS SEs are not affected.", call. = FALSE)
   }
 
   ## ---- 8. Bootstrap ---------------------------------------------------------
@@ -395,6 +431,7 @@ diversity_stats <- function(vcf, popmap, g, nboot = 10000L, boot = "loci", sites
                    complete_case = complete_case, min_n = min_n,
                    cells_used = inclusion$cells_used, cells_total = inclusion$cells_total,
                    nboot = nboot, boot = boot, se_individuals = se_individuals,
+                   jackknife_boundary = jackknife_boundary,
                    is_haplotype = is_haplotype, sites = as.vector(sites_by_pop),
                    variant_records = variant_records, ok_sites = ok_sites,
                    prior_filters = prior_filters, seed = seed, files = written)
@@ -457,6 +494,15 @@ print.raddiv_diversity <- function(x, ...) {
     out <- c(out, "`sites` was ignored: every value is smaller than the number of variant records.")
   if (isTRUE(st$se_individuals) && anyNA(x$richness$Ar_se_ind))
     out <- c(out, "some Ar/privAr individual SEs are NA: g is too large to remove one individual.")
+  if (isTRUE(st$se_individuals)) {
+    share <- st$jackknife_boundary
+    inflated <- names(share)[is.finite(share) & share > .jackknife_boundary_share &
+                               is.finite(x$richness$Ar_se_ind)]
+    if (length(inflated))
+      out <- c(out, sprintf("Ar_se_ind/privAr_se_ind are probably too large for %s (records within 2 gene copies of g); use a smaller g for them.",
+                            paste(inflated, collapse = ", ")))
+    out <- c(out, "privAr_se_ind holds the other populations' individuals fixed (up to about 20% too small in simulation).")
+  }
   out
 }
 
@@ -545,7 +591,9 @@ print.summary.raddiv_diversity <- function(x, ...) {
 
   pf <- st$prior_filters
   if (!is.null(pf)) {
-    cat("\nWhat the data look filtered at (before or during this run)\n")
+    cat("\nWhat the data look filtered at (before or during this run)",
+        if (!is.null(pf$n_samples)) sprintf(", over the %d individuals in the popmap", pf$n_samples),
+        "\n", sep = "")
     note(sprintf("rarest allele in any variable record: %s copies; %.1f%% of %s variable records have an allele seen once or twice",
                  pf$min_allele_count, 100 * pf$rare_share, .big(pf$n_variable)),
          sprintf("lowest record call rate: %.2f pooled; within populations %s",

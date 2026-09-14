@@ -49,8 +49,12 @@ apply.
 > unit of replication (Van Dongen 1995), with a Wilcoxon rank-sum test as a
 > distribution-free check [and a Welch one-way ANOVA across all
 > populations, followed by pairwise tests with Benjamini-Hochberg adjusted
-> p-values]. Differences in inbreeding were tested in the same way on
-> individual inbreeding coefficients. [Individuals were screened for close
+> p-values]. [Differentiation was measured as F<sub>ST</sub> (Weir &
+> Cockerham 1984) and Jost's D (Jost 2008); the global D was computed from
+> the [D_records] loci genotyped in every population, and each pairwise D
+> from the loci genotyped in both populations of the pair.] Differences in
+> inbreeding were tested in the same way on individual inbreeding
+> coefficients. [Individuals were screened for close
 > relatives with KING-robust (Manichaikul et al. 2010), and one individual of
 > each pair with kinship above 0.0442 was removed.]
 
@@ -69,7 +73,7 @@ the time, so say how many individuals the comparison rests on.
 
 | statistic | file | source | note |
 |---|---|---|---|
-| H<sub>o</sub> | SNP VCF | `diversity_stats()` or Stacks `Obs_Het` | a count; the two agree |
+| H<sub>o</sub> | SNP VCF | `diversity_stats()` or Stacks `Obs_Het` | the same observed proportion; Stacks also averages sites with a single genotyped individual, which `diversity_stats()` skips (`min_n`), so values can differ slightly |
 | H<sub>e</sub> per variant site | SNP VCF | `diversity_stats()`, or Stacks `Pi` (Variant positions) | differ by about F/(2N − 1), usually < 1% |
 | H<sub>e</sub> per sequenced site (π) | SNP VCF | `diversity_stats(sites = )`, `pi_allsites()`, or Stacks `Pi` (All positions) | the values to compare with other studies |
 | % polymorphic | SNP VCF | `diversity_stats()` | report next to per-variant H<sub>e</sub> |
@@ -225,6 +229,11 @@ loci too. A sentence to adapt:
 > included 0:] Locus-based intervals are appropriate in that case; in
 > simulation they kept about 95% coverage when individuals did not differ.
 
+(If you report individual standard errors for allelic or private allelic
+richness, note that in simulation the one for private richness ran up to
+about 20% small, and both ran large when many loci had barely *g* gene
+copies; see `vignette("rationale")`, section 4.)
+
 **"A non-significant result may just reflect low power."**
 
 > We agree, and report it as no difference detected. With [n1] and [n2]
@@ -247,6 +256,9 @@ Ecology* 16:2474–2487.
 Gautier, M., Gharbi, K., Cezard, T., et al. (2013) The effect of RAD allele
 dropout on the estimation of genetic variation within and between
 populations. *Molecular Ecology* 22:3165–3178.
+
+Jost, L. (2008) G<sub>ST</sub> and its relatives do not measure
+differentiation. *Molecular Ecology* 17:4015–4026.
 
 Kalinowski, S.T. (2004) Counting alleles with rarefaction: private alleles
 and hierarchical sampling designs. *Conservation Genetics* 5:539–543.

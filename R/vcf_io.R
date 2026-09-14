@@ -39,6 +39,25 @@
 #  paralog adds haplotypes rather than just heterozygotes.
 #  `populations.snps.vcf` has one record per SNP.
 #
+#  WHAT STACKS 2.68 ACTUALLY WRITES (export_formats.cc: VcfExport::write_site
+#  and VcfHapsExport::write_batch):
+#
+#    file, assembly               CHROM       POS          ID
+#    snps.vcf, de novo            locus ID    column       locus:column
+#    snps.vcf, reference-aligned  chromosome  bp position  locus:column:strand
+#    haps.vcf, de novo            locus ID    0            .
+#    haps.vcf, reference-aligned  chromosome  locus bp     locus:1:strand
+#
+#  A haplotype VCF also has INFO snp_columns=... (the SNP columns joined into
+#  each haplotype), writes a genotype as ./. when any of its SNPs is uncalled
+#  (an N in the haplotype), and includes only loci with at least two
+#  haplotypes. Because its alleles are the bases at every SNP of the tag, a
+#  tag with one SNP has single-base alleles, and a tag with more has
+#  multi-base ones. With locus_from = "auto", a de novo haplotype VCF (ID
+#  ".") is grouped by the "window" rule; each record has its own CHROM (the
+#  Stacks locus ID), so every record is its own RAD locus -- which is
+#  correct -- and the progress message says "CHROM + POS".
+#
 #  Requires only base R.
 #
 ###############################################################################
@@ -57,14 +76,55 @@
 #' **Assumptions to check on data from other pipelines.**
 #' * Diploid calls only. Haploid (`0`) and polyploid (`0/0/1`) calls are read
 #'   as missing, and the message lists them.
-#' * A record with multi-base alleles (an indel or MNP) makes the object look
-#'   like a haplotype VCF, which switches off the per-site conversion in
-#'   [diversity_stats()]. Remove indels from a SNP VCF first.
+#' * The SNP-VCF analyses were designed for biallelic SNPs, which is what
+#'   Stacks writes. Multi-allelic SNPs (e.g. `A` -> `C,T`, which GATK,
+#'   freebayes and ipyrad can emit) are counted correctly by Ho, He, FIS and
+#'   rarefaction, and do not change how the file is treated; but
+#'   [kinship_check()] and [write_plink()] leave them out, and the report's
+#'   note that allelic richness is "capped at 2" on SNPs assumes biallelic
+#'   sites.
+#' * An object is treated as haplotype data (one record spanning several
+#'   sites) when any allele is longer than one base; otherwise every record is
+#'   taken to be one site. A record with multi-base alleles (an indel or MNP)
+#'   therefore makes a SNP VCF look like a haplotype VCF, which switches off
+#'   the per-site conversion in [diversity_stats()]. Remove indels and MNPs
+#'   from a SNP VCF first.
 #' * With `locus_from = "auto"`, a VCF whose ID column is unique per SNP
 #'   (e.g. `rs` numbers) makes every SNP its own locus, so linked SNPs are
 #'   resampled as if independent. The message says how many records share each
 #'   locus; if it is 1.00 for RAD data, use `locus_from = "window"` or
 #'   `"CHROM"`.
+#'
+#' @section What Stacks writes:
+#' The columns that identify a record differ between Stacks' two VCFs and
+#' between de novo and reference-aligned runs (Stacks 2.68,
+#' `export_formats.cc`):
+#'
+#' | file | CHROM | POS | ID |
+#' |---|---|---|---|
+#' | `populations.snps.vcf`, de novo | locus ID | column in the locus | `locus:column` |
+#' | `populations.snps.vcf`, reference-aligned | chromosome | position | `locus:column:strand` |
+#' | `populations.haps.vcf`, de novo | locus ID | `0` | `.` |
+#' | `populations.haps.vcf`, reference-aligned | chromosome | locus position | `locus:1:strand` |
+#'
+#' * In a SNP VCF every record has an ID, so `locus_from = "auto"` takes the
+#'   locus from the ID (the part before the first `:`), and SNPs of one RAD
+#'   locus are grouped together.
+#' * In a de novo haplotype VCF the ID is `.`, so `"auto"` falls back to
+#'   `"window"`. Each record has its own CHROM (its locus ID), so each record
+#'   becomes its own RAD locus, which is correct: the progress message then
+#'   reads "RAD loci from CHROM + POS ... (1.00 per locus)". In a
+#'   reference-aligned haplotype VCF the ID gives the locus.
+#' * Each haplotype allele is the bases at the locus's SNP columns, joined
+#'   (listed in the INFO field as `snp_columns=`). A locus with one SNP
+#'   therefore has single-base alleles and a locus with several SNPs has
+#'   multi-base alleles; the file is treated as haplotype data when any
+#'   allele has more than one base.
+#' * A haplotype genotype is written as missing (`./.`) when any of its SNPs
+#'   was not called in that individual, and only loci with at least two
+#'   haplotypes are written.
+#' * The haplotype VCF has genotypes only (no `DP` or `AD`), so
+#'   [filter_genotype_depth()] and [filter_low_conf_alt()] need the SNP VCF.
 #'
 #' @references
 #' Danecek, P., Auton, A., Abecasis, G., et al. (2011) The variant call format
@@ -82,9 +142,9 @@
 #' @param locus_from How to tell which RAD locus each record belongs to. RAD
 #'   loci are the unit that standard errors and bootstrap intervals resample,
 #'   so that linked SNPs on one RAD tag move together.
-#'   * `"auto"` (default): the ID column when every record has one (Stacks
-#'     writes the locus number, or `locus:column:strand` in a SNP VCF), and
-#'     `"window"` otherwise.
+#'   * `"auto"` (default): the ID column when every record has one, and
+#'     `"window"` otherwise. For Stacks output both give one locus per Stacks
+#'     locus; see "What Stacks writes" below.
 #'   * `"ID"`: the ID column, up to its first `:`.
 #'   * `"CHROM"`: one locus per CHROM value, for de novo formats that put the
 #'     locus there (some Stacks 2 versions, ipyrad, dDocent).
@@ -489,6 +549,12 @@ print.raddiv_vcf <- function(x, ...) {
 #' population`) into a list of sample IDs per population. Every function that
 #' takes a `popmap` argument accepts either the file path or this list.
 #'
+#' The file is read with the same rules as Stacks: blank lines and lines
+#' starting with `#` are skipped, and a third column (Stacks' optional
+#' population group) is allowed and ignored. A line with only one column,
+#' more than three, or columns separated by spaces instead of a TAB stops with
+#' the line number and its text.
+#'
 #' @param path Path to the popmap file.
 #' @param samples Optional character vector of sample IDs to keep (typically
 #'   `H$samples`, the VCF's sample columns). Samples not in it are dropped,
@@ -509,12 +575,7 @@ read_popmap <- function(path, samples = NULL, verbose = TRUE) {
   .check_flag(verbose, "verbose")
   if (!file.exists(path))
     stop("Popmap file not found: ", path, "\n  Check the path and try again.", call. = FALSE)
-  ## colClasses = "character": otherwise read.delim() guesses column types,
-  ## so an all-numeric sample ID such as "001" becomes the number 1 (and no
-  ## longer matches the VCF), and a population named "T" becomes TRUE.
-  pm <- utils::read.delim(path, header = FALSE, colClasses = "character",
-                          col.names = c("sample", "pop"), strip.white = TRUE,
-                          comment.char = "#", quote = "")
+  pm <- .parse_popmap_lines(path, verbose)
   ## Keep only samples in the VCF BEFORE grouping, so populations come out in
   ## the order they first appear among the retained samples.
   if (!is.null(samples)) pm <- pm[pm$sample %in% samples, , drop = FALSE]
@@ -523,6 +584,48 @@ read_popmap <- function(path, samples = NULL, verbose = TRUE) {
          else "No popmap sample names match the VCF.", call. = FALSE)
   pops <- split(pm$sample, factor(pm$pop, levels = unique(pm$pop)))
   .clean_pops(pops, samples, verbose)
+}
+
+## Not exported. Reads a popmap file with the same rules as Stacks
+## (MetaPopInfo::init_popmap(), Stacks 2.68): blank lines and lines starting
+## with "#" are skipped, a Windows line ending is removed, fields are
+## TAB-separated and trimmed, and a line has SAMPLE, POPULATION and an
+## optional third GROUP column (which this package does not use). Anything
+## else stops with the line number and its text, so a popmap separated by
+## spaces, or with a missing population, is caught here with a message that
+## says what is wrong. Every value stays text, so a sample ID such as "001"
+## still matches the VCF. Returns data.frame(sample, pop).
+.parse_popmap_lines <- function(path, verbose = TRUE) {
+  lines <- sub("\r$", "", readLines(path, warn = FALSE))
+  line_number <- seq_along(lines)
+  content <- nzchar(trimws(lines)) & !startsWith(lines, "#")
+  fields <- lapply(strsplit(lines[content], "\t", fixed = TRUE), trimws)
+  fields <- lapply(fields, function(f) {
+    while (length(f) && !nzchar(f[length(f)])) f <- f[-length(f)]   # trailing tabs
+    f
+  })
+  n_fields <- lengths(fields)
+  empty_part <- vapply(fields, function(f) length(f) >= 2 && !all(nzchar(f[1:2])), logical(1))
+  bad <- which(n_fields < 2 | n_fields > 3 | empty_part)
+  if (length(bad)) {
+    shown <- utils::head(bad, 5)
+    spaces <- grepl(" ", lines[content][shown]) & !grepl("\t", lines[content][shown])
+    stop("Malformed popmap ", path, ": each line must be SAMPLE<TAB>POPULATION ",
+         "(optionally <TAB>GROUP, as Stacks allows). Problem line(s):\n",
+         paste0("  line ", line_number[content][shown], ": \"", lines[content][shown], "\"",
+                ifelse(n_fields[shown] < 2, " (no population column)",
+                       ifelse(n_fields[shown] > 3, sprintf(" (%d columns)", n_fields[shown]),
+                              " (an empty sample or population)")),
+                collapse = "\n"),
+         if (any(spaces)) "\n  The columns look separated by spaces; they must be separated by a TAB."
+         else "",
+         if (length(bad) > 5) sprintf("\n  ... and %d more.", length(bad) - 5) else "",
+         call. = FALSE)
+  }
+  if (any(n_fields == 3L))
+    .inform(verbose, "  popmap has a third (group) column; it is not used.")
+  data.frame(sample = vapply(fields, `[`, character(1), 1L),
+             pop = vapply(fields, `[`, character(1), 2L), stringsAsFactors = FALSE)
 }
 
 ## Not exported. Accepts `popmap` as either a path to a popmap file or a list
@@ -637,13 +740,19 @@ read_popmap <- function(path, samples = NULL, verbose = TRUE) {
 ## Counting helpers used by the analyses
 ## ---------------------------------------------------------------------------
 
-## Not exported. Is H a haplotype VCF (one multi-allelic record per RAD tag)
-## rather than a SNP VCF (one site per record)? Either signal is decisive:
-## Stacks writes multi-nucleotide alleles ("AC", "CA") for haplotype records
-## and single bases for SNP records, and haplotype records are often
-## multi-allelic.
+## Not exported. Is H a haplotype VCF (records that span several sites of a
+## RAD tag) rather than a SNP VCF (one site per record)? Decided by allele
+## LENGTH only: a record whose alleles are all single bases is one site,
+## whatever the file is called and however many alleles it has, while Stacks
+## writes a haplotype allele as the bases at every SNP of the tag ("AC",
+## "CA"), so any tag with two or more SNPs gives multi-base alleles. The
+## number of alleles is deliberately NOT used: a SNP VCF from GATK, freebayes
+## or ipyrad can contain a few multi-allelic SNPs (e.g. A -> C,T), and
+## treating those as haplotypes would switch off the per-site values. Indels
+## and MNPs also have multi-base alleles, which is why ?read_stacks_vcf asks
+## for them to be removed from a SNP VCF.
 .is_haplotype_H <- function(H) {
-  max(H$n_alleles) > 2L || any(nchar(unlist(H$alleles, use.names = FALSE)) > 1L)
+  any(nchar(unlist(H$alleles, use.names = FALSE)) > 1L)
 }
 
 ## Not exported. Typed (non-missing) individuals per record and population,

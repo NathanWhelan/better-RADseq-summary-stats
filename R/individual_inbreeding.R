@@ -22,7 +22,8 @@
 #
 #  F_i is relative to the individual's OWN population, so comparing F between
 #  populations (het_between_pops()) asks whether they differ in INBREEDING;
-#  comparing individual heterozygosity asks whether they differ in DIVERSITY.
+#  comparing individual heterozygosity asks whether they differ in OBSERVED
+#  heterozygosity, He (1 - F), which mixes diversity and inbreeding.
 #
 ###############################################################################
 
@@ -31,6 +32,20 @@
 ## Loci where Hs is undefined (fewer than 2 typed individuals) are skipped.
 ## Returns a data frame, one row per individual (columns of `a1`).
 .ind_F <- function(a1, a2) {
+  cells <- .ind_F_cells(a1, a2)
+  observed <- colSums(cells$observed)
+  expected <- colSums(cells$expected)
+  data.frame(n_loci = as.integer(colSums(cells$used)), obs_het = as.integer(observed),
+             exp_het = expected,
+             F = ifelse(expected > 0, 1 - observed / expected, NA_real_), row.names = NULL)
+}
+
+## Not exported. The loci x individuals pieces behind .ind_F(), kept per cell
+## so het_between_pops() can also resample them by RAD locus:
+##   used      typed at a locus where Hs is defined (>= 2 typed individuals)
+##   observed  1 where used and heterozygous, else 0
+##   expected  that locus's Nei & Chesser Hs where used, else 0
+.ind_F_cells <- function(a1, a2) {
   typed <- !is.na(a1)                           # loci x individuals
   het <- typed & (a1 != a2)                     # FALSE where untyped
   ## Per locus: genotyped individuals, observed heterozygosity, Hs.
@@ -39,14 +54,10 @@
   counts <- .allele_counts(a1, a2)
   hs_locus <- hs_nei_chesser(rowSums((counts / (2 * n_typed))^2), ho_locus, n_typed)
   usable <- is.finite(hs_locus)                 # NA when fewer than 2 typed
-  ## Per individual: observed heterozygous loci, and the sum of Hs over the
-  ## usable loci it is typed at. (hs_locus has one value per row, so
-  ## ifelse() recycles it down each individual's column.)
-  observed <- colSums(het & usable)
-  expected <- colSums(ifelse(typed & usable, hs_locus, 0))
-  data.frame(n_loci = as.integer(colSums(typed & usable)), obs_het = as.integer(observed),
-             exp_het = expected,
-             F = ifelse(expected > 0, 1 - observed / expected, NA_real_), row.names = NULL)
+  ## (hs_locus has one value per row, so ifelse() recycles it down each
+  ## individual's column.)
+  used <- typed & usable
+  list(used = used, observed = (het & usable) * 1, expected = ifelse(used, hs_locus, 0))
 }
 
 #' Individual inbreeding coefficients
@@ -67,7 +78,8 @@
 #' `F` is relative to each individual's own population. Comparing it between
 #' populations ([het_between_pops()] does this) asks whether they differ in
 #' inbreeding; comparing individual heterozygosity asks whether they differ in
-#' diversity. Negative values mean more heterozygosity than random mating
+#' observed heterozygosity, He x (1 - F), which reflects diversity and
+#' inbreeding together. Negative values mean more heterozygosity than random mating
 #' predicts.
 #'
 #' An individual that looks like a failed library (genotyped at fewer than 50

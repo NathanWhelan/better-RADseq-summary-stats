@@ -80,8 +80,10 @@ Kruskal-Wallis (\code{kruskal_chisq}, \code{kruskal_df}, \code{p_kruskal}) -- on
 loci that clear \code{min_call} in every population (\code{n_loci}). \code{NULL}
 for 2 populations, where the pairwise test is the only test.}
 \item{pairwise_tests}{Heterozygosity, one row per pair of populations:
-means, difference with Welch 95\% CI, Welch and Wilcoxon p-values
-(with Benjamini-Hochberg adjusted versions), Hedges' g.}
+means, the difference \code{diff} with \code{se_combined}, its 95\% interval
+(\code{ci_lo}, \code{ci_hi}), \code{df} and \code{p_combined} from the combined test (see
+Details); \code{p_welch} and \code{p_wilcox} for comparison; Hedges' g; and
+Benjamini-Hochberg adjusted p-values (\verb{_BH}).}
 \item{pairwise_F_tests}{The same tests on \code{F}.}
 \item{g2}{Identity disequilibrium per population, with bootstrap CI.}
 \item{missingness_confound}{Correlation between an individual's call
@@ -98,21 +100,48 @@ files round them. With \code{outdir}, \code{individual_heterozygosity},
 \code{omnibus} to \verb{het_between_pops_omnibus.<stem>.tsv}.
 }
 \description{
-Uses the INDIVIDUAL, not the locus, as the unit of replication (Welch's t,
-with Wilcoxon as a distribution-free check), and adds a missingness-confound
-check and identity disequilibrium (g2) per population, which shows whether
-individuals differ in inbreeding (the reason a locus-based comparison would
-mislead). Printing the result shows the main tables; \code{summary()} shows the
-full report; \code{outdir} also writes the tables to TSV files.
+Gives each individual one value and compares populations with a test that
+counts both sources of uncertainty: which individuals were caught, and which
+loci were typed. It also adds a missingness-confound check and identity
+disequilibrium (g2) per population, which shows whether individuals differ
+in inbreeding. Printing the result shows the main tables; \code{summary()} shows
+the full report; \code{outdir} also writes the tables to TSV files.
 }
 \details{
+\strong{The test.} \code{diff} is the difference in mean individual value. Its
+standard error, \code{se_combined}, adds two parts:
+\itemize{
+\item how much individuals vary (the variance Welch's t uses), and
+\item how much the difference would change with other loci: a jackknife over
+RAD loci, without counting genotype noise a second time.
+}
+
+\code{ci_lo}, \code{ci_hi} and \code{p_combined} come from it (a t distribution, with
+Welch-Satterthwaite degrees of freedom \code{df}). Report these. Why both parts:
+loci alone go wrong when individuals differ in inbreeding, because an
+inbred individual is homozygous at many loci at once. Individuals alone
+(Welch's t, \code{p_welch}) go wrong when the populations are differentiated,
+because each population's own allele frequencies make its heterozygosity at
+the typed loci differ a little from its genome-wide value. In simulations
+with identical true heterozygosity, Welch's t alone rejected up to 14\% of
+the time at FST 0.05 and up to 30\% at FST 0.2, at a nominal 5\%, when
+individuals were alike in inbreeding; the combined test stayed at 3-7.5\% in
+every setting
+(\code{inst/sims/het_test_null.R}). \code{p_welch} and the Wilcoxon rank-sum
+\code{p_wilcox} (individuals only) are kept for comparison.
+
 \strong{Three or more populations.} Start with \code{omnibus}, an overall test of
 whether any population differs (Welch's one-way ANOVA, with Kruskal-Wallis
 as the distribution-free check). Interpret the pairwise tests only if the
-overall test is significant; they then say which pairs differ.
+overall test is significant; they then say which pairs differ. The overall
+tests use individuals only, like Welch's t, so with differentiated
+populations whose individuals are alike in inbreeding they reject too
+readily; a pair is then confirmed by its \code{p_combined_BH}.
 
 Two questions, same machinery. \code{pairwise_tests} compares mean individual
-heterozygosity: do the populations differ in diversity?
+heterozygosity, which is observed heterozygosity, He x (1 - F): do the
+populations differ in heterozygosity? That reflects diversity and
+inbreeding together; to compare He itself, use \code{\link[=diversity_stats]{diversity_stats()}}.
 \code{pairwise_F_tests} compares the individual inbreeding coefficient \code{F}
 (\code{\link[=individual_inbreeding]{individual_inbreeding()}}, expected heterozygosity from each individual's
 own population): do they differ in inbreeding? Report the one that matches

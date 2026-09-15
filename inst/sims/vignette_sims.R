@@ -15,6 +15,8 @@
 #                  vary, and the between-population ratios
 #    denominator   pooled vs within-population denominator for He, and
 #                  thinning to one SNP per locus
+#    dropout       whether fis_by_call_rate detects allele dropout, and its
+#                  false-alarm rate when missing data are unrelated to genotype
 #    power         power of Welch's t on individual heterozygosity
 #
 #  Needs the package installed (or devtools::load_all()). Every part sets its
@@ -26,7 +28,7 @@
 suppressMessages(library(RADdiversity))
 args <- commandArgs(trailingOnly = TRUE)
 parts <- if (length(args)) args else c("file_choice", "snp_density", "denominator",
-                                       "power")
+                                       "dropout", "power")
 
 ## ---------------------------------------------------------------------------
 ## Simulation engine: RAD loci with haplotypes, two populations
@@ -172,6 +174,89 @@ if ("denominator" %in% parts) {
   print(round(colMeans(res), 4))
 }
 
+## ---------------------------------------------------------------------------
+## dropout: does fis_by_call_rate find allele dropout, and how often does it
+## raise a false alarm?
+## ---------------------------------------------------------------------------
+## Two populations of 15, 2,000 biallelic loci (each its own RAD locus), true
+## FIS 0.10 everywhere. Scenarios:
+##   random missing     5% of genotypes missing at random (no dropout)
+##   clustered missing  30% of loci lose 25% of genotypes, the rest 2%, at
+##                      random with respect to genotype (no dropout)
+##   null allele        25% of loci carry a null allele (a restriction-site
+##                      mutation) at frequency 0.2: one null copy makes the
+##                      individual look homozygous, two make it missing; 2%
+##                      random missing everywhere
+##   weak null allele   the same with 10% of loci and frequency 0.1
+##   low coverage       30% of loci are poorly covered: 25% of genotypes
+##                      missing and 30% of heterozygotes called homozygous
+##                      there; 2% random missing everywhere
+## "Detected" means FIS in the lowest call-rate group with at least 30
+## records exceeds FIS in the highest such group by more than 1.96 standard
+## errors of the difference. Also shown: FIS from all records, and FIS from
+## records genotyped in every individual of the population (the 100% group).
+if ("dropout" %in% parts) {
+  set.seed(606)
+  L <- 2000L; n <- 15L; F_true <- 0.10; reps <- 100L
+  say("\n== dropout: n = 15 + 15, 2,000 loci, true FIS 0.10, %d replicates per scenario ==", reps)
+  simulate <- function(scenario) {
+    p <- stats::runif(L, 0.1, 0.9)
+    q_null <- switch(scenario,
+      "null allele"      = ifelse(stats::runif(L) < 0.25, 0.2, 0),
+      "weak null allele" = ifelse(stats::runif(L) < 0.10, 0.1, 0),
+      rep(0, L))
+    copies <- function() {
+      ## 0 = null, 1/2 = alleles; the second copy is IBD with probability F.
+      draw <- function() ifelse(stats::runif(L * 2 * n) < q_null, 0L,
+                                1L + (stats::runif(L * 2 * n) < p))
+      a1 <- matrix(draw(), L); a2 <- matrix(draw(), L)
+      ibd <- matrix(stats::runif(L * 2 * n) < F_true, L)
+      a2[ibd] <- a1[ibd]
+      list(a1 = a1, a2 = a2)
+    }
+    g <- copies(); A1 <- g$a1; A2 <- g$a2
+    both_null <- A1 == 0L & A2 == 0L
+    A1[A1 == 0L] <- A2[A1 == 0L]            # one null copy: homozygous for the other
+    A2[A2 == 0L] <- A1[A2 == 0L]
+    gone <- both_null
+    base <- switch(scenario, "random missing" = 0.05, 0.02)
+    gone <- gone | matrix(stats::runif(L * 2 * n) < base, L)
+    if (scenario %in% c("clustered missing", "low coverage")) {
+      poor <- matrix(rep(stats::runif(L) < 0.3, 2 * n), L)
+      gone <- gone | (poor & matrix(stats::runif(L * 2 * n) < 0.25, L))
+      if (scenario == "low coverage") {
+        miscalled <- poor & A1 != A2 & matrix(stats::runif(L * 2 * n) < 0.3, L)
+        A2[miscalled] <- A1[miscalled]
+      }
+    }
+    A1[gone] <- NA; A2[gone] <- NA
+    storage.mode(A1) <- storage.mode(A2) <- "integer"
+    ids <- c(sprintf("A%02d", seq_len(n)), sprintf("B%02d", seq_len(n)))
+    dimnames(A1) <- dimnames(A2) <- list(NULL, ids)
+    H <- structure(list(A1 = A1, A2 = A2, locus = paste0("r", seq_len(L)),
+                        locus_raw = paste0("L", seq_len(L)), alleles = rep(list(c("A", "C")), L),
+                        n_alleles = rep(2L, L), samples = ids), class = "raddiv_vcf")
+    r <- run_div(H, list(A = ids[seq_len(n)], B = ids[n + seq_len(n)]), g = 20)
+    fc <- r$fis_by_call_rate
+    fc <- fc[fc$population == "A" & fc$n_records >= 30, ]
+    full <- fc[fc$call_rate == "100%", ]
+    detected <- nrow(fc) >= 2 &&
+      (fc$Fis[nrow(fc)] - fc$Fis[1]) > 1.96 * sqrt(fc$Fis_se[nrow(fc)]^2 + fc$Fis_se[1]^2)
+    c(detected = detected, Fis_all = r$per_population$Fis[1],
+      Fis_100 = if (nrow(full)) full$Fis else NA_real_,
+      share_100 = if (nrow(full)) full$n_records / sum(r$fis_by_call_rate$n_records[
+        r$fis_by_call_rate$population == "A"]) else NA_real_)
+  }
+  scenarios <- c("random missing", "clustered missing", "null allele", "weak null allele",
+                 "low coverage")
+  out <- t(vapply(scenarios, function(s) {
+    x <- replicate(reps, simulate(s))
+    c(detected_pct = 100 * mean(x["detected", ]), Fis_all = mean(x["Fis_all", ]),
+      Fis_100pct_group = mean(x["Fis_100", ], na.rm = TRUE),
+      records_in_100pct_group = mean(x["share_100", ], na.rm = TRUE))
+  }, numeric(4)))
+  print(round(out, 3))
+}
 
 ## ---------------------------------------------------------------------------
 ## power: Welch's t on individual heterozygosity

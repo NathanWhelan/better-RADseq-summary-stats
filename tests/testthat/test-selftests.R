@@ -8,10 +8,14 @@ test_that("diversity_core_selftest() reports all checks passing", {
   expect_true(all(result$pass))
 })
 
-test_that("het_between_pops_selftest() holds the nominal rate for the individual-level tests", {
+test_that("het_between_pops_selftest(): the combined test holds its rate where the others fail", {
   skip_on_cran()
-  result <- het_between_pops_selftest(verbose = FALSE)
-  individual_level <- result[result$method %in% c("welch", "wilcoxon"), ]
-  expect_true(all(individual_level$rejection_rate < 0.10))
-  expect_silent(het_between_pops_selftest(verbose = FALSE))
+  expect_silent(result <- het_between_pops_selftest(verbose = FALSE))
+  rate <- function(method, fst, sd_F)
+    result$rejection_rate[result$method == method & result$fst == fst & result$sd_F == sd_F]
+  expect_true(all(result$rejection_rate[result$method == "combined"] < 0.10))
+  ## Loci alone fail when individuals differ in inbreeding ...
+  expect_gt(rate("locus_bootstrap", 0, 0.10), 0.25)
+  ## ... and individuals alone when populations are differentiated.
+  expect_gt(rate("welch", 0.10, 0), 0.10)
 })

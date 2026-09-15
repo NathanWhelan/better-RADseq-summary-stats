@@ -149,10 +149,10 @@
     "outcome and can reverse a real difference."),
 
   diversity_he_difference_loci = c(
-    "CAUTION: this interval treats LOCI as the replicate (boot=\"loci\"). For a",
-    "comparison of population MEAN heterozygosity that is pseudoreplication --",
-    "the uncertainty is dominated by which INDIVIDUALS you sampled. Use",
-    "het_between_pops() for the p-value you report."),
+    "CAUTION: this interval treats LOCI as the only replicate (boot=\"loci\") and",
+    "holds the individuals fixed. It is a description, not a test. To test a",
+    "difference in heterozygosity with both individuals and loci counted, use",
+    "het_between_pops()."),
 
   diversity_he_difference_individuals = c(
     "locus bootstrap -- but it is still not a paired individual-level test. Use",
@@ -179,12 +179,13 @@
 
   het_sd_among_individuals = c(
     "'sd' is the spread AMONG INDIVIDUALS. That spread, divided by sqrt(n), is",
-    "the real uncertainty in a population mean -- and it does not shrink at all",
-    "as you add loci, which is why locus-based tests can be invalid here."),
+    "one part of the uncertainty in a population mean, and it does not shrink",
+    "as you add loci, which is why locus-only tests can be invalid here. The",
+    "other part is which loci were typed; the combined test below counts both."),
 
   het_van_dongen = c(
     "This is the point made by Van Dongen (1995, Heredity 74:445-447): the unit",
-    "of resampling changes what the bootstrap means, and loci are usually the",
+    "of resampling changes what the bootstrap means, and loci alone are the",
     "wrong unit because they are all measured on the same individuals."),
 
   het_g2 = c(
@@ -197,17 +198,19 @@
     "Welch's one-way ANOVA (unequal variances allowed) and Kruskal-Wallis ask ONE",
     "question: do any of the populations differ? Report it first. If it is not",
     "significant, do not interpret individual pairs; if it is, the pairwise tests",
-    "below (BH-adjusted) say which populations differ."),
+    "below (BH-adjusted) say which populations differ. These overall tests use",
+    "individuals only, so with differentiated populations they can reject too",
+    "readily; confirm a difference with the pairwise p_combined_BH."),
 
   het_F_tests = c(
     "The same tests on individual inbreeding, F = 1 - observed/expected",
     "heterozygosity (expected from each individual's own population; see",
-    "?individual_inbreeding). Heterozygosity asks whether the populations differ",
-    "in DIVERSITY; F asks whether they differ in INBREEDING."),
+    "?individual_inbreeding). Heterozygosity (observed, He x (1 - F)) reflects",
+    "DIVERSITY and INBREEDING together; F asks whether they differ in INBREEDING."),
 
   het_interpretation = c(
-    "* Power is limited by the NUMBER OF INDIVIDUALS, not the number of loci.",
-    "  At n = 15 vs 10, Welch's test detected a difference in mean F of half",
+    "* Power is limited mainly by the NUMBER OF INDIVIDUALS, not the number of",
+    "  loci. At n = 15 vs 10, Welch's test detected a difference in mean F of half",
     "  the among-individual SD 17% of the time, and of 0.8 SD 39% of the time",
     "  (inst/sims/vignette_sims.R). A non-significant result is weak evidence",
     "  of no difference, not evidence of no difference.",

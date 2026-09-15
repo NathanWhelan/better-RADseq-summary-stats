@@ -34,16 +34,17 @@
 #  used at run time only for beta and, with hierfstat_check = TRUE, a printed
 #  comparison of the global FST.
 #
-#  Jost's D follows the five-step formula of the mmod package's HsHt()
-#  function (Winter 2012; MIT license, see inst/NOTICE), rewritten for this
-#  package's genotype matrices. Several loci are combined by averaging Hs and
-#  Ht over loci FIRST and computing one D from the averages -- mmod's
-#  `global.het` summary; mmod also offers the harmonic mean of per-locus D
-#  (`global.harm_mean`), which is not computed here. Jost's bias-corrected Hs
-#  uses the 2N/(2N - 1) factor, which assumes random mating within
-#  populations (the same assumption behind Stacks' `Pi`; see R/estimators.R).
-#  With a heterozygote deficit Hs is underestimated by about F/(2N - 1), so D
-#  is biased upward, most noticeably when Ht - Hs is small.
+#  Jost's D follows the steps of the mmod package's HsHt() function (Winter
+#  2012; MIT license, see inst/NOTICE), rewritten for this package's genotype
+#  matrices, with one change: Hs and Ht are Nei & Chesser's (1983) diploid
+#  estimators, which use observed heterozygosity, as hierfstat::basic.stats()
+#  does for its Dest. mmod's version uses the 2N/(2N - 1) correction instead,
+#  which assumes random mating within populations and so underestimates Hs
+#  when individuals are inbred -- the same problem as Stacks' `Pi` (see
+#  R/estimators.R). Several loci are combined by averaging Hs and Ht over loci
+#  FIRST and computing one D from the averages -- mmod's `global.het` summary
+#  and hierfstat's overall Dest; mmod also offers the harmonic mean of
+#  per-locus D (`global.harm_mean`), which is not computed here.
 #
 #  WHICH RECORDS D USES. A pairwise D uses every record typed in both
 #  populations of the pair. The global D uses only records typed in EVERY
@@ -191,15 +192,24 @@
 ## Jost's D (2008)
 ## ---------------------------------------------------------------------------
 
-## Not exported. For one set of populations, Jost's bias-corrected
-## within-population (Hs_est) and total (Ht_est) gene diversity at every
-## record: the two ingredients of D (see .jost_d_from_sums()). Unlike Weir &
-## Cockerham, Jost's formula weights populations EQUALLY. The five steps
-## (harmonic-mean n -> HpS -> Hs_est -> HpT -> Ht_est) follow the mmod
-## package's HsHt() function (Winter 2012; see inst/NOTICE). A record with
-## fewer than 2 populations genotyped is NA. `n_pops_with_data` is returned
-## too: the global D uses only records where EVERY population has data (see
-## d_block() in differentiation_stats()).
+## Not exported. For one set of populations, the within-population (Hs) and
+## total (Ht) gene diversity at every record: the two ingredients of D (see
+## .jost_d_from_sums()). Unlike Weir & Cockerham, Jost's formula weights
+## populations EQUALLY. The steps follow the mmod package's HsHt() function
+## (Winter 2012; see inst/NOTICE), with Nei & Chesser's (1983) diploid
+## estimators, as in hierfstat::basic.stats():
+##
+##   n~  = harmonic mean of the populations' genotyped individuals
+##   Hs  = n~/(n~ - 1) * (1 - mean_pop(sum p^2) - mean_pop(Ho) / (2 n~))
+##   Ht  = 1 - sum (mean_pop p)^2 + Hs / (n~ k) - mean_pop(Ho) / (2 n~ k)
+##
+## for k populations with data. mmod uses (2n~/(2n~ - 1)) (1 - sum p^2) for
+## Hs, which assumes random mating: with inbred individuals it is too low and
+## D too high. Subtracting Ho removes that assumption, as for He in
+## R/estimators.R. A record with fewer than 2 populations genotyped, or with
+## n~ <= 1, is NA. `n_pops_with_data` is returned too: the global D uses only
+## records where EVERY population has data (see d_block() in
+## differentiation_stats()).
 .jost_hsht <- function(dc) {
   n_typed <- dc$n_typed
   has_data <- n_typed > 0
@@ -207,25 +217,30 @@
 
   ## Harmonic mean of population sizes (pulled down by any small population).
   harmonic_n <- n_pops_with_data / rowSums(ifelse(has_data, 1 / n_typed, 0))
-  ## Naive within-population diversity, averaged over populations, and the
-  ## populations' average allele frequencies.
-  within_div <- 0
+  ## Averaged over the populations with data: sum of squared allele
+  ## frequencies, observed heterozygosity, and the allele frequencies.
+  sum_p2 <- 0
+  ho <- 0
   mean_freq <- 0
   for (p in seq_along(dc$counts)) {
     freq <- dc$counts[[p]] / (2 * n_typed[, p])
     freq[!has_data[, p], ] <- 0
-    within_div <- within_div + ifelse(has_data[, p], 1 - rowSums(freq^2), 0)
+    sum_p2 <- sum_p2 + ifelse(has_data[, p], rowSums(freq^2), 0)
+    ## Each heterozygote adds one copy to each of its two alleles in
+    ## het_counts, so heterozygous individuals = row sum / 2.
+    ho <- ho + ifelse(has_data[, p], rowSums(dc$het_counts[[p]]) / 2 / n_typed[, p], 0)
     mean_freq <- mean_freq + freq
   }
-  Hp_S <- within_div / n_pops_with_data
+  sum_p2 <- sum_p2 / n_pops_with_data
+  ho <- ho / n_pops_with_data
   mean_freq <- mean_freq / n_pops_with_data
 
-  Hs_est <- (2 * harmonic_n / (2 * harmonic_n - 1)) * Hp_S
-  Hp_T <- 1 - rowSums(mean_freq^2)
-  Ht_est <- Hp_T + Hs_est / (2 * harmonic_n * n_pops_with_data)
-  too_few <- n_pops_with_data < 2
-  Hs_est[too_few] <- NA_real_
-  Ht_est[too_few] <- NA_real_
+  Hs_est <- (harmonic_n / (harmonic_n - 1)) * (1 - sum_p2 - ho / (2 * harmonic_n))
+  Ht_est <- 1 - rowSums(mean_freq^2) + Hs_est / (harmonic_n * n_pops_with_data) -
+    ho / (2 * harmonic_n * n_pops_with_data)
+  undefined <- n_pops_with_data < 2 | !(harmonic_n > 1)
+  Hs_est[undefined] <- NA_real_
+  Ht_est[undefined] <- NA_real_
   list(Hs = Hs_est, Ht = Ht_est, n_pops_with_data = n_pops_with_data)
 }
 
@@ -295,10 +310,13 @@
 #'
 #' **Combining loci for D.** Hs and Ht are averaged over loci and one D is
 #' computed from the averages (mmod's `global.het`), not averaged over
-#' per-locus D values. Jost's bias correction of Hs, 2N/(2N - 1), assumes
-#' random mating within each population (the same assumption behind Stacks'
-#' `Pi`), so with a heterozygote deficit Hs is slightly underestimated. D is
-#' then biased upward, most noticeably when differentiation is weak.
+#' per-locus D values. Hs and Ht are Nei & Chesser's (1983) estimators, which
+#' use observed heterozygosity and so stay unbiased when individuals are
+#' inbred; this is how `hierfstat::basic.stats()` computes its `Dest`. (The
+#' mmod package uses a 2N/(2N - 1) correction that assumes random mating, the
+#' same assumption behind Stacks' `Pi`, and gives a slightly higher D when
+#' individuals are inbred.) A record where every typed population has a single
+#' genotyped individual has no D.
 #'
 #' **References.** Weir, B.S. & Cockerham, C.C. (1984) Estimating
 #' F-statistics for the analysis of population structure. *Evolution*

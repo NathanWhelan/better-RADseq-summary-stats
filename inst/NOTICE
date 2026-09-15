@@ -10,7 +10,10 @@ Ht_est) is adapted from the HsHt() function of the mmod R package
 (R/HsHt.R), reimplemented against this package's H$A1/H$A2 integer-
 genotype matrices in place of mmod's genind-object representation. This
 is an adaptation of mmod's expression of the formula, not an independent
-re-derivation from Jost (2008).
+re-derivation from Jost (2008). One change was made: Hs_est and Ht_est use
+Nei & Chesser's (1983) diploid estimators, which subtract observed
+heterozygosity (as hierfstat::basic.stats() does), in place of mmod's
+2N/(2N - 1) correction.
 
 mmod is MIT-licensed:
 

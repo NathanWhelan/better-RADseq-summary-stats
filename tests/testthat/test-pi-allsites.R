@@ -21,6 +21,7 @@ test_that("pi, dxy and per-individual heterozygosity match a hand calculation", 
   expect_equal(res$pi$pi_nc, c(2 / 8, 2 / 12))
   expect_equal(res$dxy$dxy, 16 / 40)
   expect_equal(res$dxy$da, 16 / 40 - (4 / 13 + 3 / 18) / 2)
+  expect_equal(res$dxy$da_nc, 16 / 40 - (2 / 8 + 2 / 12) / 2)
   expect_equal(res$individual$het_sites, c(1, 1, 0, 1))
   expect_equal(res$individual$called_sites, c(3, 2, 3, 3))
 })

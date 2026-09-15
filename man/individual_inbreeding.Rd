@@ -41,7 +41,8 @@ population's FIS from \code{\link[=diversity_stats]{diversity_stats()}}.
 \code{F} is relative to each individual's own population. Comparing it between
 populations (\code{\link[=het_between_pops]{het_between_pops()}} does this) asks whether they differ in
 inbreeding; comparing individual heterozygosity asks whether they differ in
-diversity. Negative values mean more heterozygosity than random mating
+observed heterozygosity, He x (1 - F), which reflects diversity and
+inbreeding together. Negative values mean more heterozygosity than random mating
 predicts.
 
 An individual that looks like a failed library (genotyped at fewer than 50

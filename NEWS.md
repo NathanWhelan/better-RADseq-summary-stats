@@ -295,6 +295,56 @@ On the shipped example data, the only reported number that changes is
   message saying how to convert it. `read_sumstats_summary()` errors no
   longer print an internal function call.
 
+## Scientific review before journal submission
+
+These change reported numbers.
+
+* **`het_between_pops()` has a new primary test.** Welch's *t* on one value
+  per individual counts how much individuals vary but treats the loci as
+  fixed. When populations are differentiated, each one's heterozygosity at
+  the typed loci differs by chance from its genome-wide value, and Welch's *t*
+  treats that as real. In simulations with identical true heterozygosity and
+  each population drawing its own allele frequencies
+  (`inst/sims/het_test_null.R`), Welch's *t* rejected up to 14% of the time
+  at FST 0.05 and up to 30% at FST 0.2, at a nominal 5%, when individuals
+  were alike in inbreeding. The new combined test adds a jackknife over RAD
+  loci to Welch's variance, without counting genotype noise twice, and stayed
+  between 3% and 7.5% in every setting. `pairwise_tests` and
+  `pairwise_F_tests` gain `se_combined`, `df`, `p_combined` and
+  `p_combined_BH`; `ci_lo` and `ci_hi` are now the combined interval (on the
+  package's golden test data they widened slightly, e.g. -0.0190 to 0.0153
+  became -0.0201 to 0.0164). `p_welch` and `p_wilcox` are unchanged and kept
+  for comparison. For F, the locus part is usually close to 0, so the combined
+  test is close to Welch's. The overall test for 3 or more populations is
+  still Welch's ANOVA and Kruskal-Wallis, with a note that it uses
+  individuals only.
+* `het_between_pops_selftest()` now gives each population its own allele
+  frequencies and reports the combined test, Welch's *t*, Wilcoxon and a locus
+  bootstrap in three settings; its result gains an `fst` column.
+* **Jost's D uses Nei & Chesser's Hs and Ht**, which subtract observed
+  heterozygosity, as `hierfstat::basic.stats()` does for `Dest`. The
+  2N/(2N - 1) correction used before (from mmod) assumes random mating, so D
+  came out too high when individuals were inbred: 0.017, 29 standard errors
+  above the true 0, for two samples of 8 from one population with F = 0.4. On
+  the example data D is about 7% lower (haplotype VCF 0.0554 to 0.0516, SNP
+  VCF 0.0407 to 0.0379). FST is unchanged.
+* `pi_allsites()` adds `da_nc`, net divergence built on `pi_nc`, which
+  inbreeding does not push up (`da` is kept).
+* `diversity_stats()` notes when one population's Ar rests on under 90% of
+  the records of another (populations are then compared over partly
+  different loci).
+* Documentation: `het_between_pops()` tests **observed** heterozygosity,
+  He × (1 − F), which mixes diversity and inbreeding (it had been described
+  as a test of diversity); KING-robust reads low when individuals are inbred
+  (about −F/(1 − F) for unrelated pairs); sex-linked loci and linkage within
+  RAD loci (for g2) are discussed; a sentence that described Petit & Pons
+  (1998) wrongly was removed; and the rationale's claim that loci with fewer typed
+  individuals "contribute less" to FIS was corrected (every record counts
+  equally).
+* `fis_by_call_rate` is now checked by simulation (`inst/sims/vignette_sims.R`,
+  part `dropout`): false alarms 2–4%, strong dropout always found, weak
+  dropout (null allele at 10% of loci, frequency 0.1) found 23% of the time.
+
 ## New
 
 * `filter_samples(H, popmap)` removes the samples that are not in the popmap.

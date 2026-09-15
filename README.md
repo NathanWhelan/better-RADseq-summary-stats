@@ -136,7 +136,7 @@ what to report.
 |---|---|
 | Ho, He, F<sub>IS</sub>, % polymorphic, allelic and private allelic richness | `diversity_stats()` |
 | nucleotide diversity π, d<sub>xy</sub> and per-individual heterozygosity per sequenced site | `pi_allsites()` (all-sites VCF), or `diversity_stats(sites = ...)` (approximation) |
-| do populations differ in diversity? in inbreeding? | `het_between_pops()` |
+| do populations differ in observed heterozygosity? in inbreeding? | `het_between_pops()` |
 | each individual's inbreeding coefficient | `individual_inbreeding()` |
 | do individuals differ in inbreeding (g2)? | `identity_disequilibrium()` |
 | F<sub>ST</sub>, Jost's D, Weir & Goudet's beta (global D uses only records typed in every population) | `differentiation_stats()` |

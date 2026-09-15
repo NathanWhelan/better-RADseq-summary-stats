@@ -27,6 +27,16 @@
 #  KING's own known under-sensitivity, not as proof the dataset has no
 #  relatives.
 #
+#  INBREEDING PULLS KING DOWN. KING-robust assumes non-inbred individuals.
+#  For two unrelated individuals with inbreeding coefficient F at a biallelic
+#  locus with allele frequency p: P(both heterozygous) = [2pq(1-F)]^2 and
+#  P(opposite homozygotes) = 2(p^2 + Fpq)(q^2 + Fpq), so the numerator's
+#  expectation is -4Fpq and the denominator's 4pq(1-F), giving -F/(1 - F)
+#  (-0.11 at F = 0.1; checked by simulation during review). Relatives are
+#  pulled down as well. A Wahlund effect within a sampled "population" does
+#  not do this: KING uses only the pair's own genotypes, and relatives share
+#  a subpopulation.
+#
 #  KING-ROBUST (Manichaikul et al. 2010) is the default because it is
 #  closed-form and needs no allele-frequency estimate (so it isn't thrown off
 #  by pooling structured populations to guess allele frequencies, unlike many
@@ -257,7 +267,11 @@
 #' the two, while noting it was sensitive to filtering and often
 #' underestimated relatedness; this function does not implement it. Treat a
 #' clean result (nothing flagged) with caution, not as proof that there are
-#' no close relatives.
+#' no close relatives. KING also assumes individuals are not inbred: two
+#' unrelated individuals with inbreeding coefficient F read about -F/(1 - F)
+#' (-0.11 at F = 0.1), and relatives read lower too, so they can fall below
+#' the cutpoints. A heterozygote deficit caused by pooling subpopulations (a
+#' Wahlund effect) does not do this, because relatives share a subpopulation.
 #'
 #' **Relatives are looked for within populations.** Goudet's beta measures
 #' how much more alike two individuals are than the average pair it is

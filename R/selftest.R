@@ -6,9 +6,9 @@
 #    diversity_core_selftest()    every estimator in R/estimators.R against
 #                                 brute-force Monte Carlo and published
 #                                 Stacks output
-#    het_between_pops_selftest()  the type I error of the individual-level
-#                                 tests in het_between_pops() versus a locus
-#                                 bootstrap
+#    het_between_pops_selftest()  the type I error of het_between_pops()'s
+#                                 combined test, of Welch's t and Wilcoxon
+#                                 alone, and of a locus bootstrap
 #
 #  Both use fixed seeds (so they give the same numbers every time) and put
 #  the caller's own random-number state back when they finish. The same
@@ -230,15 +230,22 @@ diversity_core_selftest <- function(verbose = TRUE) {
 #' Calibration self-test for het_between_pops()
 #'
 #' Runs the type I error simulation behind `Rscript het_between_pops.R
-#' --selftest`: 400 simulations of two populations with IDENTICAL true
-#' heterozygosity, comparing how often Welch's t and Wilcoxon (individuals as
-#' replicates) reject at the 5% level with how often a locus bootstrap does.
+#' --selftest`: simulations of two populations with IDENTICAL true
+#' heterozygosity, each with its own allele frequencies, comparing how often
+#' each test rejects at the 5% level. The tests are the combined test that
+#' [het_between_pops()] reports (individuals and loci), Welch's t and
+#' Wilcoxon (individuals only), and a bootstrap over loci (loci only).
+#'
+#' Three settings: individuals differ in inbreeding but the populations are
+#' not differentiated (a locus bootstrap goes wrong); the populations are
+#' differentiated (FST = 0.1) but individuals are alike (Welch's t goes
+#' wrong); and both. The full grid is in `inst/sims/het_test_null.R`.
 #'
 #' @param verbose Print the report. Default `TRUE`.
-#' @return Invisibly, a data frame with one row per simulated setting:
-#'   `method`, `sd_F` (the spread of inbreeding among individuals) and
-#'   `rejection_rate` (the target is 0.05). Your own random-number state is
-#'   left as it was.
+#' @return Invisibly, a data frame with one row per test and setting:
+#'   `method`, `fst` (differentiation between the populations), `sd_F` (the
+#'   spread of inbreeding among individuals) and `rejection_rate` (the target
+#'   is 0.05). Your own random-number state is left as it was.
 #' @examples
 #' \donttest{
 #' het_between_pops_selftest()   # a few seconds of simulation
@@ -249,67 +256,60 @@ het_between_pops_selftest <- function(verbose = TRUE) {
   restore_rng <- .save_rng_state()
   on.exit(restore_rng(), add = TRUE)
   say <- function(...) if (verbose) cat(...)
-  results <- list()
 
-  say("--- calibration of the individual-level tests, 400 simulations ---\n")
-  say("    two populations with IDENTICAL true Ho; target rejection rate 5%\n\n")
-  set.seed(404)
-  n_sim <- 400
+  n_sim <- 300
   n_loci <- 1500
   n1 <- 15
   n2 <- 10
-  ## Each individual's F is drawn around 0.1 with standard deviation sd_F; its
-  ## heterozygosity at a locus is then 2p(1-p)(1-F).
-  individual_het <- function(F_values, p) {
-    vapply(F_values, function(F_i) mean(stats::runif(length(p)) < 2 * p * (1 - p) * (1 - F_i)),
-           numeric(1))
-  }
+  ## Each locus has an ancestral allele frequency; each population draws its
+  ## own (Balding-Nichols, same FST for both), so both have the same expected
+  ## heterozygosity. Each individual's F is drawn around 0.1 with standard
+  ## deviation sd_F; its two alleles are identical by descent with that
+  ## probability at each locus.
   draw_F <- function(n, sd_F) pmin(pmax(stats::rnorm(n, 0.1, sd_F), 0), 0.9)
-  simulate <- function(sd_F) {
-    p <- stats::runif(n_loci, 0.05, 0.95)
-    F_a <- draw_F(n1, sd_F)
-    F_b <- draw_F(n2, sd_F)
-    list(a = individual_het(F_a, p), b = individual_het(F_b, p))
+  population <- function(p, n, fst, sd_F) {
+    if (fst > 0) p <- stats::rbeta(n_loci, p * (1 - fst) / fst, (1 - p) * (1 - fst) / fst)
+    a1 <- matrix(stats::runif(n_loci * n) < p, n_loci)
+    a2 <- matrix(stats::runif(n_loci * n) < p, n_loci)
+    ibd <- matrix(stats::runif(n_loci * n) < rep(draw_F(n, sd_F), each = n_loci), n_loci)
+    a2[ibd] <- a1[ibd]
+    (a1 != a2) * 1                                   # loci x individuals, heterozygous
   }
-  say(sprintf("  %-24s %10s %10s\n", "individual F variation", "Welch t", "Wilcoxon"))
-  for (sd_F in c(0.02, 0.10, 0.25)) {
-    p_values <- replicate(n_sim, {
-      x <- simulate(sd_F)
-      c(stats::t.test(x$a, x$b)$p.value,
-        suppressWarnings(stats::wilcox.test(x$a, x$b))$p.value)
-    })
-    rates <- rowMeans(p_values < 0.05)
-    say(sprintf("  SD(F) = %.2f %-13s %9.1f%% %9.1f%%\n", sd_F, "", 100 * rates[1], 100 * rates[2]))
-    results[[length(results) + 1L]] <- data.frame(method = c("welch", "wilcoxon"),
-                                                  sd_F = sd_F, rejection_rate = rates)
+  one_dataset <- function(fst, sd_F) {
+    p <- stats::runif(n_loci, 0.05, 0.95)
+    h1 <- population(p, n1, fst, sd_F)
+    h2 <- population(p, n2, fst, sd_F)
+    typed1 <- matrix(1, n_loci, n1)
+    typed2 <- matrix(1, n_loci, n2)
+    locus <- .locus_variance_of_difference(h1, typed1, h2, typed2, seq_len(n_loci))
+    test <- .two_sample(colMeans(h1), colMeans(h2), "a", "b", n_loci, "heterozygosity",
+                        verbose = FALSE, locus = locus)
+    ## Locus bootstrap of the difference in mean heterozygosity.
+    locus_diff <- rowMeans(h1) - rowMeans(h2)
+    boot <- vapply(seq_len(200), function(i)
+      mean(locus_diff[sample.int(n_loci, n_loci, TRUE)]), numeric(1))
+    boot_ci <- stats::quantile(boot, c(0.025, 0.975), names = FALSE)
+    c(combined = test$p_combined < 0.05, welch = test$p_welch < 0.05,
+      wilcoxon = test$p_wilcox < 0.05, locus_bootstrap = boot_ci[1] > 0 || boot_ci[2] < 0)
   }
 
-  say("\n--- and what the LOCUS bootstrap does on the same data, for contrast ---\n")
-  set.seed(202)
-  for (sd_F in c(0.00, 0.10, 0.25)) {
-    rejected <- replicate(120, {
-      p <- stats::runif(n_loci, 0.05, 0.95)
-      het_matrix <- function(F_values) {
-        vapply(F_values, function(F_i) stats::runif(n_loci) < 2 * p * (1 - p) * (1 - F_i),
-               logical(n_loci))
-      }
-      F_a <- draw_F(n1, sd_F)
-      F_b <- draw_F(n2, sd_F)
-      locus_het_a <- rowMeans(het_matrix(F_a))
-      locus_het_b <- rowMeans(het_matrix(F_b))
-      boot <- replicate(300, {
-        i <- sample.int(n_loci, n_loci, TRUE)
-        mean(locus_het_a[i]) - mean(locus_het_b[i])
-      })
-      !(0 >= stats::quantile(boot, 0.025) && 0 <= stats::quantile(boot, 0.975))
-    })
-    say(sprintf("  SD(F) = %.2f -> locus bootstrap rejects %.0f%% of the time\n", sd_F,
-                100 * mean(rejected)))
-    results[[length(results) + 1L]] <- data.frame(method = "locus_bootstrap", sd_F = sd_F,
-                                                  rejection_rate = mean(rejected))
-  }
-  say("\n  The individual-level tests hold their nominal rate; the locus bootstrap\n")
-  say("  does not, as soon as individuals differ from one another.\n")
+  settings <- list(c(fst = 0, sd_F = 0.10), c(fst = 0.10, sd_F = 0), c(fst = 0.10, sd_F = 0.10))
+  say(sprintf("--- two populations with IDENTICAL true heterozygosity, n = %d and %d, %s loci ---\n",
+              n1, n2, format(n_loci, big.mark = ",")))
+  say(sprintf("    %d simulations per setting; %% rejected at the 5%% level (target 5%%)\n\n", n_sim))
+  say(sprintf("  %-34s %9s %9s %9s %16s\n", "setting", "combined", "Welch t", "Wilcoxon",
+              "locus bootstrap"))
+  set.seed(404)
+  results <- lapply(settings, function(s) {
+    rates <- rowMeans(replicate(n_sim, one_dataset(s[["fst"]], s[["sd_F"]])))
+    say(sprintf("  FST = %.2f, SD of F = %.2f %11s %8.1f%% %8.1f%% %8.1f%% %15.1f%%\n",
+                s[["fst"]], s[["sd_F"]], "", 100 * rates[["combined"]], 100 * rates[["welch"]],
+                100 * rates[["wilcoxon"]], 100 * rates[["locus_bootstrap"]]))
+    data.frame(method = names(rates), fst = s[["fst"]], sd_F = s[["sd_F"]],
+               rejection_rate = unname(rates))
+  })
+  say("\n  Loci alone go wrong when individuals differ in inbreeding; individuals alone\n")
+  say("  go wrong when populations are differentiated. The combined test counts both.\n")
   out <- do.call(rbind, results)
   rownames(out) <- NULL
   invisible(out)

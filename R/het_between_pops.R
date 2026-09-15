@@ -1,27 +1,34 @@
 ###############################################################################
 #
 #  R/het_between_pops.R -- does mean heterozygosity differ between populations?
-#  Each individual contributes ONE number, so individuals are the replicate.
+#  Each individual contributes ONE number, and the test counts both which
+#  individuals and which loci were sampled.
 #
 #  WHY NOT THE USUAL TEST. Bootstrapping over loci, or a paired Wilcoxon on
-#  per-locus values, treats LOCI as the replicate. Loci are repeated measures
-#  on the same individuals, so the interval shrinks as 1/sqrt(n_loci) while
-#  the real uncertainty -- which individuals were caught -- does not shrink at
-#  all. In het_between_pops_selftest()'s simulations of two populations with
-#  identical true heterozygosity, a locus bootstrap rejected about 8% of the
-#  time when individuals did not differ in inbreeding, but about half the
-#  time when the SD of F among individuals was 0.10 and about 80% at 0.25.
-#  Welch's t on per-individual heterozygosity stayed near 5% throughout. The
-#  objection is old (Van Dongen 1995). Full discussion in
+#  per-locus values, treats LOCI as the only replicate. Loci are repeated
+#  measures on the same individuals: when individuals differ in inbreeding,
+#  that uncertainty does not shrink as loci are added, and a locus-only
+#  interval becomes far too narrow (Van Dongen 1995).
+#
+#  WHY NOT WELCH'S t ALONE. The opposite mistake: Welch's t on one value per
+#  individual treats the LOCI as fixed. Two populations with the same
+#  genome-wide heterozygosity still differ a little at any given set of loci,
+#  because drift acts on each locus separately.
+#
+#  So the primary test combines the two (.locus_variance_of_difference(),
+#  .two_sample()). In het_between_pops_selftest()'s simulations of two
+#  populations with identical true heterozygosity and their own allele
+#  frequencies, a locus bootstrap and Welch's t each went wrong in the
+#  situation the other handles, and the combined test held its nominal rate
+#  in both (inst/sims/het_test_null.R has the full grid). Full discussion in
 #  vignette("rationale"), section 5.
 #
 #  WHAT TO READ IN THE REPORT, IN ORDER
 #    1. the missingness confound check -- if call rate correlates with
 #       heterozygosity, the test measures library quality, not biology
-#    2. g2 -- whether individuals differ in inbreeding, which is why loci are
-#       the wrong replicate for this comparison
-#    3. the tests themselves: Welch's t, with Wilcoxon as a distribution-free
-#       check
+#    2. g2 -- whether individuals differ in inbreeding
+#    3. the tests themselves: the combined test, with Welch's t and Wilcoxon
+#       (individuals only) for comparison
 #
 #  Needs the VCF: per-individual heterozygosity cannot be recovered from
 #  populations.sumstats.tsv, which holds only per-population counts.
@@ -34,7 +41,8 @@
 #    .population_summary()    per-population mean heterozygosity and F
 #    .missingness_confound()  does call rate track heterozygosity?
 #    .g2_by_population()      identity disequilibrium
-#    .pairwise_tests()        Welch / Wilcoxon / Hedges' g per pair
+#    .pairwise_tests()        combined test, Welch, Wilcoxon, Hedges' g per pair
+#    .omnibus_tests()         Welch's ANOVA and Kruskal-Wallis, 3+ populations
 #  Checked by tests/testthat/test-diversity-stats.R, test-regression.R
 #  (golden values), test-individual-inbreeding.R and
 #  het_between_pops_selftest().
@@ -43,21 +51,46 @@
 
 #' Test whether mean heterozygosity differs between populations
 #'
-#' Uses the INDIVIDUAL, not the locus, as the unit of replication (Welch's t,
-#' with Wilcoxon as a distribution-free check), and adds a missingness-confound
-#' check and identity disequilibrium (g2) per population, which shows whether
-#' individuals differ in inbreeding (the reason a locus-based comparison would
-#' mislead). Printing the result shows the main tables; `summary()` shows the
-#' full report; `outdir` also writes the tables to TSV files.
+#' Gives each individual one value and compares populations with a test that
+#' counts both sources of uncertainty: which individuals were caught, and which
+#' loci were typed. It also adds a missingness-confound check and identity
+#' disequilibrium (g2) per population, which shows whether individuals differ
+#' in inbreeding. Printing the result shows the main tables; `summary()` shows
+#' the full report; `outdir` also writes the tables to TSV files.
 #'
 #' @details
+#' **The test.** `diff` is the difference in mean individual value. Its
+#' standard error, `se_combined`, adds two parts:
+#' * how much individuals vary (the variance Welch's t uses), and
+#' * how much the difference would change with other loci: a jackknife over
+#'   RAD loci, without counting genotype noise a second time.
+#'
+#' `ci_lo`, `ci_hi` and `p_combined` come from it (a t distribution, with
+#' Welch-Satterthwaite degrees of freedom `df`). Report these. Why both parts:
+#' loci alone go wrong when individuals differ in inbreeding, because an
+#' inbred individual is homozygous at many loci at once. Individuals alone
+#' (Welch's t, `p_welch`) go wrong when the populations are differentiated,
+#' because each population's own allele frequencies make its heterozygosity at
+#' the typed loci differ a little from its genome-wide value. In simulations
+#' with identical true heterozygosity, Welch's t alone rejected up to 14% of
+#' the time at FST 0.05 and up to 30% at FST 0.2, at a nominal 5%, when
+#' individuals were alike in inbreeding; the combined test stayed at 3-7.5% in
+#' every setting
+#' (`inst/sims/het_test_null.R`). `p_welch` and the Wilcoxon rank-sum
+#' `p_wilcox` (individuals only) are kept for comparison.
+#'
 #' **Three or more populations.** Start with `omnibus`, an overall test of
 #' whether any population differs (Welch's one-way ANOVA, with Kruskal-Wallis
 #' as the distribution-free check). Interpret the pairwise tests only if the
-#' overall test is significant; they then say which pairs differ.
+#' overall test is significant; they then say which pairs differ. The overall
+#' tests use individuals only, like Welch's t, so with differentiated
+#' populations whose individuals are alike in inbreeding they reject too
+#' readily; a pair is then confirmed by its `p_combined_BH`.
 #'
 #' Two questions, same machinery. `pairwise_tests` compares mean individual
-#' heterozygosity: do the populations differ in diversity?
+#' heterozygosity, which is observed heterozygosity, He x (1 - F): do the
+#' populations differ in heterozygosity? That reflects diversity and
+#' inbreeding together; to compare He itself, use [diversity_stats()].
 #' `pairwise_F_tests` compares the individual inbreeding coefficient `F`
 #' ([individual_inbreeding()], expected heterozygosity from each individual's
 #' own population): do they differ in inbreeding? Report the one that matches
@@ -121,8 +154,10 @@
 #'       loci that clear `min_call` in every population (`n_loci`). `NULL`
 #'       for 2 populations, where the pairwise test is the only test.}
 #'     \item{pairwise_tests}{Heterozygosity, one row per pair of populations:
-#'       means, difference with Welch 95% CI, Welch and Wilcoxon p-values
-#'       (with Benjamini-Hochberg adjusted versions), Hedges' g.}
+#'       means, the difference `diff` with `se_combined`, its 95% interval
+#'       (`ci_lo`, `ci_hi`), `df` and `p_combined` from the combined test (see
+#'       Details); `p_welch` and `p_wilcox` for comparison; Hedges' g; and
+#'       Benjamini-Hochberg adjusted p-values (`_BH`).}
 #'     \item{pairwise_F_tests}{The same tests on `F`.}
 #'     \item{g2}{Identity disequilibrium per population, with bootstrap CI.}
 #'     \item{missingness_confound}{Correlation between an individual's call
@@ -436,12 +471,69 @@ het_between_pops <- function(vcf, popmap, min_call = 0.9, min_loci = 50L, nboot_
   }))
 }
 
+## Not exported. THE LOCUS PART OF THE UNCERTAINTY in a difference between
+## two populations' mean individual values, when each individual's value is a
+## ratio over loci: heterozygosity = heterozygous loci / typed loci, and
+## F = 1 - observed / expected heterozygous loci.
+##
+## WHY IT IS NEEDED. Welch's t counts how much individuals vary. It treats
+## the loci as fixed. But the loci are a sample of the genome, and two
+## populations with the same genome-wide heterozygosity still differ a little
+## at any particular set of loci, because drift acts on each locus
+## separately. That chance difference does not shrink relative to Welch's
+## variance as loci are added. In simulations where each population had its
+## own allele frequencies (inst/sims/het_test_null.R), Welch's t alone gave
+## up to 14% false positives at FST 0.05 and up to 30% at FST 0.2, at a
+## nominal 5%, when individuals were alike in inbreeding.
+##
+## HOW. A delete-one-RAD-locus jackknife of the difference, in its linear
+## form. Leaving out RAD locus b changes individual i's ratio by about
+##   r_bi = (num_bi - ratio_i * den_bi) / den_i
+## (num_bi, den_bi: i's numerator and denominator within locus b; den_i: its
+## total), so the difference changes by u_b = mean_i r_bi (population 1)
+## minus the same for population 2, and the jackknife variance is
+## (B - 1)/B * sum_b u_b^2 over B RAD loci.
+##
+## NOT COUNTING GENOTYPE NOISE TWICE. u_b also contains the chance of which
+## genotypes the sampled individuals happen to carry at locus b, and Welch's
+## variance already counts that. Its size is estimated from the spread of r_bi
+## among individuals, var_i(r_bi) / n, and subtracted (Owen 2007 discusses
+## this double counting). What is left is the variance from which loci were
+## typed. It is set to 0 if negative.
+##
+##   num1, den1, num2, den2  loci x individuals matrices (0 where untyped),
+##                           one pair per population, only the individuals
+##                           that have a value
+##   block                   RAD locus of each row
+## Returns list(var = locus variance of the difference, n_blocks = RAD loci).
+.locus_variance_of_difference <- function(num1, den1, num2, den2, block) {
+  block <- match(block, unique(block))
+  n_blocks <- max(0L, block)
+  if (n_blocks < 2L) return(list(var = NA_real_, n_blocks = n_blocks))
+  influence <- function(num, den) {
+    N <- rowsum(num, block, reorder = TRUE)            # RAD loci x individuals
+    D <- rowsum(den, block, reorder = TRUE)
+    total_den <- colSums(D)
+    ratio <- colSums(N) / total_den
+    R <- sweep(N - sweep(D, 2L, ratio, "*"), 2L, total_den, "/")
+    n <- ncol(R)
+    list(mean = rowMeans(R),
+         noise = if (n >= 2L) apply(R, 1L, stats::var) / n else rep(NA_real_, nrow(R)))
+  }
+  one <- influence(num1, den1)
+  two <- influence(num2, den2)
+  u <- one$mean - two$mean
+  v <- (n_blocks - 1) / n_blocks * sum(u^2 - one$noise - two$noise)
+  list(var = if (is.finite(v)) max(0, v) else NA_real_, n_blocks = n_blocks)
+}
+
 ## Not exported. Tests every pair of populations, on the loci where BOTH
 ## populations of the pair clear min_call on their own (not the pooled set,
 ## and not "every population in the run"). Each row carries its own n_loci,
-## n1, mean1, n2, mean2. Welch's t is primary, Wilcoxon the distribution-free
-## check; with k populations there are k(k-1)/2 pairs, so p-values are also
-## Benjamini-Hochberg adjusted across pairs.
+## n1, mean1, n2, mean2. The combined test (individuals and loci; see
+## .locus_variance_of_difference()) is primary; Welch's t and Wilcoxon are
+## kept for comparison. With k populations there are k(k-1)/2 pairs, so
+## p-values are also Benjamini-Hochberg adjusted across pairs.
 ## Returns list(heterozygosity = table, F = table).
 .pairwise_tests <- function(H, pops, locus_sets, min_call, min_loci, verbose) {
   pairs <- utils::combn(names(pops), 2, simplify = FALSE)
@@ -458,20 +550,41 @@ het_between_pops <- function(vcf, popmap, min_call = 0.9, min_loci = 50L, nboot_
       na_row <- .na_test_row(p1, p2, n_loci, length(pops[[p1]]), length(pops[[p2]]))
       return(list(het = na_row, F = na_row))
     }
+    block <- H$locus_raw[loci]
     a1_1 <- H$A1[loci, pops[[p1]], drop = FALSE]
     a2_1 <- H$A2[loci, pops[[p1]], drop = FALSE]
     a1_2 <- H$A1[loci, pops[[p2]], drop = FALSE]
     a2_2 <- H$A2[loci, pops[[p2]], drop = FALSE]
     het_1 <- colMeans(a1_1 != a2_1, na.rm = TRUE)
     het_2 <- colMeans(a1_2 != a2_2, na.rm = TRUE)
+    has_1 <- is.finite(het_1)
+    has_2 <- is.finite(het_2)
+    ## Heterozygosity: heterozygous loci / typed loci, per individual.
+    het_cells <- function(a1, a2, keep) {
+      typed <- !is.na(a1[, keep, drop = FALSE])
+      list(num = (typed & a1[, keep, drop = FALSE] != a2[, keep, drop = FALSE]) * 1,
+           den = typed * 1)
+    }
+    h1 <- het_cells(a1_1, a2_1, has_1)
+    h2 <- het_cells(a1_2, a2_2, has_2)
+    het_locus <- .locus_variance_of_difference(h1$num, h1$den, h2$num, h2$den, block)
     ## Individual F on the same loci and individuals, with expected
     ## heterozygosity from each population's own allele frequencies.
-    F_1 <- .ind_F(a1_1, a2_1)$F[is.finite(het_1)]
-    F_2 <- .ind_F(a1_2, a2_2)$F[is.finite(het_2)]
-    list(het = .two_sample(het_1, het_2, p1, p2, n_loci, "heterozygosity", verbose),
-         F = .two_sample(F_1, F_2, p1, p2, n_loci, "F", verbose))
+    f1 <- .ind_F_cells(a1_1, a2_1)
+    f2 <- .ind_F_cells(a1_2, a2_2)
+    F_1 <- .ind_F(a1_1, a2_1)$F[has_1]
+    F_2 <- .ind_F(a1_2, a2_2)$F[has_2]
+    ok_1 <- which(has_1)[is.finite(F_1)]
+    ok_2 <- which(has_2)[is.finite(F_2)]
+    F_locus <- .locus_variance_of_difference(f1$observed[, ok_1, drop = FALSE],
+                                             f1$expected[, ok_1, drop = FALSE],
+                                             f2$observed[, ok_2, drop = FALSE],
+                                             f2$expected[, ok_2, drop = FALSE], block)
+    list(het = .two_sample(het_1, het_2, p1, p2, n_loci, "heterozygosity", verbose, het_locus),
+         F = .two_sample(F_1, F_2, p1, p2, n_loci, "F", verbose, F_locus))
   })
   bh_adjust <- function(tab) {
+    tab$p_combined_BH <- stats::p.adjust(tab$p_combined, method = "BH")
     tab$p_welch_BH <- stats::p.adjust(tab$p_welch, method = "BH")
     tab$p_wilcox_BH <- stats::p.adjust(tab$p_wilcox, method = "BH")
     tab
@@ -554,15 +667,25 @@ het_between_pops <- function(vcf, popmap, min_call = 0.9, min_loci = 50L, nboot_
 ## Not exported. One all-NA row of the pairwise test table.
 .na_test_row <- function(p1, p2, n_loci, n1, n2, mean1 = NA_real_, mean2 = NA_real_) {
   data.frame(pop1 = p1, pop2 = p2, n_loci = n_loci, n1 = n1, mean1 = mean1,
-             n2 = n2, mean2 = mean2, diff = NA_real_, ci_lo = NA_real_,
-             ci_hi = NA_real_, p_welch = NA_real_, p_wilcox = NA_real_,
-             hedges_g = NA_real_)
+             n2 = n2, mean2 = mean2, diff = NA_real_, se_combined = NA_real_,
+             ci_lo = NA_real_, ci_hi = NA_real_, df = NA_real_, p_combined = NA_real_,
+             p_welch = NA_real_, p_wilcox = NA_real_, hedges_g = NA_real_)
 }
 
-## Not exported. Welch's t (primary), Wilcoxon (distribution-free check) and
-## Hedges' g for one pair of populations, on one number per individual
-## (`a`, `b`: heterozygosity or F). Returns one row of the pairwise table.
-.two_sample <- function(a, b, p1, p2, n_loci, what, verbose) {
+## Not exported. The tests for one pair of populations, on one number per
+## individual (`a`, `b`: heterozygosity or F). Returns one row of the pairwise
+## table.
+##
+##   combined (primary)  se_combined^2 = var(a)/n_a + var(b)/n_b + locus part
+##                       (`locus`, from .locus_variance_of_difference()); a t
+##                       test with Welch-Satterthwaite degrees of freedom over
+##                       the three parts (the locus part has RAD loci - 1);
+##                       ci_lo, ci_hi and p_combined come from it
+##   Welch's t           the individual part alone (p_welch), for comparison
+##   Wilcoxon            distribution-free, individuals only (p_wilcox)
+##   Hedges' g           the difference in among-individual SD units
+.two_sample <- function(a, b, p1, p2, n_loci, what, verbose,
+                        locus = list(var = NA_real_, n_blocks = 0L)) {
   ## An individual can pass the pooled check yet be called at none of this
   ## pair's loci, and so have no value here: drop it from this pair only.
   if (any(!is.finite(a)) || any(!is.finite(b))) {
@@ -616,10 +739,29 @@ het_between_pops <- function(vcf, popmap, min_call = 0.9, min_loci = 50L, nboot_
   cohen_d <- if (is.finite(pooled_sd) && pooled_sd > 0) (mean(a) - mean(b)) / pooled_sd else NA_real_
   small_sample_correction <- 1 - 3 / (4 * (n_a + n_b) - 9)
 
+  ## The combined test: individuals (as in Welch's t) plus the loci.
+  diff <- mean(a) - mean(b)
+  v_a <- stats::var(a) / n_a
+  v_b <- stats::var(b) / n_b
+  v_locus <- locus$var
+  se_combined <- df <- p_combined <- ci_lo <- ci_hi <- NA_real_
+  if (is.finite(welch$p.value) && is.finite(v_locus)) {
+    se_combined <- sqrt(v_a + v_b + v_locus)
+    df_parts <- v_a^2 / (n_a - 1) + v_b^2 / (n_b - 1) +
+      (if (v_locus > 0) v_locus^2 / (locus$n_blocks - 1) else 0)
+    df <- (v_a + v_b + v_locus)^2 / df_parts
+    p_combined <- 2 * stats::pt(-abs(diff / se_combined), df)
+    ci_lo <- diff - stats::qt(0.975, df) * se_combined
+    ci_hi <- diff + stats::qt(0.975, df) * se_combined
+  } else if (is.finite(welch$p.value)) {
+    .inform(verbose, sprintf("  %s vs %s (%s): fewer than 2 RAD loci, so the locus part of the ",
+                             p1, p2, what), "combined test cannot be estimated. Reported as NA.")
+  }
+
   data.frame(pop1 = p1, pop2 = p2, n_loci = n_loci,
              n1 = n_a, mean1 = mean(a), n2 = n_b, mean2 = mean(b),
-             diff = mean(a) - mean(b), ci_lo = welch$conf.int[1], ci_hi = welch$conf.int[2],
-             p_welch = welch$p.value, p_wilcox = wilcox$p.value,
+             diff = diff, se_combined = se_combined, ci_lo = ci_lo, ci_hi = ci_hi, df = df,
+             p_combined = p_combined, p_welch = welch$p.value, p_wilcox = wilcox$p.value,
              hedges_g = cohen_d * small_sample_correction)
 }
 
@@ -634,7 +776,8 @@ het_between_pops <- function(vcf, popmap, min_call = 0.9, min_loci = 50L, nboot_
   population_summary = list(digits = 4),
   omnibus = list(digits = 3, signif_cols = c(p_welch = 3, p_kruskal = 3)),
   pairwise_tests = list(digits = 4, round_cols = c(hedges_g = 2),
-                        signif_cols = c(p_welch = 3, p_wilcox = 3, p_welch_BH = 3, p_wilcox_BH = 3)),
+                        signif_cols = c(p_combined = 3, p_welch = 3, p_wilcox = 3,
+                                        p_combined_BH = 3, p_welch_BH = 3, p_wilcox_BH = 3)),
   g2 = list(digits = 4)
 )
 
@@ -653,7 +796,7 @@ het_between_pops <- function(vcf, popmap, min_call = 0.9, min_loci = 50L, nboot_
   } else {
     cat(sprintf("  (%d most significant of %d pairs; the full table is %s)\n",
                 max_rows, nrow(tab), full_name))
-    .print_table(.round_het_table(tab[utils::head(order(tab$p_welch_BH), max_rows), ],
+    .print_table(.round_het_table(tab[utils::head(order(tab$p_combined_BH), max_rows), ],
                                   "pairwise_tests"))
   }
 }
@@ -664,7 +807,7 @@ het_between_pops <- function(vcf, popmap, min_call = 0.9, min_loci = 50L, nboot_
 #' @export
 print.raddiv_het <- function(x, ...) {
   st <- x$settings
-  cat(sprintf("Heterozygosity between populations, individuals as replicates: %d populations, %d individuals\n",
+  cat(sprintf("Heterozygosity between populations (combined test: individuals and loci): %d populations, %d individuals\n",
               st$n_pops, st$n_individuals))
   cat(sprintf("  loci: each population's own (>= %.0f%% call rate within it); a pair uses loci both clear\n",
               100 * st$min_call))
@@ -725,7 +868,8 @@ print.summary.raddiv_het <- function(x, ...) {
   rule <- strrep("=", 69)
 
   cat("\n", rule, "\n", sep = "")
-  cat("  HETEROZYGOSITY BETWEEN POPULATIONS -- individual as the unit\n")
+  cat("  HETEROZYGOSITY BETWEEN POPULATIONS -- one value per individual; tests count\n")
+  cat("  both which individuals and which loci were sampled\n")
   cat("  ", .big(st$n_loci_pooled), " loci pass the pooled filter (used for the\n",
       "  individual-level table and confound check below); ", st$n_individuals,
       " individuals, ", st$n_pops, " populations\n", sep = "")
@@ -778,19 +922,21 @@ print.summary.raddiv_het <- function(x, ...) {
   }
 
   n_pairs <- nrow(tests)
-  cat(sprintf("\nPairwise tests -- %d comparison%s. Welch's t is the primary test;\n",
+  cat(sprintf("\nPairwise tests -- %d comparison%s. The combined test (p_combined, ci_lo, ci_hi)\n",
               n_pairs, if (n_pairs == 1) "" else "s"))
-  cat("Wilcoxon is the distribution-free check. 'diff' and its CI are from Welch.\n")
+  cat("is primary: it counts both which individuals and which loci were sampled.\n")
+  cat("p_welch (individuals only) and p_wilcox (distribution-free) are for comparison.\n")
   if (n_pairs > 1)
     cat(sprintf("p_*_BH are Benjamini-Hochberg adjusted across all %d comparisons.\n", n_pairs))
   .show_pairwise(tests, 25, "x$pairwise_tests")
   n_significant <- function(tab) {
-    c(welch = sum(tab$p_welch_BH < 0.05, na.rm = TRUE),
+    c(combined = sum(tab$p_combined_BH < 0.05, na.rm = TRUE),
+      welch = sum(tab$p_welch_BH < 0.05, na.rm = TRUE),
       wilcox = sum(tab$p_wilcox_BH < 0.05, na.rm = TRUE))
   }
   sig <- n_significant(tests)
-  cat(sprintf("\n  pairs significant at BH < 0.05: Welch %d, Wilcoxon %d, of %d\n",
-              sig[["welch"]], sig[["wilcox"]], n_pairs))
+  cat(sprintf("\n  pairs significant at BH < 0.05: combined %d (Welch %d, Wilcoxon %d), of %d\n",
+              sig[["combined"]], sig[["welch"]], sig[["wilcox"]], n_pairs))
   note("Hedges' g is the standardised difference: ~0.2 small, ~0.5 medium, ~0.8 large.")
 
   F_tests <- x$pairwise_F_tests
@@ -798,8 +944,8 @@ print.summary.raddiv_het <- function(x, ...) {
   cat(paste0(.report_text$het_F_tests, "\n"), sep = "")
   .show_pairwise(F_tests, 25, "x$pairwise_F_tests")
   sig_F <- n_significant(F_tests)
-  cat(sprintf("\n  pairs significant at BH < 0.05: Welch %d, Wilcoxon %d, of %d\n",
-              sig_F[["welch"]], sig_F[["wilcox"]], nrow(F_tests)))
+  cat(sprintf("\n  pairs significant at BH < 0.05: combined %d (Welch %d, Wilcoxon %d), of %d\n",
+              sig_F[["combined"]], sig_F[["welch"]], sig_F[["wilcox"]], nrow(F_tests)))
 
   cat("\nInterpretation notes\n")
   note(.report_text$het_interpretation)

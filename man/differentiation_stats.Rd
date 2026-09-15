@@ -134,10 +134,13 @@ typed in every population, the global D is \code{NA} with a warning.
 
 \strong{Combining loci for D.} Hs and Ht are averaged over loci and one D is
 computed from the averages (mmod's \code{global.het}), not averaged over
-per-locus D values. Jost's bias correction of Hs, 2N/(2N - 1), assumes
-random mating within each population (the same assumption behind Stacks'
-\code{Pi}), so with a heterozygote deficit Hs is slightly underestimated. D is
-then biased upward, most noticeably when differentiation is weak.
+per-locus D values. Hs and Ht are Nei & Chesser's (1983) estimators, which
+use observed heterozygosity and so stay unbiased when individuals are
+inbred; this is how \code{hierfstat::basic.stats()} computes its \code{Dest}. (The
+mmod package uses a 2N/(2N - 1) correction that assumes random mating, the
+same assumption behind Stacks' \code{Pi}, and gives a slightly higher D when
+individuals are inbred.) A record where every typed population has a single
+genotyped individual has no D.
 
 \strong{References.} Weir, B.S. & Cockerham, C.C. (1984) Estimating
 F-statistics for the analysis of population structure. \emph{Evolution}

@@ -10,15 +10,23 @@ het_between_pops_selftest(verbose = TRUE)
 \item{verbose}{Print the report. Default \code{TRUE}.}
 }
 \value{
-Invisibly, a data frame with one row per simulated setting:
-\code{method}, \code{sd_F} (the spread of inbreeding among individuals) and
-\code{rejection_rate} (the target is 0.05). Your own random-number state is
-left as it was.
+Invisibly, a data frame with one row per test and setting:
+\code{method}, \code{fst} (differentiation between the populations), \code{sd_F} (the
+spread of inbreeding among individuals) and \code{rejection_rate} (the target
+is 0.05). Your own random-number state is left as it was.
 }
 \description{
-Runs the type I error simulation behind \verb{Rscript het_between_pops.R --selftest}: 400 simulations of two populations with IDENTICAL true
-heterozygosity, comparing how often Welch's t and Wilcoxon (individuals as
-replicates) reject at the 5\% level with how often a locus bootstrap does.
+Runs the type I error simulation behind \verb{Rscript het_between_pops.R --selftest}: simulations of two populations with IDENTICAL true
+heterozygosity, each with its own allele frequencies, comparing how often
+each test rejects at the 5\% level. The tests are the combined test that
+\code{\link[=het_between_pops]{het_between_pops()}} reports (individuals and loci), Welch's t and
+Wilcoxon (individuals only), and a bootstrap over loci (loci only).
+}
+\details{
+Three settings: individuals differ in inbreeding but the populations are
+not differentiated (a locus bootstrap goes wrong); the populations are
+differentiated (FST = 0.1) but individuals are alike (Welch's t goes
+wrong); and both. The full grid is in \code{inst/sims/het_test_null.R}.
 }
 \examples{
 \donttest{

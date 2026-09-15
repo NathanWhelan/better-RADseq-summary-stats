@@ -432,6 +432,27 @@ test_that("fis_by_call_rate is flat without dropout and rises with it", {
   expect_gt(a$Fis[a$call_rate == "<75%"], a$Fis[a$call_rate == "100%"] + 0.1)
 })
 
+test_that("print() and summary() note when Ar rests on uneven records between populations", {
+  set.seed(12)
+  L <- 400
+  g <- sim_genotypes(stats::runif(L, 0.1, 0.9), 16)
+  samp <- c(paste0("a", 1:8), paste0("b", 1:8))
+  A1 <- g$A1; A2 <- g$A2
+  dimnames(A1) <- dimnames(A2) <- list(NULL, samp)
+  pops <- list(popA = samp[1:8], popB = samp[9:16])
+  even <- diversity_stats(sim_H(A1, A2), pops, g = 12, nboot = 0, verbose = FALSE)
+  expect_false(any(grepl("Ar rests on under 90%", capture.output(print(even)))))
+
+  ## popB loses 3 of its 8 individuals at a quarter of the records: 10 gene
+  ## copies there, below g = 12, so its Ar rests on ~75% of popA's records.
+  gone <- which(stats::runif(L) < 0.25)
+  A1[gone, samp[9:11]] <- NA; A2[gone, samp[9:11]] <- NA
+  uneven <- diversity_stats(sim_H(A1, A2), pops, g = 12, nboot = 0, verbose = FALSE)
+  expect_lt(uneven$richness$Ar_n[2], 0.9 * uneven$richness$Ar_n[1])
+  expect_true(any(grepl("Ar rests on under 90%", capture.output(print(uneven)))))
+  expect_true(any(grepl("Ar_n differs by more than 10%", capture.output(print(summary(uneven))))))
+})
+
 test_that("fis_by_call_rate's SE uses only the loci in each call-rate group", {
   ## 600 loci, all fully typed except 5 with one missing individual in popA:
   ## the "90-99%" group of popA has 5 loci, and its SE must be the jackknife

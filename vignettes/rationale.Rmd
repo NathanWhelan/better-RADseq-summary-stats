@@ -13,8 +13,8 @@ knitr::opts_chunk$set(collapse = TRUE, comment = "#>", eval = FALSE)
 
 This document explains the choices behind RADdiversity: how the data should
 be filtered, which estimators are used and why, which Stacks file to use for
-which statistic, how uncertainty is measured, and why populations are
-compared with the individual, not the locus, as the unit. It is written for
+which statistic, how uncertainty is measured, and why a test between
+populations must count both the individuals and the loci. It is written for
 readers who know what heterozygosity is but have not had to choose between
 estimators before.
 
@@ -129,11 +129,19 @@ filter cannot be detected from the data.
 at least `min_n` genotyped individuals there (default 2, the smallest number
 for which He and FIS are defined). This is decided for each population
 separately, so an individual missing in one population does not cost the
-other population that record. Because FIS is a ratio of sums over loci (next
-section), loci with fewer typed individuals simply contribute less, and no
-further correction is needed; `diversity_core_selftest()` checks by
-simulation that FIS stays unbiased when missingness is clustered by locus, as
-it is in real RAD data.
+other population that record. Every record counts equally in FIS, however
+many individuals are typed there. No correction for this is needed, because
+Ho and He at each record are unbiased on their own, so their sums are too.
+Records with few typed individuals only add noise.
+`diversity_core_selftest()` checks by simulation that FIS stays unbiased when
+missingness is clustered by locus, as it is in real RAD data. (That check
+makes genotypes go missing at random. Missingness that depends on the
+genotype, such as allele dropout, is covered in section 5.)
+
+One consequence: two populations can rest on somewhat different records. With
+`-p` equal to the number of populations (above) the sets are nearly the same.
+Compare `Ar_n` between populations; the printed result adds a note when one
+population's Ar rests on under 90% as many records as another population's.
 
 `complete_case = TRUE` uses a record only if every individual of every
 population is genotyped there (Schmidt et al. 2021, recommendation (b)).
@@ -583,36 +591,71 @@ against your own Stacks version before relying on that column.
 
 ## 5. Comparing populations
 
-### Why loci are the wrong replicates
+### Two ways to get the test wrong
 
-A common way to compare heterozygosity between populations is to bootstrap
-over loci, or to run a paired test on per-locus values. Both treat loci as
-the replicates. But every locus is measured on the same few individuals, and
-the quantity of interest, a population mean, is uncertain mainly because of
-which individuals were sampled. A locus-based interval shrinks as
-1/√(number of loci) while that uncertainty does not, so with thousands of
-loci it becomes far too narrow.
+Section 4 showed that a population's value is uncertain for two reasons:
+which loci were typed, and which individuals were caught. A test between
+populations must count both. Common tests count only one.
+
+* **Loci only.** A bootstrap over loci, or a paired test on per-locus
+  values, treats loci as the replicates. But every locus is measured on the
+  same few individuals. When individuals differ in inbreeding, an inbred
+  individual is homozygous at many loci at once, and adding loci does not
+  average that away. The interval becomes far too narrow. Van Dongen (1995)
+  made this point for allozyme data.
+* **Individuals only.** Welch's *t* on one heterozygosity value per
+  individual treats the loci as fixed. But even two populations with the same
+  genome-wide heterozygosity differ a little at any given set of loci,
+  because drift changes allele frequencies at each locus separately. The
+  more differentiated the populations, the bigger that chance difference.
 
 `het_between_pops_selftest()` simulates two populations with *identical*
-true heterozygosity (n = 15 and 10, 1,500 loci), so every significant result
-is a false positive. With a nominal 5% rate, a locus bootstrap rejected about
-8% of the time when individuals did not differ in inbreeding, about half the
-time when the SD of F among individuals was 0.10, and about 80% of the time
-at 0.25. Welch's *t* on one heterozygosity value per individual stayed near
-5% throughout. The objection is not new: Van Dongen (1995) made it for
-allozyme data, and Petit & Pons (1998) repeated it.
+true heterozygosity, each with its own allele frequencies (n = 15 and 10,
+1,500 loci), so every significant result is a false positive. At a nominal
+5%:
 
-### The test on individuals
+| setting | combined test | Welch's *t* | locus bootstrap |
+|---|---|---|---|
+| not differentiated, individuals differ in inbreeding (SD of F 0.10) | 5% | 6% | 53% |
+| differentiated (FST 0.10), individuals alike | 6% | 14% | 7% |
+| differentiated, individuals differ | 5% | 6% | 39% |
+
+A larger grid (`inst/sims/het_test_null.R`: FST 0 to 0.2, SD of F 0 to 0.1,
+15 + 10 or 30 + 30 individuals, 1,000 or 10,000 loci, 400 repeats each) gave
+the same picture. Welch's *t* alone rejected up to 14% of the time at FST
+0.05 and up to 30% at FST 0.2 when individuals were alike, and more often
+with more individuals; adding loci did not help. The combined test stayed
+between 3% and 7.5% in every setting.
+
+### The test `het_between_pops()` uses
 
 `het_between_pops()` gives each individual one number, its heterozygosity
-over the loci its population clears `min_call` at, and compares populations
-with Welch's *t*-test (which does not assume equal variances), with the
-Wilcoxon rank-sum test as a check that does not assume normality. It reports
-the difference with its confidence interval and Hedges' *g*, the difference
-in units of the among-individual standard deviation.
+over the loci both populations of a pair clear `min_call` at. The difference
+between the two population means has a standard error, `se_combined`, with
+two parts:
 
-Two questions use the same machinery. Mean individual heterozygosity asks
-whether populations differ in **diversity**. The individual inbreeding
+1. how much individuals vary, the same variance Welch's *t* uses;
+2. how much the difference would change if other loci had been typed: a
+   jackknife over RAD loci (leave out one RAD locus at a time).
+
+Part 2 also contains some chance from which genotypes the sampled
+individuals carry at each locus, and part 1 already counts that. So it is
+estimated and taken out of part 2 before the two are added (the same double
+counting noted for `_se_combined` in section 4; Owen 2007). The confidence
+interval (`ci_lo`, `ci_hi`) and `p_combined` use a *t* distribution with
+Welch-Satterthwaite degrees of freedom. When individuals differ a lot in
+inbreeding, part 1 dominates and the result is close to Welch's *t*; when
+populations are differentiated and individuals are alike, part 2 matters.
+
+The table also gives `p_welch` and the Wilcoxon rank-sum `p_wilcox`
+(individuals only) for comparison, and Hedges' *g*, the difference in units
+of the among-individual standard deviation.
+
+Two questions use the same machinery. Mean individual heterozygosity is the
+population's **observed** heterozygosity, He × (1 − F). It asks whether
+populations differ in heterozygosity, which reflects both how diverse and how
+inbred they are: two populations with the same He differ here if one is more
+inbred. (To compare He itself, use `diversity_stats()`.) The individual inbreeding
 coefficient F = 1 − (observed heterozygous loci)/(expected), with the
 expectation from the individual's own population, asks whether they differ in
 **inbreeding**; its population mean equals FIS when every individual is typed
@@ -620,7 +663,10 @@ at every locus (`?individual_inbreeding`).
 
 With three or more populations, report the overall test first (`omnibus`:
 Welch's one-way ANOVA and Kruskal-Wallis), then the pairwise tests with
-Benjamini-Hochberg adjusted p-values.
+Benjamini-Hochberg adjusted p-values. The overall tests use individuals only,
+so with differentiated populations whose individuals are alike in inbreeding
+they reject too readily; confirm a difference with the pairs'
+`p_combined_BH`.
 
 ### Checks before reporting
 
@@ -635,7 +681,17 @@ Benjamini-Hochberg adjusted p-values.
   they do, heterozygosity is correlated across loci within an individual, and
   that is exactly when a locus-based test goes wrong. (Earlier versions also
   printed an "overdispersion factor"; it is g2 rescaled by the number of loci,
-  so it added nothing and was removed.)
+  so it added nothing and was removed.) On a SNP VCF, SNPs on the same RAD
+  locus are counted as separate loci, and linkage between them raises g2 a
+  little even without inbreeding. Pairs on the same RAD locus are about one
+  in (number of RAD loci) of all pairs, so with thousands of loci this is
+  negligible; with a few hundred, compute g2 on the haplotype VCF.
+* **Sex-linked loci.** In the sex with one copy of a sex chromosome (XY
+  males, ZW females), loci on it look homozygous. They raise FIS and lower
+  those individuals' heterozygosity. If the samples differ in sex ratio, a
+  difference in heterozygosity can come from that. De novo RAD loci cannot be
+  sorted by chromosome; loci heterozygous in only one sex, or genotyped in only
+  one sex, are the usual clue.
 * **Power.** Power is set by the number of individuals, not loci. With 15
   and 10 individuals and an among-individual SD of F of 0.10, Welch's test
   detected a difference in mean F of 0.05 (0.5 SD) 17% of the time and of
@@ -657,6 +713,24 @@ Depth filters do not remove it. `diversity_stats()` returns
 there: dropout makes FIS rise as call rate falls, while inbreeding raises FIS
 at every locus alike. If FIS rises, report FIS from well-typed loci
 (`complete_case = TRUE` or a higher `min_n`) as well.
+
+How well does this check work? In simulations with a true FIS of 0.10 (15 +
+15 individuals, 2,000 loci, 100 repeats each; `vignette_sims.R`, part
+`dropout`), "FIS in the lowest call-rate group is more than 1.96 standard
+errors above the highest" gave these results:
+
+| what was simulated | flagged | FIS, all loci | FIS, loci typed in everyone |
+|---|---|---|---|
+| missing genotypes at random | 2% | 0.100 | 0.101 |
+| missing genotypes clustered by locus, at random | 4% | 0.099 | 0.099 |
+| poorly covered loci (25% missing, 30% of heterozygotes called homozygous) | 100% | 0.181 | 0.102 |
+| null allele at 25% of loci, frequency 0.2 | 100% | 0.173 | 0.135 |
+| null allele at 10% of loci, frequency 0.1 | 23% | 0.116 | 0.112 |
+
+So false alarms are rare, and strong dropout is found. Weak dropout is often
+missed, but it also changes FIS little. Restricting to fully typed loci
+removes dropout from poor coverage, but only part of a null allele's effect:
+one null copy hides a heterozygote without making the genotype missing.
 
 ## 6. Differentiation
 
@@ -682,9 +756,15 @@ FST cannot reach 1 when loci are highly variable, even for populations that
 share no alleles, so FST from many-haplotype RAD loci is not comparable with
 FST from SNPs. Jost's (2008) D is built to avoid that ceiling. D is computed
 from Hs and Ht averaged over loci (not by averaging per-locus D), following
-the formula as implemented in the mmod package (Winter 2012; see
-`inst/NOTICE`). Its correction of Hs uses 2*N*/(2*N* − 1), which assumes
-random mating, so with a heterozygote deficit D is biased slightly upward.
+the steps of the mmod package (Winter 2012; see `inst/NOTICE`). Hs and Ht
+are Nei & Chesser's estimators, which use H<sub>o</sub>, for the reason given
+in section 2; this is also how `hierfstat::basic.stats()` computes `Dest`.
+mmod's version corrects Hs by 2*N*/(2*N* − 1), which assumes random mating:
+with inbred individuals its D comes out too high. In a test with two samples
+from the same population (true D = 0), 8 individuals each and *F* = 0.4, it
+gave D = 0.017, 29 standard errors above 0; the Nei & Chesser version gave a
+value within 3 standard errors of 0. On the example data, where *F* ≈ 0.1,
+the difference is about 7% of D.
 Weir & Goudet's (2017) beta, via hierfstat, is a third measure; it is a point
 estimate only, and slow on large datasets (`beta = FALSE` skips it).
 
@@ -714,7 +794,12 @@ misled by population structure, or with Goudet's beta (Goudet, Kay & Weir
 non-model species (McMaster et al. 2025) found KING precise but insensitive
 (it misses many true relatives) and beta sensitive but imprecise, worse under
 structure and inbreeding. Treat both as screens: a flagged pair deserves a
-look, and an empty list is not proof there are no relatives.
+look, and an empty list is not proof there are no relatives. KING also
+assumes individuals are not inbred. Two unrelated individuals with
+inbreeding coefficient *F* read about −*F*/(1 − *F*) (−0.11 at *F* = 0.1),
+and relatives read lower too, so they can fall below the cutpoints. A
+heterozygote deficit from pooling subpopulations (a Wahlund effect) does not
+do this, because relatives share a subpopulation.
 
 Two details. The package uses Manichaikul et al.'s estimator with the
 **sum** of the two individuals' heterozygote counts in the denominator; PLINK
@@ -775,6 +860,7 @@ Checked against the named versions; later versions may differ.
 | rarefied private richness | yes, with SE | no | no | no |
 | FST at records typed in one population | skipped | kept (`wc`) | — | skipped |
 | global D at records missing a population | skipped | — | — | — |
+| Hs inside Jost's D | Nei & Chesser | Nei & Chesser (`basic.stats` `Dest`) | not checked | not checked |
 
 ## Appendix C. Where the numbers come from
 
@@ -789,8 +875,10 @@ Checked against the named versions; later versions may differ.
 | haplotype vs SNP He and Ar as SNP density varies | `inst/sims/vignette_sims.R`, part `snp_density` |
 | coverage of locus, individual and combined SEs, and of the bootstraps | `inst/sims/uncertainty_sources.R`, parts `main` and `robust` |
 | individual SEs with records of 2 genotyped individuals | `inst/sims/uncertainty_sources.R`, part `boundary` |
-| false-positive rate of a locus bootstrap | `het_between_pops_selftest()` |
+| false-positive rates of the combined test, Welch's *t* and a locus bootstrap | `het_between_pops_selftest()`; the full grid in `inst/sims/het_test_null.R` |
 | power of Welch's test | `inst/sims/vignette_sims.R`, part `power` |
+| how well `fis_by_call_rate` detects dropout | `inst/sims/vignette_sims.R`, part `dropout` |
+| Jost's D with inbred individuals; match with hierfstat's `Dest` | package tests (`test-differentiation-stats.R`) |
 | Stacks formulas and averaging | Stacks 2.68 source files named in the text; rows of published Stacks output in `diversity_core_selftest()` |
 
 ## References
@@ -877,9 +965,6 @@ Owen, A.B. & Eckles, D. (2012) Bootstrapping data arrays of arbitrary order.
 Pearman, W.S., Urban, L. & Alexander, A. (2022) Commonly used Hardy–Weinberg
 equilibrium filtering schemes impact population structure inferences using
 RADseq data. *Molecular Ecology Resources* 22:2599–2613.
-
-Petit, R.J. & Pons, O. (1998) Bootstrap variance of diversity and
-differentiation estimators in a subdivided population. *Heredity* 80:56–61.
 
 Rochette, N.C., Rivera-Colón, A.G. & Catchen, J.M. (2019) Stacks 2:
 analytical methods for paired-end sequencing improve RADseq-based population

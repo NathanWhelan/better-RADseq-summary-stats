@@ -62,6 +62,60 @@ test_that("differentiation_stats()'s internal WC formula matches hierfstat::wc()
   }
 })
 
+test_that("Jost's D matches hierfstat::basic.stats() Dest (Nei & Chesser Hs and Ht)", {
+  testthat::skip_if_not_installed("hierfstat")
+  ## Three populations of different size, inbred (F = 0.3), with some missing
+  ## genotypes, every record typed in every population.
+  set.seed(8)
+  L <- 300
+  sizes <- c(P1 = 12, P2 = 8, P3 = 15)
+  p_anc <- stats::rbeta(L, 2, 2)
+  A1 <- A2 <- NULL
+  for (k in seq_along(sizes)) {
+    g <- sim_genotypes(sim_diverged_freqs(p_anc, 0.1), sizes[[k]])
+    ibd <- matrix(stats::runif(L * sizes[[k]]) < 0.3, L)
+    g$A2[ibd] <- g$A1[ibd]
+    A1 <- cbind(A1, g$A1); A2 <- cbind(A2, g$A2)
+  }
+  gone <- matrix(stats::runif(length(A1)) < 0.05, L)
+  gone[, c(1, 13, 21)] <- FALSE          # one fully typed individual per population
+  A1[gone] <- NA; A2[gone] <- NA
+  ids <- paste0("i", seq_len(ncol(A1)))
+  colnames(A1) <- colnames(A2) <- ids
+  pops <- split(ids, rep(names(sizes), sizes))[names(sizes)]
+  H <- sim_H(A1, A2)
+
+  bs <- hierfstat::basic.stats(RADdiversity:::.to_hierfstat_df(H, pops), digits = 12)
+  jost <- RADdiversity:::.jost_hsht(RADdiversity:::.differentiation_counts(H, pops))
+  per_record <- RADdiversity:::.jost_d_from_sums(rep(1, L), jost$Hs, jost$Ht, 3)
+  expect_equal(unname(per_record), unname(bs$perloc$Dest), tolerance = 1e-8)
+
+  res <- differentiation_stats(H, pops, nboot = 0, beta = FALSE, verbose = FALSE)
+  expect_equal(res$global$D, unname(bs$overall["Dest"]), tolerance = 1e-8)
+})
+
+test_that("inbreeding without differentiation does not push D above 0", {
+  ## Two samples from the SAME allele frequencies, every individual inbred
+  ## (F = 0.4). The true D is 0. The random-mating (2N/(2N - 1)) Hs is too low
+  ## here, which made D positive; the Nei & Chesser Hs is not.
+  set.seed(9)
+  L <- 20000; n <- 8
+  p <- stats::runif(L, 0.1, 0.9)
+  inbred <- function() {
+    g <- sim_genotypes(p, n)
+    ibd <- matrix(stats::runif(L * n) < 0.4, L)
+    g$A2[ibd] <- g$A1[ibd]
+    g
+  }
+  X <- inbred(); Y <- inbred()
+  ids <- c(paste0("x", 1:n), paste0("y", 1:n))
+  A1 <- cbind(X$A1, Y$A1); A2 <- cbind(X$A2, Y$A2)
+  colnames(A1) <- colnames(A2) <- ids
+  pops <- list(X = ids[1:n], Y = ids[n + 1:n])
+  res <- differentiation_stats(sim_H(A1, A2), pops, nboot = 0, beta = FALSE, verbose = FALSE)
+  expect_lt(abs(res$global$D), 3 * res$global$D_se)
+})
+
 test_that("FST ignores records typed in only one population (no dilution toward 0)", {
   ## Two populations differentiated at FST ~ 0.1. Adding records at which
   ## population Y has no genotyped individual -- as Stacks' -r leaves them

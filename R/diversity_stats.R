@@ -547,6 +547,8 @@ print.raddiv_diversity <- function(x, ...) {
     out <- c(out, sprintf("boot = \"%s\" is a comparison mode; its intervals undercover (see ?diversity_stats).", st$boot))
   if (min(x$richness$privAr_n) < 0.5 * st$n_records_used)
     out <- c(out, "privAr rests on under half of the records for some population; consider a smaller g.")
+  if (.ar_records_uneven(x$richness))
+    out <- c(out, "Ar rests on under 90% as many records in some population as in another (see Ar_n); populations are compared over partly different loci.")
   if (st$complete_case && st$n_records_used / st$n_records < 0.5)
     out <- c(out, "complete_case dropped most records for missing data; check poor libraries.")
   if (st$is_haplotype && any(st$sites > 0))
@@ -563,6 +565,16 @@ print.raddiv_diversity <- function(x, ...) {
     out <- c(out, "_se holds the individuals fixed. For Ho, He and Fis, report _se_combined: re-run with se_individuals = TRUE (see ?diversity_stats).")
   }
   out
+}
+
+## Not exported. TRUE when some population's Ar rests on under 90% of the
+## records of the population with the most (`richness` from
+## diversity_stats()). Each population's Ar is averaged over the records where
+## it has >= g gene copies, so uneven Ar_n means populations are compared over
+## partly different loci. (privAr always uses the same records for everyone.)
+.ar_records_uneven <- function(richness) {
+  ar_n <- richness$Ar_n
+  length(ar_n) > 1L && max(ar_n) > 0 && min(ar_n) < 0.9 * max(ar_n)
 }
 
 #' @rdname diversity_stats
@@ -626,6 +638,11 @@ print.summary.raddiv_diversity <- function(x, ...) {
     note(sprintf("WARNING: privAr_n is below 50%% of loci for at least one population --"),
          "its rarefied private richness rests on a minority of loci. Consider a",
          sprintf("smaller g (rarefaction target), currently %d gene copies.", st$g))
+  if (.ar_records_uneven(x$richness))
+    note("NOTE: Ar_n differs by more than 10% between populations. Each population's Ar is",
+         "averaged over the records where it has >= g gene copies, so populations are",
+         "compared over partly different loci. A smaller g, or Stacks' -p equal to the",
+         "number of populations, evens this out.")
   note("Ar and privAr are PER LOCUS (the HP-RARE / ADZE convention);",
        paste("priv_total is the dataset-wide sum over privAr_n loci. Private = absent from all",
              st$n_pops - 1, "others,"),

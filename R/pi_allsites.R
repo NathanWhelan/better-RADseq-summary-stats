@@ -38,7 +38,9 @@
 #
 #  so pi_nc per sequenced site is He (Nei & Chesser) per sequenced site, with
 #  missing data handled site by site. `pi` is kept for comparison with pixy,
-#  VCFtools and Stacks' `Pi`.
+#  VCFtools and Stacks' `Pi`. Da is reported both ways: `da` from pi and
+#  `da_nc` from pi_nc (dxy needs no change: it only compares copies from
+#  different individuals).
 #
 #  Per individual: heterozygous sites / sites typed -- the individual
 #  "autosomal heterozygosity" of Schmidt et al. (2021).
@@ -97,7 +99,8 @@
 #' `m` typed gene copies: comparisons `C(m, 2)`, differences
 #' `C(m, 2) - sum C(c_a, 2)`; pi is total differences over total comparisons.
 #' Between populations: comparisons `m_x m_y`, differences
-#' `m_x m_y - sum c_xa c_ya` (dxy); `Da = dxy - (pi_x + pi_y) / 2`. Per
+#' `m_x m_y - sum c_xa c_ya` (dxy); `Da = dxy - (pi_x + pi_y) / 2`, and
+#' `Da_nc = dxy - (pi_nc_x + pi_nc_y) / 2` (see below). Per
 #' individual, heterozygous sites over typed sites (Schmidt et al. 2021's
 #' autosomal heterozygosity).
 #'
@@ -108,7 +111,11 @@
 #' comparisons out and compares only copies from different individuals; at
 #' each site it equals Nei & Chesser's (1983) gene diversity, the `He` of
 #' [diversity_stats()], and it stays unbiased at any FIS. Report `pi_nc` as
-#' the estimate and `pi` when comparing with pixy, VCFtools or Stacks. Standard errors are a delete-one-block
+#' the estimate and `pi` when comparing with pixy, VCFtools or Stacks. For the
+#' same reason `da` (built on `pi`) comes out a little too high when
+#' individuals are inbred, and `da_nc` (built on `pi_nc`) does not; `dxy`
+#' compares copies from different individuals only, so it is unaffected.
+#' Standard errors are a delete-one-block
 #' jackknife and intervals a block bootstrap, both over RAD loci (see
 #' `locus_from` in [read_stacks_vcf()]).
 #'
@@ -132,8 +139,8 @@
 #'     \item{pi}{One row per population: `pi`, `pi_se`, `pi_lo`, `pi_hi`, the
 #'       same for `pi_nc` (see Details), and `sites` (sites with at least two
 #'       typed gene copies).}
-#'     \item{dxy}{One row per pair: `dxy` and `da`, each with SE and interval;
-#'       `NULL` for a single population.}
+#'     \item{dxy}{One row per pair: `dxy`, `da` and `da_nc`, each with SE and
+#'       interval; `NULL` for a single population.}
 #'     \item{individual}{Per individual: `het_sites`, `called_sites`,
 #'       `het_per_site`.}
 #'     \item{settings}{The settings of this run.}
@@ -319,7 +326,8 @@ pi_allsites <- function(vcf, popmap, locus_from = "auto", window_bp = 1000,
   ## differentiation_stats()).
   pair_labels <- paste0("pair", seq_along(pairs))
   stat_names <- c(paste0("pi_", pop_names), paste0("pinc_", pop_names),
-                  if (n_pairs) c(paste0("dxy_", pair_labels), paste0("da_", pair_labels)))
+                  if (n_pairs) c(paste0("dxy_", pair_labels), paste0("da_", pair_labels),
+                                 paste0("danc_", pair_labels)))
   stats_from_sums <- function(totals) {
     totals <- matrix(totals, ncol = n_pieces)
     pi_by_pop <- totals[, pop_diff_col, drop = FALSE] / totals[, pop_comp_col, drop = FALSE]
@@ -327,9 +335,14 @@ pi_allsites <- function(vcf, popmap, locus_from = "auto", window_bp = 1000,
     out <- cbind(pi_by_pop, pi_nc)
     if (n_pairs) {
       dxy <- totals[, pair_diff_col, drop = FALSE] / totals[, pair_comp_col, drop = FALSE]
-      mean_pi <- matrix(vapply(pairs, function(q) (pi_by_pop[, q[1]] + pi_by_pop[, q[2]]) / 2,
-                               numeric(nrow(totals))), nrow = nrow(totals))
-      out <- cbind(out, dxy, dxy - mean_pi)
+      pair_mean <- function(within) {
+        matrix(vapply(pairs, function(q) (within[, q[1]] + within[, q[2]]) / 2,
+                      numeric(nrow(totals))), nrow = nrow(totals))
+      }
+      ## Da two ways: with pi (as pixy and most software), and with pi_nc,
+      ## which is not pulled down by inbreeding. dxy itself compares copies
+      ## from different individuals only, so it needs no such change.
+      out <- cbind(out, dxy, dxy - pair_mean(pi_by_pop), dxy - pair_mean(pi_nc))
     }
     out[!is.finite(out)] <- NA_real_
     colnames(out) <- stat_names
@@ -359,6 +372,7 @@ pi_allsites <- function(vcf, popmap, locus_from = "auto", window_bp = 1000,
   if (n_pairs) {
     dxy_names <- paste0("dxy_", pair_labels)
     da_names <- paste0("da_", pair_labels)
+    danc_names <- paste0("danc_", pair_labels)
     dxy_table <- data.frame(
       pop1 = vapply(pairs, function(q) pop_names[q[1]], character(1)),
       pop2 = vapply(pairs, function(q) pop_names[q[2]], character(1)),
@@ -366,6 +380,8 @@ pi_allsites <- function(vcf, popmap, locus_from = "auto", window_bp = 1000,
       dxy_lo = unname(ci[dxy_names, "lo"]), dxy_hi = unname(ci[dxy_names, "hi"]),
       da = unname(point[da_names]), da_se = unname(se[da_names]),
       da_lo = unname(ci[da_names, "lo"]), da_hi = unname(ci[da_names, "hi"]),
+      da_nc = unname(point[danc_names]), da_nc_se = unname(se[danc_names]),
+      da_nc_lo = unname(ci[danc_names, "lo"]), da_nc_hi = unname(ci[danc_names, "hi"]),
       row.names = NULL)
   }
   ids <- unlist(pops, use.names = FALSE)

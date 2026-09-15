@@ -1,2 +1,2 @@
-pop1	pop2	n_loci	n1	mean1	n2	mean2	diff	ci_lo	ci_hi	p_welch	p_wilcox	hedges_g	p_welch_BH	p_wilcox_BH
-popA	popB	645	15	0.2679	10	0.2698	-0.0019	-0.019	0.0153	0.817	0.637	-0.11	0.817	0.637
+pop1	pop2	n_loci	n1	mean1	n2	mean2	diff	se_combined	ci_lo	ci_hi	df	p_combined	p_welch	p_wilcox	hedges_g	p_combined_BH	p_welch_BH	p_wilcox_BH
+popA	popB	645	15	0.2679	10	0.2698	-0.0019	0.0087	-0.0201	0.0164	17.5448	0.833	0.817	0.637	-0.11	0.833	0.817	0.637

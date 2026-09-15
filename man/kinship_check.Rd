@@ -74,7 +74,11 @@ third method (PLINK's method-of-moments IBD, \code{PI_HAT}), as a balance of
 the two, while noting it was sensitive to filtering and often
 underestimated relatedness; this function does not implement it. Treat a
 clean result (nothing flagged) with caution, not as proof that there are
-no close relatives.
+no close relatives. KING also assumes individuals are not inbred: two
+unrelated individuals with inbreeding coefficient F read about -F/(1 - F)
+(-0.11 at F = 0.1), and relatives read lower too, so they can fall below
+the cutpoints. A heterozygote deficit caused by pooling subpopulations (a
+Wahlund effect) does not do this, because relatives share a subpopulation.
 
 \strong{Relatives are looked for within populations.} Goudet's beta measures
 how much more alike two individuals are than the average pair it is

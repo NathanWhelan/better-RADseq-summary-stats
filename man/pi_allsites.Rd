@@ -88,8 +88,8 @@ An object of class \code{raddiv_pi}, a list of:
 \item{pi}{One row per population: \code{pi}, \code{pi_se}, \code{pi_lo}, \code{pi_hi}, the
 same for \code{pi_nc} (see Details), and \code{sites} (sites with at least two
 typed gene copies).}
-\item{dxy}{One row per pair: \code{dxy} and \code{da}, each with SE and interval;
-\code{NULL} for a single population.}
+\item{dxy}{One row per pair: \code{dxy}, \code{da} and \code{da_nc}, each with SE and
+interval; \code{NULL} for a single population.}
 \item{individual}{Per individual: \code{het_sites}, \code{called_sites},
 \code{het_per_site}.}
 \item{settings}{The settings of this run.}
@@ -126,7 +126,8 @@ at 10 diploids, 10\% at 20), so leave those flags off for this run.
 \code{m} typed gene copies: comparisons \code{C(m, 2)}, differences
 \verb{C(m, 2) - sum C(c_a, 2)}; pi is total differences over total comparisons.
 Between populations: comparisons \verb{m_x m_y}, differences
-\verb{m_x m_y - sum c_xa c_ya} (dxy); \code{Da = dxy - (pi_x + pi_y) / 2}. Per
+\verb{m_x m_y - sum c_xa c_ya} (dxy); \code{Da = dxy - (pi_x + pi_y) / 2}, and
+\code{Da_nc = dxy - (pi_nc_x + pi_nc_y) / 2} (see below). Per
 individual, heterozygous sites over typed sites (Schmidt et al. 2021's
 autosomal heterozygosity).
 
@@ -137,7 +138,11 @@ the true value times \verb{1 - FIS / (2n - 1)} for n individuals. \code{pi_nc} l
 comparisons out and compares only copies from different individuals; at
 each site it equals Nei & Chesser's (1983) gene diversity, the \code{He} of
 \code{\link[=diversity_stats]{diversity_stats()}}, and it stays unbiased at any FIS. Report \code{pi_nc} as
-the estimate and \code{pi} when comparing with pixy, VCFtools or Stacks. Standard errors are a delete-one-block
+the estimate and \code{pi} when comparing with pixy, VCFtools or Stacks. For the
+same reason \code{da} (built on \code{pi}) comes out a little too high when
+individuals are inbred, and \code{da_nc} (built on \code{pi_nc}) does not; \code{dxy}
+compares copies from different individuals only, so it is unaffected.
+Standard errors are a delete-one-block
 jackknife and intervals a block bootstrap, both over RAD loci (see
 \code{locus_from} in \code{\link[=read_stacks_vcf]{read_stacks_vcf()}}).
 

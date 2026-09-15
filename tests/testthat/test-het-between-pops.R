@@ -17,6 +17,90 @@ blank <- function(d, rows, ids) {
   d
 }
 
+## ---------------------------------------------------------------------------
+## The combined test
+## ---------------------------------------------------------------------------
+
+test_that("the locus part matches a leave-one-RAD-locus-out calculation done by hand", {
+  ## 3 SNPs per RAD locus, missing genotypes, unequal population sizes.
+  set.seed(21)
+  n_rec <- 240; n1 <- 9; n2 <- 6
+  block <- rep(seq_len(n_rec / 3), each = 3)
+  het1 <- matrix(stats::runif(n_rec * n1) < 0.3, n_rec) * 1
+  het2 <- matrix(stats::runif(n_rec * n2) < 0.25, n_rec) * 1
+  typed1 <- matrix(stats::runif(n_rec * n1) > 0.1, n_rec) * 1
+  typed2 <- matrix(stats::runif(n_rec * n2) > 0.1, n_rec) * 1
+  het1 <- het1 * typed1; het2 <- het2 * typed2
+  got <- RADdiversity:::.locus_variance_of_difference(het1, typed1, het2, typed2, block)
+
+  ## By hand: for each RAD locus b and individual i, how much leaving out b
+  ## moves i's heterozygosity (to first order), then the jackknife sum minus
+  ## the genotype noise.
+  B <- max(block)
+  moves <- function(het, typed) {
+    total_het <- colSums(het); total_typed <- colSums(typed)
+    t(vapply(seq_len(B), function(b) {
+      rows <- block == b
+      (colSums(het[rows, , drop = FALSE]) -
+         total_het / total_typed * colSums(typed[rows, , drop = FALSE])) / total_typed
+    }, numeric(ncol(het))))
+  }
+  m1 <- moves(het1, typed1); m2 <- moves(het2, typed2)
+  by_hand <- (B - 1) / B * sum((rowMeans(m1) - rowMeans(m2))^2 -
+                                 apply(m1, 1, stats::var) / n1 - apply(m2, 1, stats::var) / n2)
+  expect_equal(got$n_blocks, B)
+  expect_equal(got$var, max(0, by_hand), tolerance = 1e-12)
+
+  ## Before the noise is taken out, the linear form is the ordinary
+  ## delete-one-RAD-locus jackknife, up to second-order terms.
+  diff_without <- vapply(seq_len(B), function(b) {
+    keep <- block != b
+    mean(colSums(het1[keep, ]) / colSums(typed1[keep, ])) -
+      mean(colSums(het2[keep, ]) / colSums(typed2[keep, ]))
+  }, numeric(1))
+  exact <- (B - 1) / B * sum((diff_without - mean(diff_without))^2)
+  linear <- (B - 1) / B * sum((rowMeans(m1) - rowMeans(m2))^2)
+  expect_equal(linear, exact, tolerance = 0.02)
+})
+
+test_that("with no locus part the combined test is Welch's t, and one RAD locus gives NA", {
+  set.seed(22)
+  a <- stats::rnorm(12, 0.30, 0.02); b <- stats::rnorm(9, 0.28, 0.03)
+  row <- RADdiversity:::.two_sample(a, b, "A", "B", 100, "heterozygosity", verbose = FALSE,
+                                    locus = list(var = 0, n_blocks = 100L))
+  welch <- stats::t.test(a, b)
+  expect_equal(row$p_combined, welch$p.value, tolerance = 1e-12)
+  expect_equal(c(row$ci_lo, row$ci_hi), as.numeric(welch$conf.int), tolerance = 1e-12)
+  expect_equal(row$df, unname(welch$parameter), tolerance = 1e-12)
+
+  ones <- matrix(1, 5, 4)
+  one_locus <- RADdiversity:::.locus_variance_of_difference(ones, ones, ones, ones, rep("L1", 5))
+  expect_true(is.na(one_locus$var))
+  expect_message(row <- RADdiversity:::.two_sample(a, b, "A", "B", 5, "heterozygosity",
+                                                   verbose = TRUE, locus = one_locus),
+                 "fewer than 2 RAD loci")
+  expect_true(is.na(row$p_combined))
+  expect_true(is.finite(row$p_welch))
+})
+
+test_that("differentiated populations widen the combined interval beyond Welch's", {
+  ## Same expected heterozygosity, own allele frequencies (FST 0.2), no
+  ## variation in inbreeding: the locus part should be a large share.
+  set.seed(23)
+  L <- 2000; n <- 20
+  p <- stats::runif(L, 0.1, 0.9)
+  own <- function() stats::rbeta(L, p * 4, (1 - p) * 4)
+  X <- sim_genotypes(own(), n); Y <- sim_genotypes(own(), n)
+  ids <- c(paste0("x", 1:n), paste0("y", 1:n))
+  A1 <- cbind(X$A1, Y$A1); A2 <- cbind(X$A2, Y$A2)
+  colnames(A1) <- colnames(A2) <- ids
+  res <- het_between_pops(sim_H(A1, A2), list(X = ids[1:n], Y = ids[n + 1:n]),
+                          nboot_g2 = 0, verbose = FALSE)$pairwise_tests
+  het_x <- colMeans(A1[, 1:n] != A2[, 1:n]); het_y <- colMeans(A1[, n + 1:n] != A2[, n + 1:n])
+  welch_se <- sqrt(stats::var(het_x) / n + stats::var(het_y) / n)
+  expect_gt(res$se_combined, 1.3 * welch_se)
+})
+
 test_that("populations absent from many records keep every individual", {
   ## Each population is absent from a different 40% of records, so few loci
   ## pass the POOLED call-rate filter. Individuals used to be excluded on that

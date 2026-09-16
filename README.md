@@ -8,10 +8,10 @@ diploid.
 The motivation for this package was a desire to calculate statistics more
 robustly than Stacks does. For instance, Stacks calculates F<sub>IS</sub> as
 a mean of per-site ratios rather than a ratio of sums (1 −
-ΣH<sub>o</sub>/ΣH<sub>e</sub>), so every site counts equally however little
+ΣH<sub>o</sub>/ΣH<sub>e</sub>), so every site counts equally regardless of how little
 information it carries, including sites typed in only a few individuals.
 
-## Why use it
+## Why use this package
 
 Three things routine RAD-seq summaries tend to get wrong:
 
@@ -21,17 +21,17 @@ Three things routine RAD-seq summaries tend to get wrong:
    F<sub>IS</sub>, and F<sub>IS</sub> = 1 − ΣH<sub>o</sub>/ΣH<sub>e</sub>
    over loci.
 2. **Comparing populations.** Bootstrapping or testing over loci treats loci
-   as independent replicates of a population mean. They are repeated
-   measurements on the same animals: in simulations of two populations with
+   as independent replicates of a population mean. However, they are repeated
+   measurements on the same animals. In simulations of two populations with
    identical diversity, a locus bootstrap rejected the null about half the
    time when individuals differed moderately in inbreeding, and about 80% of
-   the time when they differed more, at a nominal 5%
+   the time when they differed considerably in inbreeding
    (`het_between_pops_selftest()`). Here, populations are compared on one
    number per individual -- heterozygosity, or individual F.
 3. **Uncertainty.** SNPs on one RAD tag are linked, so standard errors and
    intervals resample whole RAD loci, never SNP rows. And when individuals
    differ in inbreeding, even that is too optimistic for population-level
-   inference: the package measures this (g2) and also gives standard errors
+   inference: the package measures this via the g2 statistics and also gives standard errors
    over individuals.
 
 ## Install

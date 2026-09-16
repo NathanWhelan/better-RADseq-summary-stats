@@ -132,8 +132,8 @@ what to report.
 
 | question | function |
 |---|---|
-| Ho, He, F<sub>IS</sub>, % polymorphic, allelic and private allelic richness | `diversity_stats()` |
-| nucleotide diversity π, d<sub>xy</sub> and per-individual heterozygosity per sequenced site | `pi_allsites()` (all-sites VCF), or `diversity_stats(sites = ...)` (approximation) |
+| Ho, He, F<sub>IS</sub>, % polymorphic, allelic richness, and private allelic richness | `diversity_stats()` |
+| nucleotide diversity (π), d<sub>xy</sub>, and per-individual heterozygosity per sequenced site | `pi_allsites()` (all-sites VCF), or `diversity_stats(sites = ...)` (approximation) |
 | do populations differ in observed heterozygosity? in inbreeding? | `het_between_pops()` |
 | each individual's inbreeding coefficient | `individual_inbreeding()` |
 | do individuals differ in inbreeding (g2)? | `identity_disequilibrium()` |
@@ -148,19 +148,18 @@ what to report.
 
 ## Which file for which statistic
 
-Stacks writes one record per SNP (`populations.snps.vcf`) and one per RAD
-locus (`populations.haps.vcf`). They answer different questions:
+When allowing multiple SNPS per locaus, <i>populations</i> writes two vcf files: one with each SNP as a record (`populations.snps.vcf`) and one with each locus as a record (`populations.haps.vcf`). They should be used to answer different questions:
 
 | statistic | file | why |
 |---|---|---|
 | H<sub>o</sub>, H<sub>e</sub>, per-site values (π) | `.snps` | per-site values are on a scale other studies can compare |
 | F<sub>IS</sub> | `.haps` | a ratio, so the scale cancels; multi-allelic loci are more precise |
-| allelic richness, private allelic richness | `.haps` | on biallelic SNPs richness can only be 1 or 2; depends on SNPs per locus, so compare only populations analyzed together (same run, filters and *g*): which is richer is reliable, how much richer is not |
+| allelic richness, private allelic richness | `.haps` | on biallelic SNPs richness can only be 1 or 2. These calculations depend on the number of SNPs per locus, so comparisons are most valid on populations analyzed together (same run, filters and *g*): which population has a greater number of private alleles and allelic richness is reasonable to compare, but saying how much richer a population is (e.g., 50% more) not robust. |
 | between-population tests | either -- say which | |
 
 H<sub>o</sub> and H<sub>e</sub> are **not** comparable between the two files
-(haplotype H<sub>o</sub> asks "is this tag heterozygous?", per-site
-H<sub>o</sub> "is this site?"); F<sub>IS</sub> is. Each printed result says
+(haplotype H<sub>o</sub> asks "are there any SNPs on this locus that are heterozygous?", per-site
+H<sub>o</sub> "is this site heterozygous?"); F<sub>IS</sub> is. Each printed result says
 which of its numbers to take.
 
 ## Which standard error to report
@@ -197,13 +196,13 @@ Never compare populations by overlapping intervals -- use
   individuals that are heterozygous, averaged over loci.
 * **H<sub>e</sub> (H<sub>s</sub>, gene diversity)** -- the chance that two
   gene copies drawn from the population differ (Nei & Chesser 1983).
-* **π (nucleotide diversity)** -- the same quantity averaged over every
-  sequenced site, invariant ones included.
+* **π (nucleotide diversity)** -- H<sub>e</sub> averaged over every
+  sequenced site, invariant ones included. However, Calculation by STACKS is different
 * **F<sub>IS</sub>** -- 1 − H<sub>o</sub>/H<sub>e</sub> for a population,
   summed over loci; **F** -- the same for one individual.
 * **gene copies** -- a diploid carries two: 10 individuals are 20 gene copies.
-* **RAD locus vs record** -- a locus is one RAD tag; a SNP VCF has one record
-  per SNP, so several records can share a locus.
+* **RAD locus vs record** -- a locus is one RAD tag (similar to an assembled contig). A SNP VCF has one record
+  per SNP, so several records can be on the same locus unless filtered at some point to only allow for one SNP per locus.
 * **A<sub>r</sub>, privA<sub>r</sub>** -- allelic and private allelic
   richness rarefied to the same number of gene copies (Kalinowski 2004).
 * **g2** -- identity disequilibrium: how much more often an individual is
@@ -219,16 +218,16 @@ Never compare populations by overlapping intervals -- use
 
 | left out | why |
 |---|---|
-| HWE filtering | a heterozygote deficit is the signal. `hwe_test()` reports departures; nothing removes loci on them. |
+| HWE filtering | a heterozygote deficit is the signal. `hwe_test()` reports departures. This package could be used to create a blacklist of SNPs or loci outside HWE that could then be used for filtering witha different program (e.g., <i>populations</i>. |
 | null-allele correction | restriction-site null alleles cannot be removed by depth filtering; `diversity_stats()` reports `fis_by_call_rate` to detect them, and `vignette("reviewer-faq")` has text for the methods. |
-| paralog detection beyond an excess-heterozygosity screen | `filter_max_het()` is that screen; dedicated tools (e.g. HDplot; McKinney et al. 2017) go further. |
+| paralog detection beyond an excess-heterozygosity screen | `filter_max_het()` is that screen. Dedicated tools (e.g. HDplot; McKinney et al. 2017) go further and users are encouraged to use them if they think this could be an issue in their data. |
 | N<sub>e</sub>, AMOVA, neutrality tests | different questions. |
 
 ## How it relates to other tools
 
-* **Stacks** reports H<sub>o</sub>, π and F<sub>IS</sub> per site and per
+* **Stacks** reports H<sub>o</sub>, π, and F<sub>IS</sub> per site and per
   population. This package recomputes F<sub>IS</sub> (ratio of sums,
-  Nei–Chesser H<sub>e</sub>), adds rarefied and private allelic richness,
+  Nei–Chesser H<sub>e</sub>), adds rarefied allelic richness and rarefied private alleles,
   standard errors over RAD loci and individuals, and individual-level tests.
   `vignette("rationale")` maps every Stacks column onto its counterpart here.
 * **hierfstat** (Goudet 2005) uses the same H<sub>s</sub> and Weir &

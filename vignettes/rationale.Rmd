@@ -2,7 +2,7 @@
 title: "Why these statistics? The reasoning behind RADdiversity"
 output: rmarkdown::html_vignette
 vignette: >
-  %\VignetteIndexEntry{Why these statistics: the reasoning behind RADdiversity}
+  %\VignetteIndexEntry{Why these statistics? The reasoning behind RADdiversity}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---
@@ -834,8 +834,13 @@ allele frequencies *p*<sub>i</sub>, observed heterozygosity *H*<sub>o</sub>.
 | per-site diversity | mean over all sequenced sites | `Pi`, All-positions block | `He_autosomal`, `pi_nc` |
 | private alleles | raw count | `Private` | `privAr` (rarefied) |
 
-Stacks' `Pi` estimates the same parameter as `He` and differs from it by
-about *F*/(2*N* − 1); `diversity_stats()` prints both. Its `Fis` differs from
+Stacks computes `Pi` at a site as the chance that two of the gene copies
+typed there differ, counted pair by pair: `Pi` = 1 − Σ C(*n<sub>i</sub>*, 2) /
+C(*n*, 2) for *n* gene copies carrying allele counts *n<sub>i</sub>*
+(Hohenlohe et al. 2010), which is the same number as
+(*n*/(*n* − 1))(1 − Σ*p<sub>i</sub>*<sup>2</sup>) in the table above.
+Stacks' `Pi` therefore estimates the same parameter as `He` and differs from
+it by about *F*/(2*N* − 1); `diversity_stats()` prints both. Its `Fis` differs from
 RADdiversity's in both the denominator (`Pi`) and the averaging (section 2).
 The per-site `Pi` in the "Variant positions" block is per variant site, not
 nucleotide diversity; only the "All positions (variant and fixed)" block is
@@ -915,6 +920,10 @@ Hardy-Weinberg proportion for multiple alleles. *Biometrics* 48:361–372.
 
 Haldane, J.B.S. (1954) An exact test for randomness of mating. *Journal of
 Genetics* 52:631–635.
+
+Hohenlohe, P.A., Bassham, S., Etter, P.D., Stiffler, N., Johnson, E.A. &
+Cresko, W.A. (2010) Population genomics of parallel adaptation in threespine
+stickleback using sequenced RAD tags. *PLoS Genetics* 6:e1000862.
 
 Hurlbert, S.H. (1971) The nonconcept of species diversity: a critique and
 alternative parameters. *Ecology* 52:577–586.

@@ -148,7 +148,7 @@ what to report.
 
 ## Which file for which statistic
 
-When allowing multiple SNPS per locaus, <i>populations</i> writes two vcf files: one with each SNP as a record (`populations.snps.vcf`) and one with each locus as a record (`populations.haps.vcf`). They should be used to answer different questions:
+When allowing multiple SNPs per locus, <i>populations</i> writes two VCF files: one with each SNP as a record (`populations.snps.vcf`) and one with each locus as a record (`populations.haps.vcf`). They should be used to answer different questions:
 
 | statistic | file | why |
 |---|---|---|
@@ -197,7 +197,14 @@ Never compare populations by overlapping intervals -- use
 * **H<sub>e</sub> (H<sub>s</sub>, gene diversity)** -- the chance that two
   gene copies drawn from the population differ (Nei & Chesser 1983).
 * **π (nucleotide diversity)** -- H<sub>e</sub> averaged over every
-  sequenced site, invariant ones included. However, Calculation by STACKS is different
+  sequenced site, invariant sites included. Invariant sites contribute 0, so
+  π is much smaller than H<sub>e</sub> per variant site. `pi_allsites()`
+  reports two versions. `pi_nc` uses Nei & Chesser's H<sub>e</sub> at each
+  site, and stays unbiased whether or not individuals are inbred. `pi` also
+  compares the two gene copies inside each individual, which is what Stacks'
+  `Pi`, pixy and VCFtools do. Inbreeding makes those two gene copies alike,
+  so `pi` runs low in an inbred population. Report `pi_nc` as the estimate,
+  and report `pi` when comparing with those programs.
 * **F<sub>IS</sub>** -- 1 − H<sub>o</sub>/H<sub>e</sub> for a population,
   summed over loci; **F** -- the same for one individual.
 * **gene copies** -- a diploid carries two: 10 individuals are 20 gene copies.
@@ -218,7 +225,7 @@ Never compare populations by overlapping intervals -- use
 
 | left out | why |
 |---|---|
-| HWE filtering | a heterozygote deficit is the signal. `hwe_test()` reports departures. This package could be used to create a blacklist of SNPs or loci outside HWE that could then be used for filtering witha different program (e.g., <i>populations</i>. |
+| HWE filtering | a heterozygote deficit is the signal. `hwe_test()` reports departures. This package could be used to create a blacklist of SNPs or loci outside HWE that could then be used for filtering with a different program (e.g., <i>populations</i>). |
 | null-allele correction | restriction-site null alleles cannot be removed by depth filtering; `diversity_stats()` reports `fis_by_call_rate` to detect them, and `vignette("reviewer-faq")` has text for the methods. |
 | paralog detection beyond an excess-heterozygosity screen | `filter_max_het()` is that screen. Dedicated tools (e.g. HDplot; McKinney et al. 2017) go further and users are encouraged to use them if they think this could be an issue in their data. |
 | N<sub>e</sub>, AMOVA, neutrality tests | different questions. |
@@ -229,6 +236,15 @@ Never compare populations by overlapping intervals -- use
   population. This package recomputes F<sub>IS</sub> (ratio of sums,
   Nei–Chesser H<sub>e</sub>), adds rarefied allelic richness and rarefied private alleles,
   standard errors over RAD loci and individuals, and individual-level tests.
+  Stacks measures π at a site as the chance that two of the gene copies
+  typed there differ: `Pi` = 1 − Σ C(*n<sub>i</sub>*, 2)/C(*n*, 2), for *n*
+  gene copies carrying allele counts *n<sub>i</sub>* (Hohenlohe et al. 2010).
+  That formula is the same as (*n*/(*n* − 1))(1 − Σ*p<sub>i</sub>*<sup>2</sup>),
+  which is H<sub>e</sub> with the 2*N* correction rather than Nei & Chesser's
+  H<sub>e</sub>. The "All positions (variant and fixed)" block of
+  `populations.sumstats_summary.tsv` averages `Pi` over every sequenced site,
+  so that block alone is π per sequenced site; the "Variant positions" block
+  is per variant site.
   `vignette("rationale")` maps every Stacks column onto its counterpart here.
 * **hierfstat** (Goudet 2005) uses the same H<sub>s</sub> and Weir &
   Cockerham estimators; the package's own implementations are checked
@@ -276,6 +292,10 @@ F-statistics. *Molecular Ecology Notes* 5:184–186.
 Hemstrom, W. & Jones, M. (2023) snpR: user friendly population genomics for
 SNP data sets with categorical metadata. *Molecular Ecology Resources*
 23:962–973.
+
+Hohenlohe, P.A., Bassham, S., Etter, P.D., Stiffler, N., Johnson, E.A. &
+Cresko, W.A. (2010) Population genomics of parallel adaptation in threespine
+stickleback using sequenced RAD tags. *PLoS Genetics* 6:e1000862.
 
 Kalinowski, S.T. (2004) Counting alleles with rarefaction: private alleles
 and hierarchical sampling designs. *Conservation Genetics* 5:539–543.

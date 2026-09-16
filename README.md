@@ -105,12 +105,11 @@ populations --in-path ./stacks_out --popmap popmap.tsv -O ./out \
   author's tests, not filtering by genotype depth made little difference to
   the final statistics, so this is a reasonable precaution rather than a
   requirement.
-* Use both `-r` and `-p`, not a global `-R`. A global `-R` can leave a locus
-  mostly missing in one population while it passes on the others' coverage.
+* Use both `-r` and `-p`, not a global `-R`. 
   A missing-data filter applied within each population (`-r`, with `-p` set
   to your number of populations) ensures each locus that passes is well
   genotyped in every population. This matters most when sampling is uneven:
-  `-R` lets the larger population's coverage carry the smaller one, which
+  the global `-R` filter lets the larger population's coverage carry the smaller one, which
   then carries more missing data -- an artificial difference between exactly
   the two samples you mean to compare.
 * Minor allele count or frequency filters (`--min-mac`, `--min-maf`) are
@@ -118,8 +117,7 @@ populations --in-path ./stacks_out --popmap popmap.tsv -O ./out \
   are real diversity: under a neutral site frequency spectrum, sites with a
   minor allele count of 2 or less hold about 21% of π at 10 diploids and 10%
   at 20. If you use one, report the threshold and compare diversity values
-  only with data filtered the same way; if you can, a separate run without it
-  for diversity statistics avoids the issue.
+  only with data filtered the same way. 
 * `--vcf-all` (Stacks ≥ 2.62) writes an all-sites VCF, which `pi_allsites()`
   uses to compute nucleotide diversity directly.
 * Per-site values read `Sites` from `populations.sumstats_summary.tsv`. That

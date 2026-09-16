@@ -1,5 +1,5 @@
 ---
-title: "Why these statistics: the reasoning behind RADdiversity"
+title: "Why these statistics? The reasoning behind RADdiversity"
 output: rmarkdown::html_vignette
 vignette: >
   %\VignetteIndexEntry{Why these statistics: the reasoning behind RADdiversity}
@@ -19,9 +19,7 @@ readers who know what heterozygosity is but have not had to choose between
 estimators before.
 
 To see the analysis itself step by step, start with
-`vignette("workflow", package = "RADdiversity")`. Text for a methods section
-and answers to common reviewer questions are in
-`vignette("reviewer-faq", package = "RADdiversity")`.
+`vignette("workflow", package = "RADdiversity")`. 
 
 > **Where the numbers come from.** Simulation results quoted here can be
 > re-run: Appendix C lists each one with the script or function that

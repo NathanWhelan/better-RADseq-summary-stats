@@ -1,5 +1,7 @@
 # RADdiversity
 
+## PLEASE NOTE: This was written by Claude AI and has been minimally edited. If something seems off, please take the author into consideration. If you notice something that's horribly wrong, I would love to hear feedback. --N. Whelan (Sept 8, 2026).
+
 This package provides several methods for calculating population-genetic
 statistics from RAD-seq data. It was built with output from Stacks 2 in mind,
 but VCFs from other assembly pipelines work too. Genotypes are assumed to be

@@ -402,8 +402,8 @@ These change reported numbers.
   from other pipelines and for Stacks builds that leave the ID column empty.
 * `low_conf_alt_calls()`: the genotype calls `filter_low_conf_alt()` would
   flag.
-* Three vignettes: `workflow` (one analysis start to finish), `rationale`
-  (most of the former README) and `reviewer-faq`.
+* Two vignettes: `workflow` (one analysis start to finish) and `rationale`
+  (most of the former README).
 
 ## Bug fixes
 

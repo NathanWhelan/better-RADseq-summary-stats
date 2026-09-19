@@ -13,3 +13,7 @@
 .Rhistory
 .RData
 .Rproj.user
+
+# Private vignette kept on this machine only -- not on GitHub, not in the
+# package (also listed in .Rbuildignore).
+/vignettes/reviewer-faq.Rmd

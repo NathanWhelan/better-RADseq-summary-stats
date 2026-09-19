@@ -226,7 +226,7 @@ Never compare populations by overlapping intervals -- use
 | left out | why |
 |---|---|
 | HWE filtering | a heterozygote deficit is the signal. `hwe_test()` reports departures. This package could be used to create a blacklist of SNPs or loci outside HWE that could then be used for filtering with a different program (e.g., <i>populations</i>). |
-| null-allele correction | restriction-site null alleles cannot be removed by depth filtering; `diversity_stats()` reports `fis_by_call_rate` to detect them, and `vignette("reviewer-faq")` has text for the methods. |
+| null-allele correction | restriction-site null alleles cannot be removed by depth filtering; `diversity_stats()` reports `fis_by_call_rate` to detect them. |
 | paralog detection beyond an excess-heterozygosity screen | `filter_max_het()` is that screen. Dedicated tools (e.g. HDplot; McKinney et al. 2017) go further and users are encouraged to use them if they think this could be an issue in their data. |
 | N<sub>e</sub>, AMOVA, neutrality tests | different questions. |
 
@@ -277,8 +277,6 @@ references are in each function's help page and in `vignette("rationale")`.
   to finish.
 * `vignette("rationale", package = "RADdiversity")` -- why these flags,
   estimators and tests; formulas; the Stacks column mapping.
-* `vignette("reviewer-faq", package = "RADdiversity")` -- methods text to
-  adapt, and answers to the usual reviewer objections.
 
 ## Key references
 

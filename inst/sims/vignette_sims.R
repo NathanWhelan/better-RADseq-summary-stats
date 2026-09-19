@@ -2,8 +2,8 @@
 #
 #  inst/sims/vignette_sims.R -- the simulations quoted in the vignettes.
 #
-#  Each part reproduces one table or number in vignette("rationale") or
-#  vignette("reviewer-faq"). Run all of them, or name the parts wanted:
+#  Each part reproduces a table or number in the vignettes. Run all of them,
+#  or name the parts wanted:
 #
 #    Rscript inst/sims/vignette_sims.R                  # everything
 #    Rscript inst/sims/vignette_sims.R file_choice power

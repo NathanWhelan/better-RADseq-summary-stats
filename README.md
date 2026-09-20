@@ -39,9 +39,7 @@ Three things routine RAD-seq summaries tend to get wrong:
 ## Install
 
 ```r
-install.packages("RADdiversity")        # once the package is on CRAN
-# the development version:
-# install.packages("remotes")
+install.packages("remotes")
 remotes::install_github("NathanWhelan/better-RADseq-summary-stats")
 ```
 

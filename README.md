@@ -70,13 +70,56 @@ het$pairwise_tests
 Every result is a list of tables (`div_haps$per_population`,
 `div_haps$richness`, ...) kept at full precision; printing rounds them. Add
 `outdir = "results"` to also write the tables as TSV files, and
-`verbose = FALSE` to silence progress messages. Every analysis function
-accepts the data as a file path or as the object from `read_stacks_vcf()`,
-and the popmap as a file path or as the list from `read_popmap()`. On your own
-data, `g` is the rarefaction size in **gene copies** (10 diploids = 20), at
-most twice your smallest population.
+`verbose = FALSE` to silence progress messages.
 
-From the shell, the same analyses run with the scripts installed alongside
+### Using your own files
+
+The four `system.file()` lines are the only place the example files appear.
+To analyze your own data, replace them with paths to your files.
+
+| variable | your file | what it is |
+|---|---|---|
+| `snps` | `populations.snps.vcf` | Stacks output: one record per SNP. `.vcf.gz` works too. |
+| `haps` | `populations.haps.vcf` | Stacks output: one record per RAD locus (haplotypes). `.vcf.gz` works too. |
+| `popmap` | `popmap.tsv` | The popmap you gave Stacks. No header. Each line is the sample name, a TAB, then the population. Sample names must match the VCF's. |
+| `sumstats` | `populations.sumstats_summary.tsv` | Stacks output. Optional: only needed for per-site values (`sites =`). |
+
+```r
+snps     <- "out/populations.snps.vcf"
+haps     <- "out/populations.haps.vcf"
+popmap   <- "popmap.tsv"
+sumstats <- "out/populations.sumstats_summary.tsv"   # optional
+
+g <- 20    # gene copies: at most 2 x the individuals in your smallest population
+div_haps <- diversity_stats(haps, popmap, g = g)
+div_snps <- diversity_stats(snps, popmap, g = g, sites = sumstats)
+```
+
+`g` is the rarefaction size in **gene copies** (10 diploids = 20). Every
+analysis function accepts file paths as they are. `pi_allsites()` takes only a
+path (to an all-sites VCF). The others also accept the R objects from the
+readers below, which lets you look at a file, filter it first, or set
+`locus_from`:
+
+```r
+H_snps <- read_stacks_vcf(snps)                # a VCF -> R object
+H_haps <- read_stacks_vcf(haps)                # same, for the haplotype VCF
+pops   <- read_popmap(popmap, H_snps$samples)  # popmap -> sample names per population, checked against the VCF
+ss     <- read_sumstats_summary(sumstats)      # Stacks' summary table -> R list
+ss$all_positions[, c("population", "sites")]   # sequenced sites per population
+
+div_haps <- diversity_stats(H_haps, pops, g = g)
+div_snps <- diversity_stats(H_snps, pops, g = g, sites = sumstats)   # `sites` still takes the path
+het      <- het_between_pops(H_snps, pops)
+```
+
+VCF from another pipeline (ipyrad, dDocent, ...)? Use it as `snps` and skip
+`haps`. If its RAD loci are not recognized, read it with
+`read_stacks_vcf(snps, locus_from = "CHROM")` (see `?read_stacks_vcf`).
+
+### From the shell
+
+The same analyses run from the shell with the scripts installed alongside
 the package:
 
 ```bash

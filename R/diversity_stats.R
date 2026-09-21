@@ -36,8 +36,11 @@
 #' richness and rarefied private allelic richness from a Stacks 2
 #' `populations` VCF and popmap, with a delete-one-locus jackknife standard
 #' error and a bootstrap confidence interval over RAD loci. Printing the
-#' result shows the main tables; `summary()` shows the full report with notes
-#' on interpretation; `outdir` also writes the tables to TSV files.
+#' result shows the main tables. `summary()` is short: the results as
+#' `estimate (SE)` with the one recommended standard error for each statistic,
+#' what to take from this run, and a list of checks. `summary(details = TRUE)`
+#' is the full report, with every uncertainty column and notes on
+#' interpretation. `outdir` also writes the tables to TSV files.
 #'
 #' Run it twice: `populations.snps.vcf` gives Ho, He, `pct_poly` and the
 #' per-sequenced-site values; `populations.haps.vcf` gives FIS, Ar and
@@ -69,7 +72,7 @@
 #'   `"both"` are for comparison only: in a coverage simulation their
 #'   intervals badly missed the true He and FIS (`vignette("rationale")`,
 #'   "Why not bootstrap individuals?"). For uncertainty over individuals use
-#'   `se_individuals = TRUE` instead (see "How standard errors are
+#'   `se_individuals` (on by default) instead (see "How standard errors are
 #'   calculated" below).
 #' @param sites Number of sequenced sites, to turn Ho and He into per-site
 #'   values (`Ho_autosomal`, `He_autosomal`; SNP VCF only). Default `NULL`: no
@@ -122,13 +125,16 @@
 #'   population is genotyped there (Schmidt et al. 2021, recommendation (b)).
 #'   Default `FALSE`.
 #' @param se_individuals Also compute the uncertainty from which individuals
-#'   were sampled, and add three columns each for Ho, He and FIS: `_se_ind`
-#'   (a jackknife over individuals) and `_se_combined` (locus and individual
-#'   uncertainty together). **Report `_se_combined` for Ho, He and FIS.** Ar and
-#'   privAr keep their locus-based `_se`, `_lo` and `_hi`, which already cover
-#'   both sources. See "How standard errors are calculated" below. Default
-#'   `FALSE`, because the jackknife over individuals takes longer on large
-#'   datasets.
+#'   were sampled, and add two columns each for Ho, He and FIS (and their
+#'   per-site values): `_se_ind` (a jackknife over individuals) and
+#'   `_se_combined` (locus and individual uncertainty together). **Report
+#'   `_se_combined` for Ho, He and FIS.** Ar and privAr keep their locus-based
+#'   `_se`, `_lo` and `_hi`, which already cover both sources. See "How
+#'   standard errors are calculated" below. Default `TRUE`, because
+#'   `_se_combined` is the recommended standard error and the extra work is
+#'   small: about 30% more run time (300,000 records and 60 individuals: 3.9
+#'   seconds became 5.2). `FALSE` skips it; then only the locus-based columns
+#'   exist, and they can be too small when individuals differ in inbreeding.
 #' @param hierfstat_check If `TRUE` and the `hierfstat` package is installed,
 #'   also compute per-record Ho/Hs with `hierfstat::basic.stats()` and
 #'   allelic richness with `hierfstat::allelic.richness()`, and report the
@@ -152,14 +158,22 @@
 #'   \describe{
 #'     \item{per_population}{Ho, He, FIS and % polymorphic records per
 #'       population, each with its locus jackknife SE (`_se`) and 95% locus
-#'       bootstrap interval (`_lo`, `_hi`). With `se_individuals = TRUE`, also
-#'       `_se_ind` and `_se_combined` for Ho, He and FIS.}
+#'       bootstrap interval (`_lo`, `_hi`). With `se_individuals = TRUE` (the
+#'       default), also `_se_ind` and `_se_combined` for Ho, He and FIS.}
 #'     \item{richness}{Ar, privAr and priv_total per population, with the
 #'       number of records each rests on (`Ar_n`, `privAr_n`).}
-#'     \item{autosomal}{Per-sequenced-site Ho/He, with the `sites_used` and
-#'       `variant_records` each population was scaled by; `NULL` unless
-#'       `sites` gave at least one population a plausible value, and always
-#'       `NULL` for a haplotype VCF.}
+#'     \item{autosomal}{Per-sequenced-site Ho/He (`Ho_autosomal`,
+#'       `He_autosomal`), with the `sites_used` and `variant_records` each
+#'       population was scaled by, and the same uncertainty columns as Ho and
+#'       He: `_se`, `_lo`, `_hi` and, with `se_individuals = TRUE`, `_se_ind`
+#'       and `_se_combined` (e.g. `Ho_autosomal_se_combined`). A per-site value
+#'       is Ho (or He) times `variant_records / sites_used`, a fixed multiplier
+#'       for each population, so each of these is the matching Ho or He
+#'       column times the same multiplier. This treats `variant_records /
+#'       sites_used` as fixed: it leaves out uncertainty in how many SNPs there
+#'       are per sequenced site, as the per-site value itself does. `NULL`
+#'       unless `sites` gave at least one population a plausible value, and
+#'       always `NULL` for a haplotype VCF.}
 #'     \item{estimator_comparison}{He and FIS from Nei & Chesser and from the
 #'       estimator behind Stacks' `Pi`, side by side.}
 #'     \item{he_difference}{For two populations with `nboot > 0`: the He
@@ -192,15 +206,18 @@
 #' * `_lo`, `_hi`: a bootstrap over RAD loci. Loci are drawn at random, with
 #'   replacement, thousands of times; the middle 95% of the results is the
 #'   interval. It also holds the individuals fixed.
-#' * `_se_ind` (with `se_individuals = TRUE`): a jackknife over individuals.
-#'   Each individual is left out in turn. It holds the loci fixed.
+#' * `_se_ind` (with `se_individuals = TRUE`, the default): a jackknife over
+#'   individuals. Each individual is left out in turn. It holds the loci fixed.
 #' * `_se_combined`: both sources together, `sqrt(_se^2 + _se_ind^2)`.
 #'
 #' Whole RAD loci, not single SNPs, are resampled, because SNPs on one RAD
 #' locus are inherited together.
 #'
 #' **Which to report.** For **Ho, He and FIS**, report `_se_combined`. For
-#' **Ar and privAr**, report `_se` (or `_lo`, `_hi`). This rule comes from
+#' **Ar and privAr**, report `_se` (or `_lo`, `_hi`). The per-site Ho and He
+#' (`Ho_autosomal`, `He_autosomal`) follow the same rule for Ho and He: report
+#' `Ho_autosomal_se_combined` and `He_autosomal_se_combined`. The short
+#' `summary()` shows only these recommended standard errors. This rule comes from
 #' simulated populations with a known true value, where each simulated study
 #' was repeated 300 times with new loci and new individuals, and we counted how
 #' often the 95% interval contained the truth (it should be about 95%). With
@@ -219,6 +236,33 @@
 #' **What no SE covers.** Relatives in the sample (they bias the estimates
 #' themselves; screen with [kinship_check()]), filtering choices and allele
 #' dropout, and linkage between separate RAD loci.
+#'
+#' @section Tables for a paper:
+#' Put in the table exactly what the short `summary()` reports, and nothing
+#' more. `summary(x)$tables` holds those tables as data frames, with the same
+#' `estimate (SE)` text the summary prints: `results` (Ho, He and `pct_poly`
+#' for a SNP VCF; FIS, Ar and privAr for a haplotype VCF) and, for a SNP VCF run
+#' with `sites`, `per_site`. Join the two runs by population name, never by row
+#' order:
+#'
+#' ```
+#' snp <- summary(res_snps)$tables
+#' hap <- summary(res_haps)$tables
+#' parts <- list(snp$results, snp$per_site,
+#'               hap$results[names(hap$results) != "n"])
+#' table1 <- Reduce(function(a, b) merge(a, b, by = "population", sort = FALSE),
+#'                  Filter(Negate(is.null), parts))
+#' table1 <- table1[match(snp$results$population, table1$population), ]
+#' ```
+#'
+#' Leave out the other uncertainty columns (they are in the result tables and
+#' the `outdir` files, for a supplement) and the counts behind a value (`Ar_n`,
+#' `privAr_n`, `priv_total`, `sites_used`); state those in the methods. Say in
+#' the caption which VCF each column came from, the rarefaction size `g`, and
+#' which standard error each column is. Add something to the table only when a
+#' check in the summary said `look` and readers need the number to judge it.
+#' See the README ("Make a table for a manuscript") and the workflow vignette
+#' ("A table for your manuscript").
 #'
 #' @references
 #' Nei, M. & Chesser, R.K. (1983) Estimation of fixation indices and gene
@@ -286,8 +330,11 @@
 #' popmap <- system.file("extdata", "small_popmap.tsv", package = "RADdiversity")
 #'
 #' # Haplotype VCF: FIS, allelic richness, private allelic richness.
+#' # se_individuals = FALSE only because these toy populations have 3 and 4
+#' # individuals, too few for the individual standard errors. Leave it at its
+#' # default (TRUE) for real data.
 #' set.seed(1)
-#' res <- diversity_stats(haps, popmap, g = 4, nboot = 100)
+#' res <- diversity_stats(haps, popmap, g = 4, nboot = 100, se_individuals = FALSE)
 #' res                    # the main tables
 #' res$per_population     # one table
 #'
@@ -296,14 +343,21 @@
 #' sumstats <- system.file("extdata", "populations.sumstats_summary.tsv",
 #'                         package = "RADdiversity")
 #' res_snps <- diversity_stats(snps, popmap, g = 4, nboot = 0, sites = sumstats,
-#'                             verbose = FALSE)
+#'                             se_individuals = FALSE, verbose = FALSE)
 #' res_snps$autosomal
 #'
-#' # The full report, with notes on interpreting each number:
+#' # A short summary: each estimate with its recommended SE, what to take from
+#' # this run, and the checks.
 #' summary(res_snps)
+#'
+#' # The full report, with every uncertainty column and notes on each number:
+#' summary(res_snps, details = TRUE)
+#'
+#' # The tables the short summary prints, to build a table for a paper from:
+#' summary(res_snps)$tables$results
 #' @export
 diversity_stats <- function(vcf, popmap, g, nboot = 10000L, boot = "loci", sites = NULL,
-                            min_n = 2L, complete_case = FALSE, se_individuals = FALSE,
+                            min_n = 2L, complete_case = FALSE, se_individuals = TRUE,
                             hierfstat_check = FALSE, outdir = NULL, stem = NULL,
                             seed = NULL, verbose = TRUE) {
 
@@ -516,13 +570,15 @@ print.raddiv_diversity <- function(x, ...) {
       if (isTRUE(st$se_individuals)) "; _se_ind: jackknife over individuals; _se_combined: both (report it for Ho, He, Fis)",
       "\n", sep = "")
 
+  ## These tables are wider than the screen; .print_compact() repeats the
+  ## population name on every block, so no row of numbers is left unlabelled.
   cat("\n$per_population\n")
-  .print_table(.round_diversity_table(x$per_population, "per_population"))
+  .print_compact(.round_diversity_table(x$per_population, "per_population"))
   cat("\n$richness\n")
-  .print_table(.round_diversity_table(x$richness, "richness"))
+  .print_compact(.round_diversity_table(x$richness, "richness"))
   if (!is.null(x$autosomal)) {
     cat("\n$autosomal\n")
-    .print_table(.round_diversity_table(x$autosomal, "autosomal"))
+    .print_compact(.round_diversity_table(x$autosomal, "autosomal"))
   }
 
   cat("\n")
@@ -534,36 +590,123 @@ print.raddiv_diversity <- function(x, ...) {
         ". (Fis, Ar, privAr: run the haplotype VCF.)\n", sep = "")
   }
   for (w in .diversity_warnings(x)) cat("NOTE:", w, "\n")
-  cat("summary() prints the full report, with notes on interpreting each number.\n")
+  cat("summary() shows what to take from this run and what to check; summary(x, details = TRUE) explains every number.\n")
   invisible(x)
 }
 
-## Not exported. The short warnings print.raddiv_diversity() shows; the full
-## report in summary() explains each of them.
-.diversity_warnings <- function(x) {
+## Not exported. Every check on a diversity_stats() result, as a list of
+##   id       short name
+##   fired    TRUE when the check found something to act on
+##   message  the short warning print() shows for a fired check (NULL: print()
+##            does not show this one)
+##   look     the sentence the short summary() shows when it fired
+##   ok       the sentence it shows when it did not (NULL: show nothing)
+##   ok_tag   "ok" or "info" for the second case
+##   brief    FALSE for a check the short summary() says elsewhere (its header)
+## print() shows the `message` of each fired check (see .diversity_warnings());
+## the short summary() shows all of them as `ok`, `info` or `look`.
+.diversity_checks <- function(x) {
   st <- x$settings
-  out <- character(0)
+  checks <- list()
+  add <- function(id, fired, message = NULL, look = message, ok = NULL, ok_tag = "ok",
+                  brief = TRUE)
+    checks[[length(checks) + 1L]] <<- list(id = id, fired = isTRUE(fired), message = message,
+                                           look = look, ok = ok, ok_tag = ok_tag, brief = brief)
+
+  ## How much of the data each population's mean rests on. Not a warning.
+  if (st$complete_case) {
+    add("cells", FALSE, ok = sprintf("only records genotyped in every individual were used (%s of %s, %.1f%%)",
+                                     .big(st$n_records_used), .big(st$n_records),
+                                     100 * st$n_records_used / st$n_records), ok_tag = "info")
+  } else if (st$cells_used == st$cells_total) {
+    add("cells", FALSE, ok = sprintf("every population had enough genotypes at every record (min_n = %d)",
+                                     st$min_n))
+  } else {
+    add("cells", FALSE, ok = sprintf("%s of %s record-by-population cells had at least min_n = %d genotyped individuals (%.1f%%); the rest are left out of that population's mean",
+                                     .big(st$cells_used), .big(st$cells_total), st$min_n,
+                                     100 * st$cells_used / st$cells_total), ok_tag = "info")
+  }
+  pf <- st$prior_filters
+  if (!is.null(pf))
+    add("mac_filtered", isTRUE(pf$looks_mac_filtered),
+        look = "the data look filtered by minor allele count (no allele is seen only once or twice). State the threshold in your methods and compare values only between datasets filtered the same way",
+        ok = "no minor-allele-count filter detected")
+
   if (st$boot != "loci")
-    out <- c(out, sprintf("boot = \"%s\" is a comparison mode; its intervals undercover (see ?diversity_stats).", st$boot))
-  if (min(x$richness$privAr_n) < 0.5 * st$n_records_used)
-    out <- c(out, "privAr rests on under half of the records for some population; consider a smaller g.")
-  if (.ar_records_uneven(x$richness))
-    out <- c(out, "Ar rests on under 90% as many records in some population as in another (see Ar_n); populations are compared over partly different loci.")
-  if (st$complete_case && st$n_records_used / st$n_records < 0.5)
-    out <- c(out, "complete_case dropped most records for missing data; check poor libraries.")
-  if (st$is_haplotype && any(st$sites > 0))
-    out <- c(out, "`sites` was ignored: per-site values need the SNP VCF.")
-  else if (!any(st$ok_sites) && any(st$sites > 0))
-    out <- c(out, "`sites` was ignored: every value is smaller than the number of variant records.")
+    add("boot_mode", TRUE,
+        sprintf("boot = \"%s\" is a comparison mode; its intervals undercover (see ?diversity_stats).", st$boot))
+
+  ## Ar and privAr are only shown for a haplotype VCF.
+  hap <- st$is_haplotype
+  privar_low <- min(x$richness$privAr_n) < 0.5 * st$n_records_used
+  add("privar_records", privar_low,
+      message = "privAr rests on under half of the records for some population; consider a smaller g.",
+      look = sprintf("privAr rests on under half of the loci for some population (%s of %s in the smallest); consider a smaller g",
+                     .big(min(x$richness$privAr_n)), .big(st$n_records_used)),
+      ok = "privAr rests on at least half of the loci in every population", brief = hap)
+  ar_n <- x$richness$Ar_n
+  add("ar_uneven", .ar_records_uneven(x$richness),
+      message = "Ar rests on under 90% as many records in some population as in another (see Ar_n); populations are compared over partly different loci.",
+      look = if (length(ar_n) > 1L)
+        sprintf("Ar is averaged over %s loci in %s but %s in %s, so populations are compared over partly different loci; a smaller g, or Stacks' -p equal to the number of populations, evens this out",
+                .big(max(ar_n)), x$richness$population[which.max(ar_n)],
+                .big(min(ar_n)), x$richness$population[which.min(ar_n)]),
+      ok = "Ar is averaged over nearly the same loci in every population", brief = hap)
+  add("ar_undefined", all(is.na(x$richness$Ar)),
+      look = sprintf("Ar is undefined for every population: no locus has any population at g = %d gene copies or more; use a smaller g",
+                     st$g),
+      brief = hap)
+  add("complete_case", st$complete_case && st$n_records_used / st$n_records < 0.5,
+      "complete_case dropped most records for missing data; check poor libraries.",
+      ok = NULL)
+
+  if (st$is_haplotype && any(st$sites > 0)) {
+    add("sites_ignored", TRUE, "`sites` was ignored: per-site values need the SNP VCF.")
+  } else if (!any(st$ok_sites) && any(st$sites > 0)) {
+    add("sites_ignored", TRUE, "`sites` was ignored: every value is smaller than the number of variant records.")
+  } else if (!is.null(x$autosomal)) {
+    ## Some populations can have no per-site value while others do (a `sites` value
+    ## smaller than the population's variant records is ignored for that
+    ## population). The table then shows NA for it; say why.
+    a <- x$autosomal
+    idx <- which(!is.finite(a$sites_used))
+    if (length(idx)) {
+      why <- vapply(idx, function(i) {
+        given <- unname(st$sites)[i]
+        if (is.finite(given) && given > 0)
+          sprintf("%s (its `sites` value, %s, is smaller than its %s variant records)",
+                  a$population[i], .big(given), .big(unname(st$variant_records)[i]))
+        else sprintf("%s (no `sites` value was given for it)", a$population[i])
+      }, character(1))
+      add("sites_partial", TRUE,
+          look = paste0("no per-site value for ", paste(why, collapse = "; "),
+                        "; pass the `Sites` from the All-positions block of populations.sumstats_summary.tsv"))
+    }
+    add("sites_used", FALSE,
+        ok = "per-site values divide by each population's own sequenced sites; that count is right only if nothing was filtered after Stacks populations (see ?diversity_stats)",
+        ok_tag = "info")
+  }
+
   if (isTRUE(st$se_individuals)) {
     share <- st$jackknife_boundary
     inflated <- names(share)[is.finite(share) & share > .jackknife_boundary_share]
-    if (length(inflated))
-      out <- c(out, sprintf("_se_ind and _se_combined (mainly He's) are probably too large for %s (many records with only 2 genotyped individuals); a higher min_n avoids it.",
-                            paste(inflated, collapse = ", ")))
+    add("individual_se_inflated", length(inflated) > 0L,
+        message = sprintf("_se_ind and _se_combined (mainly He's) are probably too large for %s (many records with only 2 genotyped individuals); a higher min_n avoids it.",
+                          paste(inflated, collapse = ", ")))
   } else {
-    out <- c(out, "_se holds the individuals fixed. For Ho, He and Fis, report _se_combined: re-run with se_individuals = TRUE (see ?diversity_stats).")
+    add("individual_se_off", TRUE,
+        "_se holds the individuals fixed. For Ho, He and Fis, report _se_combined: re-run with se_individuals = TRUE (see ?diversity_stats).",
+        brief = FALSE)
   }
+  checks
+}
+
+## Not exported. The short warnings print.raddiv_diversity() shows: the
+## `message` of each fired check. The summary() reports explain each of them.
+.diversity_warnings <- function(x) {
+  out <- character(0)
+  for (ch in .diversity_checks(x))
+    if (ch$fired && !is.null(ch$message)) out <- c(out, ch$message)
   out
 }
 
@@ -578,15 +721,140 @@ print.raddiv_diversity <- function(x, ...) {
 }
 
 #' @rdname diversity_stats
+#' @param details For `summary()`: `FALSE` (the default) prints a short view --
+#'   the main results as `estimate (SE)` with the one recommended standard
+#'   error for each statistic, what to take from this run, and a list of
+#'   checks. `TRUE` prints the full report: every uncertainty column, the
+#'   estimators, the filters and every explanation. Either way, the object
+#'   returned holds the tables the short view prints, in `$tables` (see "Tables
+#'   for a paper").
 #' @export
-summary.raddiv_diversity <- function(object, ...) {
-  structure(list(result = object), class = "summary.raddiv_diversity")
+summary.raddiv_diversity <- function(object, details = FALSE, ...) {
+  .check_flag(details, "details")
+  site <- .diversity_per_site(object)
+  ## The tables the short view prints, so a table for a paper can be built from
+  ## exactly what the summary shows (see "Tables for a paper" in ?diversity_stats).
+  tables <- c(list(results = .diversity_results(object)$table),
+              if (!is.null(site)) list(per_site = site$table))
+  structure(list(result = object, details = details, tables = tables),
+            class = "summary.raddiv_diversity")
 }
 
 #' @export
 print.summary.raddiv_diversity <- function(x, ...) {
-  .diversity_report(x$result)
+  if (isTRUE(x$details)) .diversity_report(x$result) else .diversity_brief(x$result)
   invisible(x)
+}
+
+## Not exported. The RESULTS table of the short summary, and the legend under
+## it. One row per population, one "estimate (SE)" column per statistic, each
+## with the ONE recommended standard error (see .coverage in R/report_text.R):
+##   Ho, He, Fis   _se_combined (SE over loci AND individuals), or the locus
+##                 _se when se_individuals = FALSE
+##   Ar, privAr    _se (SE over RAD loci only)
+## A SNP VCF shows Ho, He, pct_poly; a haplotype VCF shows Fis, Ar, privAr,
+## which is what each run says to take.
+.diversity_results <- function(x) {
+  st <- x$settings
+  pp <- x$per_population
+  combined <- isTRUE(st$se_individuals) && "Ho_se_combined" %in% names(pp)
+  se_of <- function(df, stat) df[[paste0(stat, if (combined) "_se_combined" else "_se")]]
+  tab <- data.frame(population = pp$population, n = pp$n, stringsAsFactors = FALSE,
+                    check.names = FALSE)
+  if (st$is_haplotype) {
+    rich <- x$richness[match(pp$population, x$richness$population), ]
+    tab[["Fis (SE)"]] <- .est_se(pp$Fis, se_of(pp, "Fis"))
+    tab[["Ar (SE)"]] <- .est_se(rich$Ar, rich$Ar_se)
+    tab[["privAr (SE)"]] <- .est_se(rich$privAr, rich$privAr_se)
+  } else {
+    tab[["Ho (SE)"]] <- .est_se(pp$Ho, se_of(pp, "Ho"))
+    tab[["He (SE)"]] <- .est_se(pp$He, se_of(pp, "He"))
+    tab[["pct_poly (%)"]] <- sprintf("%.1f", pp$pct_poly)
+  }
+  legend <- if (st$is_haplotype) {
+    c(sub("{g}", st$g, .report_text$diversity_legend_hap, fixed = TRUE),
+      if (combined) c("Fis SE counts variation among RAD loci and among individuals.",
+                      sprintf("In simulations its 95%% intervals held the truth %s of the time.",
+                              .coverage$combined))
+      else "Fis SE counts variation among RAD loci only.",
+      "Ar and privAr SE count variation among RAD loci only.",
+      sprintf("In simulations their 95%% intervals held the truth %s of the time.",
+              .coverage$loci))
+  } else {
+    c(.report_text$diversity_legend_snp[1L],
+      if (combined) c("          SE counts variation among RAD loci and among individuals.",
+                      sprintf("          In simulations its 95%% intervals held the truth %s of the time.",
+                              .coverage$combined))
+      else "          SE counts variation among RAD loci only.",
+      .report_text$diversity_legend_snp[2L])
+  }
+  list(table = tab, legend = legend, combined = combined)
+}
+
+## Not exported. The PER SEQUENCED SITE table of the short summary (SNP VCF
+## with `sites`): Ho and He scaled to every sequenced site, each with the same
+## recommended SE as Ho and He.
+.diversity_per_site <- function(x) {
+  a <- x$autosomal
+  if (is.null(a)) return(NULL)
+  combined <- "Ho_autosomal_se_combined" %in% names(a)
+  se_of <- function(stat) a[[paste0(stat, "_autosomal", if (combined) "_se_combined" else "_se")]]
+  tab <- data.frame(population = a$population, stringsAsFactors = FALSE, check.names = FALSE)
+  sites <- unique(a$sites_used[is.finite(a$sites_used)])
+  if (length(sites) > 1L) tab[["sites"]] <- ifelse(is.finite(a$sites_used), .big(a$sites_used), "NA")
+  tab[["Ho_autosomal (SE)"]] <- .est_se(a$Ho_autosomal, se_of("Ho"))
+  tab[["He_autosomal (SE)"]] <- .est_se(a$He_autosomal, se_of("He"))
+  list(table = tab, sites = if (length(sites) == 1L) sites else NULL)
+}
+
+## Not exported. The short summary(): what was run, the results as
+## estimate (SE), what to take from this run, and the checks. `summary(x,
+## details = TRUE)` prints the full report (.diversity_report()).
+.diversity_brief <- function(x) {
+  st <- x$settings
+  cat(sprintf("DIVERSITY: %d populations (%d individuals), %s\n", st$n_pops,
+              sum(st$n_individuals),
+              if (st$is_haplotype) sprintf("%s RAD loci (haplotype VCF)", .big(st$n_loci))
+              else sprintf("%s SNPs on %s RAD loci (SNP VCF)", .big(st$n_records_used),
+                           .big(st$n_loci))))
+  res <- .diversity_results(x)
+  if (!res$combined)
+    .legend("Standard errors count RAD loci only: se_individuals = FALSE was set.",
+            "For Ho, He and Fis re-run with the default to get the SE to report.")
+
+  .section("RESULTS   each cell is estimate (standard error)")
+  .print_compact(res$table)
+  .legend(res$legend)
+
+  site <- .diversity_per_site(x)
+  if (!is.null(site)) {
+    .section("PER SEQUENCED SITE", if (!is.null(site$sites)) sprintf("   (%s sites)", .big(site$sites)))
+    .print_compact(site$table)
+    .legend("Ho and He scaled to every sequenced site; same SE, scaled the same way.",
+            "He_autosomal is nucleotide diversity (pi).")
+  }
+
+  .section("TAKE FROM THIS RUN:  ",
+           if (st$is_haplotype) "Fis, Ar, privAr."
+           else paste0("Ho, He, pct_poly", if (!is.null(x$autosomal)) ", Ho_autosomal, He_autosomal", "."))
+  .legend(if (st$is_haplotype) .report_text$diversity_take_haplotype_short
+          else .report_text$diversity_take_snp_short)
+
+  .section("CHECKS")
+  checks <- lapply(.diversity_checks(x), function(ch) {
+    if (!ch$brief) return(NULL)
+    if (ch$fired) .check("look", ch$look)
+    else if (!is.null(ch$ok)) .check(ch$ok_tag, ch$ok)
+  })
+  .check_lines(checks)
+
+  .section("Not shown here: the other SEs and intervals, FIS by call rate, the two He",
+           "\nestimators, and the filters applied.")
+  .legend("summary(x, details = TRUE)   explains every column and check",
+          if (st$is_haplotype) "x$per_population, x$richness   hold every SE and interval"
+          else if (!is.null(x$autosomal)) "x$per_population, x$autosomal   hold every SE and interval"
+          else "x$per_population   holds every SE and interval")
+  invisible(NULL)
 }
 
 ## Not exported. The full diversity report (summary() of a result, and what
@@ -618,22 +886,49 @@ print.summary.raddiv_diversity <- function(x, ...) {
     note(.report_text$diversity_available_data)
   }
   if (st$nboot > 0)
-    cat("  95% CI from ", .big(st$nboot), " replicates, boot=\"", st$boot,
-        "\" (see vignette(\"rationale\"), \"Why not bootstrap individuals?\")\n", sep = "")
+    cat("  95% CI from ", .big(st$nboot), " replicates, boot=\"", st$boot, "\"\n", sep = "")
   rule()
-  cat("\n")
 
-  .print_table(.round_diversity_table(x$per_population, "per_population"))
+  ## The same RESULTS table as the short summary, then what to take from this
+  ## run (it used to come last), then every column.
+  res <- .diversity_results(x)
+  .section("RESULTS   each cell is estimate (standard error)")
+  .print_compact(res$table)
+  .legend(res$legend)
+  site <- .diversity_per_site(x)
+  if (!is.null(site)) {
+    .section("PER SEQUENCED SITE", if (!is.null(site$sites)) sprintf("   (%s sites)", .big(site$sites)))
+    .print_compact(site$table)
+    .legend("Ho and He scaled to every sequenced site; same SE, scaled the same way.",
+            "He_autosomal is nucleotide diversity (pi).")
+  }
+  cat("\n")
+  rule("-")
+  note(if (st$is_haplotype) .report_text$diversity_take_haplotype else .report_text$diversity_take_snp)
+  note("", .report_text$diversity_take_common)
+  see("3. Which Stacks file for which statistic")
+  rule("-")
+
+  ## FULL TABLES: one small table per statistic, every row labelled, so nothing
+  ## wraps into rows without a population name.
+  combined <- isTRUE(st$se_individuals)
+  bnote <- function(stat) if (combined) .report_text$diversity_block_notes[[stat]]
+                          else .report_text$diversity_block_notes_loci_only[[stat]]
+  cat("\nFULL TABLES -- every uncertainty column, one small table per statistic\n\n")
+  .print_blocks(.stat_blocks(.round_diversity_table(x$per_population, "per_population"),
+                             c("Ho", "He", "Fis", "pct_poly"), always = "n"),
+                list(Ho = bnote("Ho"), He = bnote("He"), Fis = bnote("Fis"),
+                     pct_poly = "pct_poly has no SE."))
   note(.report_text$diversity_se_columns)
-  note(if (isTRUE(st$se_individuals)) .report_text$diversity_se_ind_columns
+  note(if (combined) .report_text$diversity_se_ind_columns
        else .report_text$diversity_se_loci_only)
   cat("\n")
 
-  .print_table(.round_diversity_table(x$richness, "richness"))
-  note("_se columns: delete-one-block jackknife over RAD loci, same as above.",
-       paste("Ar_n / privAr_n: how many of the", .big(n_used),
-             "loci had a defined value for that population"),
-       .report_text$diversity_ar_n)
+  .print_blocks(.stat_blocks(.round_diversity_table(x$richness, "richness"),
+                             c("Ar", "privAr", "priv_total")),
+                list(Ar = bnote("Ar"), privAr = bnote("privAr"),
+                     priv_total = "priv_total is privAr added up over loci."))
+  note(sprintf(.report_text$diversity_ar_n_columns, .big(n_used)))
   if (min(x$richness$privAr_n) < 0.5 * n_used)
     note(sprintf("WARNING: privAr_n is below 50%% of loci for at least one population --"),
          "its rarefied private richness rests on a minority of loci. Consider a",
@@ -643,16 +938,19 @@ print.summary.raddiv_diversity <- function(x, ...) {
          "averaged over the records where it has >= g gene copies, so populations are",
          "compared over partly different loci. A smaller g, or Stacks' -p equal to the",
          "number of populations, evens this out.")
-  note("Ar and privAr are PER LOCUS (the HP-RARE / ADZE convention);",
-       paste("priv_total is the dataset-wide sum over privAr_n loci. Private = absent from all",
-             st$n_pops - 1, "others,"),
-       "so it is not comparable to a dataset with a different number of populations.")
+  note("Ar and privAr are PER LOCUS (the HP-RARE / ADZE convention).",
+       "priv_total is the sum over the privAr_n loci. Private means absent from",
+       if (st$n_pops == 2L) "the other population, so it is not comparable to a dataset with a"
+       else sprintf("all %d other populations, so it is not comparable to a dataset with a",
+                    st$n_pops - 1L),
+       "different number of populations.")
   ar <- x$richness$Ar
   if (all(is.na(ar))) {
     note(sprintf("NOTE: Ar is undefined for every population -- no locus has any population at >= g = %d", st$g),
          "gene copies (see Ar_n above). That is too little data at this rarefaction target,",
          "not a biallelic-SNP ceiling; try a smaller g.")
-  } else if (max(ar, na.rm = TRUE) <= 2.001) {
+  } else if (!st$is_haplotype && max(ar, na.rm = TRUE) <= 2.001) {
+    ## SNP VCF only: a low mean Ar on haplotype data is not a biallelic ceiling.
     note(.report_text$diversity_ar_capped)
   }
 
@@ -661,22 +959,24 @@ print.summary.raddiv_diversity <- function(x, ...) {
   .print_table(.round_diversity_table(x$estimator_comparison, "estimator_comparison"))
   n_ind <- st$n_individuals
   note(.report_text$diversity_fis_sensitivity,
-       sprintf("Compare against `Pi`, never `Exp_Het`: Pi = Exp_Het * 2n/(2n-1) = %s.",
-               paste(sprintf("x%.3f at n=%d", (2 * n_ind) / (2 * n_ind - 1), n_ind),
-                     collapse = ", ")))
+       "Compare against `Pi`, never `Exp_Het`: Pi = Exp_Het * 2n/(2n-1), which is",
+       paste0(paste(sprintf("x%.3f at n=%d", (2 * n_ind) / (2 * n_ind - 1), n_ind),
+                    collapse = ", "), "."))
   see("Appendix A. Stacks columns and RADdiversity")
 
   pf <- st$prior_filters
   if (!is.null(pf)) {
     cat("\nWhat the data look filtered at (before or during this run)",
-        if (!is.null(pf$n_samples)) sprintf(", over the %d individuals in the popmap", pf$n_samples),
+        if (!is.null(pf$n_samples)) sprintf("\n  over the %d individuals in the popmap", pf$n_samples),
         "\n", sep = "")
-    note(sprintf("rarest allele in any variable record: %s copies; %.1f%% of %s variable records have an allele seen once or twice",
-                 pf$min_allele_count, 100 * pf$rare_share, .big(pf$n_variable)),
-         sprintf("lowest record call rate: %.2f pooled; within populations %s",
-                 pf$min_call_pooled,
-                 paste(sprintf("%s %.2f", names(pf$min_call_by_pop), pf$min_call_by_pop),
-                       collapse = ", ")),
+    note(sprintf("rarest allele in any variable record: %s %s",
+                 pf$min_allele_count, if (pf$min_allele_count == 1) "copy" else "copies"),
+         sprintf("%.1f%% of %s variable records have an allele seen once or twice",
+                 100 * pf$rare_share, .big(pf$n_variable)),
+         sprintf("lowest record call rate: %.2f pooled", pf$min_call_pooled),
+         paste("  and within each population:",
+               paste(sprintf("%s %.2f", names(pf$min_call_by_pop), pf$min_call_by_pop),
+                     collapse = ", ")),
          sprintf("highest record Ho (pooled): %.2f", pf$max_ho))
     if (isTRUE(pf$looks_mac_filtered)) note(.report_text$diversity_looks_mac_filtered)
     note(.report_text$diversity_prior_filters)
@@ -708,11 +1008,13 @@ print.summary.raddiv_diversity <- function(x, ...) {
                else st$variant_records
     site_range <- range(sites[ok_sites])
     note("Scaled per population: He x (variant records with data in that population)",
-         sprintf("/ (its sequenced sites) -- see `variant_records` and `sites_used` (%s sites).",
+         "/ (its sequenced sites). See `variant_records` and `sites_used`",
+         sprintf("(%s sites).",
                  if (site_range[1] == site_range[2]) .big(site_range[1])
                  else paste0(.big(site_range[1]), "-", .big(site_range[2]))),
-         sprintf("He estimated using %s of %s records (%.1f%% of them, %s).",
-                 .big(n_used), .big(n_rec), 100 * retained, mode_text))
+         sprintf("He was estimated from %s of %s records (%.1f%% of them),",
+                 .big(n_used), .big(n_rec), 100 * retained),
+         sprintf("using %s.", mode_text))
     if (any(!ok_sites)) {
       reasons <- vapply(names(sites)[!ok_sites], function(p) {
         if (sites[[p]] > 0)
@@ -722,7 +1024,11 @@ print.summary.raddiv_diversity <- function(x, ...) {
       }, character(1))
       note("No autosomal value for:", reasons)
     }
-    .print_table(.round_diversity_table(x$autosomal, "autosomal"))
+    per_site_tab <- .round_diversity_table(x$autosomal, "autosomal")
+    .print_compact(per_site_tab[, c("population", "sites_used", "variant_records")])
+    .print_blocks(.stat_blocks(per_site_tab, c("Ho_autosomal", "He_autosomal")),
+                  list(Ho_autosomal = if (combined) .report_text$diversity_block_notes$Ho_autosomal,
+                       He_autosomal = if (combined) .report_text$diversity_block_notes$He_autosomal))
     note(.report_text$diversity_autosomal_meaning)
     see("Appendix A. Stacks columns and RADdiversity")
     if (st$complete_case && retained < 0.5)
@@ -737,13 +1043,6 @@ print.summary.raddiv_diversity <- function(x, ...) {
       note(.report_text$diversity_per_ascertained_record)
     see("Heterozygosity per sequenced site")
   }
-
-  cat("\n")
-  rule("-")
-  note(if (st$is_haplotype) .report_text$diversity_take_haplotype else .report_text$diversity_take_snp)
-  note("", .report_text$diversity_take_common)
-  see("3. Which Stacks file for which statistic")
-  rule("-")
 
   cat("\nFor Weir & Cockerham FST, Jost's D and Weir & Goudet's beta between these\n")
   cat("populations, run differentiation_stats() on the same file.\n")

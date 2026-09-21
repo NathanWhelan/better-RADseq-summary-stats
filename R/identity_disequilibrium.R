@@ -136,8 +136,8 @@
 #' heterozygosity is correlated across loci within an individual and it does
 #' not average out: locus-based SEs for Ho and FIS are then too small. A g2
 #' interval above 0 is that signal. Report `_se_combined` from
-#' `diversity_stats(se_individuals = TRUE)` (see "How standard errors are
-#' calculated" in [diversity_stats()]) and compare populations with
+#' [diversity_stats()] (computed by default; see "How standard errors are
+#' calculated" there) and compare populations with
 #' [het_between_pops()]. Relatives in a sample also raise g2; screen for them
 #' with [kinship_check()].
 #'

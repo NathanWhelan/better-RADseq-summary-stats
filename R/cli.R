@@ -15,9 +15,9 @@
 #
 #  Nothing here calls quit(): .cli_main() returns the exit status and the
 #  shim quits with it, so these functions stay safe to call from an
-#  interactive R session. The scripts print the full report (summary() of
-#  the result) and write their tables to --outdir (default: the current
-#  directory). Their bootstraps use --seed=2024 unless told otherwise, so a
+#  interactive R session. The scripts print the short summary (summary() of
+#  the result; --details prints the full report) and write their tables to
+#  --outdir (default: the current directory). Their bootstraps use --seed=2024 unless told otherwise, so a
 #  script run is reproducible by default.
 #
 ###############################################################################
@@ -45,10 +45,16 @@
     "  --seed=N         random seed for the bootstrap (default 2024)",
     "  --complete-case  use a record only if every individual of every",
     "                   population is genotyped there (Schmidt et al. 2021)",
-    "  --se-individuals also compute SEs over individuals, and _se_combined",
-    "                   (locus + individual): report it for Ho, He and Fis"),
+    "  --no-se-individuals",
+    "                   skip the SEs over individuals. By default they are",
+    "                   computed, with _se_combined (locus + individual): report",
+    "                   _se_combined for Ho, He and Fis. Skipping saves about 30%",
+    "                   of the run time",
+    "  --details        print the full report (every uncertainty column, the",
+    "                   estimators, filters and explanations) instead of the",
+    "                   short summary"),
   het_between_pops = c(
-    "Usage: Rscript het_between_pops.R <vcf> <popmap.tsv> [--min-call=X] [--outdir=DIR] [--seed=N]",
+    "Usage: Rscript het_between_pops.R <vcf> <popmap.tsv> [--min-call=X] [--outdir=DIR] [--seed=N] [--details]",
     "       Rscript het_between_pops.R <vcf> <popmap.tsv> [min_call] [outdir]",
     "       Rscript het_between_pops.R --selftest",
     "",
@@ -60,7 +66,10 @@
     "                 within each population, for the locus to be used",
     "                 (default 0.9)",
     "  --outdir=DIR   where to write the TSV files (default: current directory)",
-    "  --seed=N       random seed for the g2 bootstrap (default 2024)"),
+    "  --seed=N       random seed for the g2 bootstrap (default 2024)",
+    "  --details      print the full report (every test column, the missingness",
+    "                 check and the notes on interpretation) instead of the",
+    "                 short summary"),
   diversity_core = c(
     "Usage: Rscript diversity_core.R --selftest",
     "",
@@ -130,8 +139,13 @@
 
   run <- switch(cmd,
     diversity_stats = function() {
+      ## --se-individuals was the switch that turned the individual SEs on.
+      ## They are now on by default, so the old switch gets its own message.
+      if ("--se-individuals" %in% args)
+        stop("--se-individuals is no longer needed: the SEs over individuals are now on ",
+             "by default. Use --no-se-individuals to turn them off.", call. = FALSE)
       p <- .cli_parse(args, c("g", "nboot", "boot", "sites", "min-n", "outdir", "seed"),
-                      c("complete-case", "se-individuals"))
+                      c("complete-case", "no-se-individuals", "details"))
       if (length(p$positional) != 2L) {
         usage()
         return(1L)
@@ -148,14 +162,14 @@
                                 sites = .cli_sites(f[["sites"]]),
                                 min_n = .cli_number(f[["min-n"]], "min-n", 2L),
                                 complete_case = "complete-case" %in% p$switches,
-                                se_individuals = "se-individuals" %in% p$switches,
+                                se_individuals = !("no-se-individuals" %in% p$switches),
                                 outdir = if (is.null(f[["outdir"]])) "." else f[["outdir"]],
                                 seed = .cli_number(f[["seed"]], "seed", 2024L))
-      print(summary(result))
+      print(summary(result, details = "details" %in% p$switches))
       0L
     },
     het_between_pops = function() {
-      p <- .cli_parse(args, c("min-call", "outdir", "seed"), "selftest")
+      p <- .cli_parse(args, c("min-call", "outdir", "seed"), c("selftest", "details"))
       if ("selftest" %in% p$switches) {
         het_between_pops_selftest()
         return(0L)
@@ -175,7 +189,7 @@
                                  min_call = .cli_number(min_call, "min-call", 0.9),
                                  outdir = outdir,
                                  seed = .cli_number(p$flags[["seed"]], "seed", 2024L))
-      print(summary(result))
+      print(summary(result, details = "details" %in% p$switches))
       0L
     },
     diversity_core = function() {

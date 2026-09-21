@@ -83,8 +83,25 @@ test_that("a warning flags individual SEs inflated by records with only 2 genoty
 
 test_that("the report explains the _se_ind columns only when they are there", {
   d <- sim_two_pops(rep(0.1, 12), 200, seed = 5)
-  expect_true(any(grepl("_se_ind columns", capture.output(print(summary(run_ind(d)))))))
-  plain <- suppressMessages(diversity_stats(d$H, d$popmap, g = 4, nboot = 0, stem = "j"))
-  expect_false(any(grepl("_se_ind", capture.output(print(summary(plain))))))
+  expect_true(any(grepl("_se_ind columns", capture.output(print(summary(run_ind(d), details = TRUE))))))
+  plain <- suppressMessages(diversity_stats(d$H, d$popmap, g = 4, nboot = 0, stem = "j",
+                                            se_individuals = FALSE))
+  expect_false(any(grepl("_se_ind", capture.output(print(summary(plain, details = TRUE))))))
+  expect_false(any(grepl("_se_ind|_se_combined", capture.output(print(summary(plain))))))
   expect_false("Ho_se_ind" %in% names(plain$per_population))
+})
+
+test_that("the individual SEs are on by default, and se_individuals = FALSE turns them off", {
+  d <- sim_two_pops(rep(0.1, 12), 200, seed = 5)
+  on <- suppressMessages(diversity_stats(d$H, d$popmap, g = 4, nboot = 0, stem = "j"))
+  expect_true(on$settings$se_individuals)
+  expect_true(all(c("Ho_se_ind", "Ho_se_combined", "He_se_combined", "Fis_se_combined") %in%
+                    names(on$per_population)))
+  off <- suppressMessages(diversity_stats(d$H, d$popmap, g = 4, nboot = 0, stem = "j",
+                                          se_individuals = FALSE))
+  expect_false(off$settings$se_individuals)
+  expect_false(any(grepl("_se_ind|_se_combined", names(off$per_population))))
+  ## Turning them off brings back the note that the SEs hold individuals fixed.
+  expect_true(any(grepl("se_individuals = TRUE", capture.output(print(off)))))
+  expect_false(any(grepl("se_individuals = TRUE", capture.output(print(on)))))
 })

@@ -378,8 +378,9 @@ locus_allele_stats <- function(H) {
 #' richness, by an amount that depends on sample size. The threshold also
 #' affects inferences of population structure (Linck & Battey 2019). Report
 #' the threshold used, and compare diversity values only between datasets
-#' filtered the same way. [diversity_stats()]'s `summary()` shows the lowest
-#' allele count remaining in the data.
+#' filtered the same way. `summary(details = TRUE)` of a [diversity_stats()]
+#' result shows the lowest allele count remaining in the data (its short
+#' `summary()` says whether the data look filtered by minor allele count).
 #'
 #' **Which samples.** This uses every sample in `H`, including any that are
 #' not in your popmap (an outgroup, say). Run [filter_samples()] first to base

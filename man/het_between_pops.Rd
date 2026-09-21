@@ -20,7 +20,7 @@ het_between_pops(
 
 \method{print}{raddiv_het}(x, ...)
 
-\method{summary}{raddiv_het}(object, ...)
+\method{summary}{raddiv_het}(object, details = FALSE, ...)
 }
 \arguments{
 \item{vcf}{Path to a Stacks VCF (\code{populations.snps.vcf} or
@@ -63,6 +63,15 @@ your session's random-number stream as it was.}
 \item{x, object}{A \code{raddiv_het} object, as returned by \code{het_between_pops()}.}
 
 \item{...}{Ignored.}
+
+\item{details}{For \code{summary()}: \code{FALSE} (the default) prints a short view --
+the two tests (heterozygosity, and inbreeding F) as the combined test's
+difference with its SE, 95\% interval and p-value, the populations with
+their g2, what to report, and a list of checks. \code{TRUE} prints the full
+report: every test column (including the Welch and Wilcoxon p-values), the
+missingness check in full and the notes on interpretation. Either way, the
+object returned holds the tables the short view prints, in \verb{$tables} (see
+"Tables for a paper").}
 }
 \value{
 An object of class \code{raddiv_het}, a list of:
@@ -104,8 +113,11 @@ Gives each individual one value and compares populations with a test that
 counts both sources of uncertainty: which individuals were caught, and which
 loci were typed. It also adds a missingness-confound check and identity
 disequilibrium (g2) per population, which shows whether individuals differ
-in inbreeding. Printing the result shows the main tables; \code{summary()} shows
-the full report; \code{outdir} also writes the tables to TSV files.
+in inbreeding. Printing the result shows the main tables. \code{summary()} is
+short: the two tests, the populations with their g2, what to report and a
+list of checks. \code{summary(details = TRUE)} is the full report, with every test
+column and the notes on interpretation. \code{outdir} also writes the tables to
+TSV files.
 }
 \details{
 \strong{The test.} \code{diff} is the difference in mean individual value. Its
@@ -171,6 +183,21 @@ heterozygosity low and its F high; and it lowers its population's call
 rate, so fewer loci clear \code{min_call}. Remove it from the popmap (or with
 \code{\link[=filter_samples]{filter_samples()}}) if it was not meant to be analyzed.
 }
+\section{Tables for a paper}{
+
+Put in the table exactly what the short \code{summary()} reports.
+\code{summary(x)$tables} holds those tables as data frames: \code{heterozygosity} and
+\code{inbreeding} (one row per pair of populations, every pair: the difference as
+\code{difference (SE)}, its 95\% interval, \code{p (combined)} and Hedges' g; the p-value
+is Benjamini-Hochberg adjusted when there is more than one pair) and
+\code{populations} (n, loci, mean individual heterozygosity, its spread among
+individuals, mean F, and g2 with its 95\% interval). Report the combined test.
+The Welch and Wilcoxon p-values are for comparison, and a population's mean
+heterozygosity has no SE here, because populations are compared with the
+test, never by overlapping intervals; they are in \code{pairwise_tests}, for a
+supplement.
+}
+
 \examples{
 # A toy dataset shipped with the package (4 and 3 individuals -- far too
 # few for a real test, which needs individuals, not loci).
@@ -180,7 +207,9 @@ set.seed(1)
 res <- het_between_pops(vcf, popmap, min_call = 0.5)
 res                       # the main tables
 res$individual_heterozygosity
-summary(res)              # the full report, with the confound check and g2 explained
+summary(res)              # short: the two tests, the populations, the checks
+summary(res, details = TRUE)   # the full report, with every column explained
+summary(res)$tables$heterozygosity   # the table to put in a paper
 }
 \references{
 Cerca, J., Maurstad, M.F., Rochette, N.C., et al. (2021) Removing the bad

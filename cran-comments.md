@@ -4,19 +4,15 @@ This is a new submission to CRAN.
 
 ## R CMD check results
 
-Checked locally with `R CMD check --as-cran` (R 4.5.3, x86_64-conda-linux-gnu,
-Red Hat Enterprise Linux 8.10) and on win-builder (R-devel and R-release,
-R 4.6.1, Windows Server 2022).
+Checked locally with `R CMD check --as-cran --no-manual` (R 4.5.3,
+x86_64-conda-linux-gnu, Red Hat Enterprise Linux 8.10; there is no LaTeX on
+that machine, so the PDF manual was not built).
 
 0 errors | 0 warnings | 1 note
 
 * checking CRAN incoming feasibility ... NOTE
+  Maintainer: 'Nathan Whelan <nathan.whelan@gmail.com>'
   New submission
-
-  Possibly misspelled words in DESCRIPTION (Chesser, Cockerham, FIS, FST,
-  FSTAT, Genepop, Jost's, Nei, PLINK, RADpainter, VCF, heterozygosity):
-  these are all correct -- author surnames, standard population-genetics
-  statistic abbreviations, and software/format names.
 
 This NOTE is expected for a first submission and does not indicate a problem.
 

@@ -368,9 +368,10 @@ test_that("each filter adds a line to H$filter_log, and print(H) lists them", {
   pops <- list(popA = c("popA_1", "popA_3", "popA_4"), popB = c("popB_1", "popB_2", "popB_3"))
   H_samples <- filter_samples(H, pops, verbose = FALSE)
   H_depth <- filter_genotype_depth(H_samples, min_dp = 6, verbose = FALSE)
-  H_out <- H_depth |>
-    filter_mac(min_mac = 2, verbose = FALSE) |>
-    filter_call_rate(min_call = 0.5, verbose = FALSE)
+  ## Each filter takes an H and returns an H, so they chain (written without the
+  ## native pipe, which needs R 4.1; the package supports R 4.0).
+  H_out <- filter_call_rate(filter_mac(H_depth, min_mac = 2, verbose = FALSE),
+                            min_call = 0.5, verbose = FALSE)
   log <- H_out$filter_log
   expect_equal(log$filter, c("filter_samples", "filter_genotype_depth", "filter_mac",
                              "filter_call_rate"))

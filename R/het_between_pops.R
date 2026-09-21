@@ -55,8 +55,11 @@
 #' counts both sources of uncertainty: which individuals were caught, and which
 #' loci were typed. It also adds a missingness-confound check and identity
 #' disequilibrium (g2) per population, which shows whether individuals differ
-#' in inbreeding. Printing the result shows the main tables; `summary()` shows
-#' the full report; `outdir` also writes the tables to TSV files.
+#' in inbreeding. Printing the result shows the main tables. `summary()` is
+#' short: the two tests, the populations with their g2, what to report and a
+#' list of checks. `summary(details = TRUE)` is the full report, with every test
+#' column and the notes on interpretation. `outdir` also writes the tables to
+#' TSV files.
 #'
 #' @details
 #' **The test.** `diff` is the difference in mean individual value. Its
@@ -200,6 +203,18 @@
 #' David, P., Pujol, B., Viard, F., Castella, V. & Goudet, J. (2007) Reliable
 #' selfing rate estimates from imperfect population genetic data. *Molecular
 #' Ecology* 16:2474-2487. (g2.)
+#' @section Tables for a paper:
+#' Put in the table exactly what the short `summary()` reports.
+#' `summary(x)$tables` holds those tables as data frames: `heterozygosity` and
+#' `inbreeding` (one row per pair of populations, every pair: the difference as
+#' `difference (SE)`, its 95% interval, `p (combined)` and Hedges' g; the p-value
+#' is Benjamini-Hochberg adjusted when there is more than one pair) and
+#' `populations` (n, loci, mean individual heterozygosity, its spread among
+#' individuals, mean F, and g2 with its 95% interval). Report the combined test.
+#' The Welch and Wilcoxon p-values are for comparison, and a population's mean
+#' heterozygosity has no SE here, because populations are compared with the
+#' test, never by overlapping intervals; they are in `pairwise_tests`, for a
+#' supplement.
 #' @examples
 #' # A toy dataset shipped with the package (4 and 3 individuals -- far too
 #' # few for a real test, which needs individuals, not loci).
@@ -209,7 +224,9 @@
 #' res <- het_between_pops(vcf, popmap, min_call = 0.5)
 #' res                       # the main tables
 #' res$individual_heterozygosity
-#' summary(res)              # the full report, with the confound check and g2 explained
+#' summary(res)              # short: the two tests, the populations, the checks
+#' summary(res, details = TRUE)   # the full report, with every column explained
+#' summary(res)$tables$heterozygosity   # the table to put in a paper
 #' @export
 het_between_pops <- function(vcf, popmap, min_call = 0.9, min_loci = 50L, nboot_g2 = 1000L,
                              outdir = NULL, stem = NULL, seed = NULL, verbose = TRUE) {
@@ -433,7 +450,9 @@ het_between_pops <- function(vcf, popmap, min_call = 0.9, min_loci = 50L, nboot_
 ## homozygous, a difference between populations can be a difference in
 ## library quality. Only individuals with a heterozygosity on the pooled loci
 ## take part. Returns list(no_variation, too_few, overall, within):
-##   no_variation  every individual called at every pooled locus
+##   no_variation  call rate does not vary among the individuals that take part
+##                 (all called at every pooled locus; an individual with no
+##                 heterozygosity, such as a failed library, does not take part)
 ##   too_few       fewer than 3 individuals called at any pooled locus
 ##   overall  one row: correlation r of call rate with heterozygosity, its
 ##            p-value, n, and the gap in mean call rate between populations
@@ -824,7 +843,7 @@ print.raddiv_het <- function(x, ...) {
   cat("\n")
   for (w in .het_warnings(x)) cat("NOTE:", w, "\n")
   cat("Also in the result: $individual_heterozygosity, $g2, $missingness_confound\n")
-  cat("summary() prints the full report, with the confound check and g2 explained.\n")
+  cat("summary() shows the two tests and what to check; summary(x, details = TRUE) has every column.\n")
   invisible(x)
 }
 
@@ -843,24 +862,202 @@ print.raddiv_het <- function(x, ...) {
   if (!is.null(cf$overall) && cf$overall$call_rate_gap > 0.02)
     out <- c(out, "mean call rate differs between populations by more than 2 percentage points.")
   if (any(x$g2$g2_lo > 0, na.rm = TRUE))
-    out <- c(out, "g2 > 0 in some population: individuals differ in inbreeding; report diversity_stats(se_individuals = TRUE)'s _se_combined.")
+    out <- c(out, "g2 > 0 in some population: individuals differ in inbreeding; report _se_combined from diversity_stats() (computed by default).")
   out
 }
 
 #' @rdname het_between_pops
+#' @param details For `summary()`: `FALSE` (the default) prints a short view --
+#'   the two tests (heterozygosity, and inbreeding F) as the combined test's
+#'   difference with its SE, 95% interval and p-value, the populations with
+#'   their g2, what to report, and a list of checks. `TRUE` prints the full
+#'   report: every test column (including the Welch and Wilcoxon p-values), the
+#'   missingness check in full and the notes on interpretation. Either way, the
+#'   object returned holds the tables the short view prints, in `$tables` (see
+#'   "Tables for a paper").
 #' @export
-summary.raddiv_het <- function(object, ...) {
-  structure(list(result = object), class = "summary.raddiv_het")
+summary.raddiv_het <- function(object, details = FALSE, ...) {
+  .check_flag(details, "details")
+  ## The tables the short view prints, with every pair (the short view shows at
+  ## most 5 per question), so a table for a paper can be built from exactly what
+  ## it shows.
+  structure(list(result = object, details = details,
+                 tables = list(
+                   heterozygosity = .het_pair_table(object$pairwise_tests,
+                                                    max_rows = nrow(object$pairwise_tests))$table,
+                   inbreeding = .het_pair_table(object$pairwise_F_tests,
+                                                max_rows = nrow(object$pairwise_F_tests))$table,
+                   populations = .het_population_table(object))),
+            class = "summary.raddiv_het")
 }
 
 #' @export
 print.summary.raddiv_het <- function(x, ...) {
-  .het_report(x$result)
+  if (isTRUE(x$details)) .het_report(x$result) else .het_brief(x$result)
   invisible(x)
 }
 
-## Not exported. The full heterozygosity report (summary() of a result, and
-## what the command-line script prints).
+## Not exported. One question's pairwise tests as a short table: the COMBINED
+## test only (the one to report): the difference in means with its SE, its 95%
+## interval, its p-value (Benjamini-Hochberg adjusted when there is more than
+## one pair) and Hedges' g. Welch's and Wilcoxon's p-values are for comparison
+## and stay in the full report. At most `max_rows` pairs (5 in the short view,
+## so that it stays short with many populations), most significant first.
+.het_pair_table <- function(tab, max_rows = 5L) {
+  shown <- if (nrow(tab) <= max_rows) tab
+           else tab[utils::head(order(tab$p_combined_BH), max_rows), ]
+  multiple <- nrow(tab) > 1L
+  d <- .se_decimals(shown$se_combined)
+  out <- data.frame(pair = paste(shown$pop1, "-", shown$pop2), stringsAsFactors = FALSE,
+                    check.names = FALSE)
+  out[["difference (SE)"]] <- .est_se(shown$diff, shown$se_combined)
+  out[["95% CI"]] <- sprintf("%.*f to %.*f", d, shown$ci_lo, d, shown$ci_hi)
+  out[[if (multiple) "p (combined, BH)" else "p (combined)"]] <-
+    .format_p(if (multiple) shown$p_combined_BH else shown$p_combined)
+  out[["Hedges g"]] <- sprintf("%.2f", shown$hedges_g)
+  list(table = out, n_pairs = nrow(tab), n_shown = nrow(shown))
+}
+
+## Not exported. The POPULATIONS table of the short summary: each population's
+## mean individual heterozygosity (no SE: populations are compared with the
+## tests, never by overlapping intervals), its spread among individuals, mean F,
+## and g2 with its 95% interval.
+.het_population_table <- function(x) {
+  ps <- x$population_summary
+  g2 <- x$g2[match(ps$population, x$g2$population), ]
+  data.frame(population = ps$population, n = ps$n, n_loci = ps$n_loci,
+             mean_het = sprintf("%.4f", ps$mean_het), sd = sprintf("%.4f", ps$sd),
+             mean_F = sprintf("%.4f", ps$mean_F),
+             `g2 (95% CI)` = sprintf("%.4f (%.4f to %.4f)", g2$g2, g2$g2_lo, g2$g2_hi),
+             stringsAsFactors = FALSE, check.names = FALSE)
+}
+
+## Not exported. The overall (omnibus) test for one question, as one sentence
+## (3 or more populations only).
+.het_omnibus_line <- function(x, statistic, full = FALSE) {
+  om <- x$omnibus
+  if (is.null(om)) return(NULL)
+  row <- om[om$statistic == statistic, , drop = FALSE]
+  if (!nrow(row)) return(NULL)
+  sprintf("Overall test across all %d populations (Welch's one-way ANOVA): p = %s. Read the pairs only if it is significant%s.",
+          x$settings$n_pops, .format_p(row$p_welch),
+          if (full) "; it counts individuals only, so confirm a pair by its combined p" else "")
+}
+
+## Not exported. The checks of a het_between_pops() result as .check() lists:
+## failed libraries, the missingness confound, the call-rate gap, and g2.
+.het_checks <- function(x) {
+  st <- x$settings
+  checks <- list()
+  add <- function(tag, text) checks[[length(checks) + 1L]] <<- .check(tag, text)
+
+  flagged <- st$flagged_individuals
+  if (length(flagged))
+    add("look", sprintf("KEPT, but they look like failed libraries: %s. Each rests on few loci yet counts as a full individual; remove them from the popmap if they were not meant to be analyzed",
+                        paste(flagged, collapse = ", ")))
+  else add("ok", "no individual looks like a failed library")
+
+  cf <- x$missingness_confound
+  if (isTRUE(cf$too_few)) {
+    add("info", "fewer than 3 individuals were called at any pooled locus; the missingness check needs more")
+  } else if (isTRUE(cf$no_variation)) {
+    add("ok", "call rate does not vary among the individuals checked, so it cannot confound the test")
+  } else if (!is.null(cf$overall)) {
+    if (is.finite(cf$overall$p_value) && cf$overall$p_value < 0.05 && cf$overall$r > 0)
+      add("look", "individuals with more missing data look LESS heterozygous (the allele-dropout signature); re-run with min_call = 1.0 before quoting the test")
+    else
+      add("ok", sprintf("heterozygosity does not track call rate (r = %+.2f, p = %.2g)",
+                        cf$overall$r, cf$overall$p_value))
+    if (cf$overall$call_rate_gap > 0.02)
+      add("look", "mean call rate differs between populations by more than 2 percentage points; that asymmetry is itself a candidate explanation")
+  }
+
+  g2 <- x$g2
+  above <- g2$population[which(g2$g2_lo > 0)]
+  if (length(above))
+    add("look", sprintf("individuals differ in inbreeding in %s (g2 above 0), so SEs over loci alone are too small for Ho and Fis: report _se_combined from diversity_stats() (computed by default)",
+                        paste(above, collapse = " and ")))
+  else
+    add("ok", "g2 is not above 0 in any population: no sign that individuals differ in inbreeding")
+  checks
+}
+
+## Not exported. What to report, for the short and the full view.
+.het_what_to_report <- function(x) {
+  c("Report the combined test: the difference, its SE and 95% CI, and p.",
+    "Heterozygosity reflects diversity and inbreeding together. Use the F test",
+    "for a question about inbreeding, and diversity_stats() to compare He itself.",
+    if (!is.null(x$omnibus))
+      "With 3+ populations, read the pairs only if the overall test is significant.")
+}
+
+## Not exported. The short summary(): the two tests, the populations, what to
+## report, and the checks. `summary(x, details = TRUE)` prints the full report.
+.het_brief <- function(x) {
+  st <- x$settings
+  cat(sprintf("HETEROZYGOSITY BETWEEN POPULATIONS: %d individuals, %d populations\n",
+              st$n_individuals, st$n_pops))
+  .legend(sprintf("Loci: each population's own (at least %.0f%% call rate within it);", 100 * st$min_call),
+          "a pair uses the loci both populations clear.")
+
+  question <- function(title, tab, statistic, after = NULL) {
+    .section(title, "   combined test")
+    .legend(strwrap(.het_omnibus_line(x, statistic), width = 76))
+    r <- .het_pair_table(tab)
+    .print_compact(r$table)
+    if (r$n_shown < r$n_pairs)
+      .legend(sprintf("Showing the %d most significant of %d pairs;", r$n_shown, r$n_pairs),
+              sprintf("the full table is x$%s.",
+                      if (statistic == "F") "pairwise_F_tests" else "pairwise_tests"))
+    .legend(after)
+  }
+  question("DO THE POPULATIONS DIFFER IN HETEROZYGOSITY?", x$pairwise_tests, "heterozygosity",
+           strwrap(sprintf("The combined test counts individuals and loci. In simulations with no true difference it wrongly rejected %s of the time (Welch's t alone: up to 30%%).",
+                           .coverage$het_test), width = 76))
+  question("DO THEY DIFFER IN INBREEDING (F)?", x$pairwise_F_tests, "F",
+           c("F = 1 - observed / expected heterozygosity, with the expected value taken",
+             "from each individual's own population."))
+
+  .section("POPULATIONS   Identity disequilibrium g2: 0 when individuals do not differ")
+  .print_compact(.het_population_table(x))
+  .legend("mean_het has no SE here. Compare populations with the tests above, never",
+          "by overlapping intervals. sd is the spread among individuals.")
+
+  .section("WHAT TO REPORT")
+  .legend(.het_what_to_report(x))
+  .section("CHECKS")
+  .check_lines(.het_checks(x))
+  cat("\nNot shown here: Welch's and Wilcoxon's p-values, the missingness check in\n",
+      "full, and the notes on interpretation.\n", sep = "")
+  .legend("summary(x, details = TRUE)   explains every column and check",
+          "x$pairwise_tests, x$pairwise_F_tests   hold every test column",
+          "x$population_summary, x$g2             hold the population tables")
+  invisible(NULL)
+}
+
+## Not exported. The pairwise tests as small labelled tables: the means, the
+## combined test (the one to report), and the tests kept for comparison.
+.het_pair_blocks <- function(tab, max_rows, full_name) {
+  shown <- if (nrow(tab) <= max_rows) tab
+           else tab[utils::head(order(tab$p_combined_BH), max_rows), ]
+  if (nrow(shown) < nrow(tab))
+    cat(sprintf("  (%d most significant of %d pairs; the full table is %s)\n",
+                max_rows, nrow(tab), full_name))
+  r <- .round_het_table(shown, "pairwise_tests")
+  r <- cbind(pair = paste(r$pop1, "-", r$pop2), r[, setdiff(names(r), c("pop1", "pop2")), drop = FALSE])
+  cat("Means\n")
+  .print_compact(r[, c("pair", "n_loci", "n1", "mean1", "n2", "mean2", "diff")])
+  cat("Combined test (the one to report)\n")
+  .print_compact(r[, c("pair", "diff", "se_combined", "ci_lo", "ci_hi", "df", "p_combined",
+                       "p_combined_BH")])
+  cat("For comparison\n")
+  .print_compact(r[, c("pair", "hedges_g", "p_welch", "p_welch_BH", "p_wilcox", "p_wilcox_BH")])
+  invisible(NULL)
+}
+
+## Not exported. The full heterozygosity report (summary(x, details = TRUE), and
+## what the command-line script prints with --details). The same two tests as
+## the short summary come first, then every column.
 .het_report <- function(x) {
   st <- x$settings
   note <- function(...) cat(paste0("  ", c(...), "\n"), sep = "")
@@ -871,27 +1068,41 @@ print.summary.raddiv_het <- function(x, ...) {
   cat("  HETEROZYGOSITY BETWEEN POPULATIONS -- one value per individual; tests count\n")
   cat("  both which individuals and which loci were sampled\n")
   cat("  ", .big(st$n_loci_pooled), " loci pass the pooled filter (used for the\n",
-      "  individual-level table and confound check below); ", st$n_individuals,
-      " individuals, ", st$n_pops, " populations\n", sep = "")
+      "  individual-level table and the confound check below);\n",
+      "  ", st$n_individuals, " individuals, ", st$n_pops, " populations\n", sep = "")
   cat(rule, "\n", sep = "")
   if (length(st$flagged_individuals))
     note("", sprintf("KEPT, but they look like failed libraries: %s.",
                      paste(st$flagged_individuals, collapse = ", ")),
          .report_text$het_failed_individuals)
 
+  ## The two tests, as in the short summary.
+  for (q in list(list("DO THE POPULATIONS DIFFER IN HETEROZYGOSITY?", tests, "heterozygosity"),
+                 list("DO THEY DIFFER IN INBREEDING (F)?", x$pairwise_F_tests, "F"))) {
+    .section(q[[1]], "   combined test")
+    .legend(strwrap(.het_omnibus_line(x, q[[3]], full = TRUE), width = 76))
+    r <- .het_pair_table(q[[2]], max_rows = 10L)
+    .print_compact(r$table)
+  }
+  cat("\n", strrep("-", 69), "\n", sep = "")
+  note(.het_what_to_report(x))
+  cat(strrep("-", 69), "\n", sep = "")
+
+  cat("\nFULL TABLES\n")
   cat("\nPer-population summary of individual heterozygosity\n")
-  cat("  (each population's OWN locus set -- loci at >= ", 100 * st$min_call,
-      "% call rate WITHIN that population; see 'n_loci'. This can differ from\n",
-      "   a specific pair's test below, which uses only loci BOTH members of\n",
-      "   that pair clear -- that is expected, not an inconsistency.)\n", sep = "")
-  .print_table(.round_het_table(x$population_summary, "population_summary"))
+  cat("  (each population's OWN locus set: loci at >= ", 100 * st$min_call,
+      "% call rate\n   WITHIN that population, see 'n_loci'.",
+      " A pair's test below uses only loci BOTH\n",
+      "   members of that pair clear, so its loci can differ from these; that is\n",
+      "   expected, not an inconsistency.)\n", sep = "")
+  .print_compact(.round_het_table(x$population_summary, "population_summary"))
 
   cat("\nMissingness confound check\n")
   cf <- x$missingness_confound
   if (isTRUE(cf$too_few)) {
     note("Fewer than 3 individuals were called at any pooled locus; the check needs more.")
   } else if (cf$no_variation) {
-    note("Every individual was called at every locus; no confound possible.")
+    note("Call rate does not vary among the individuals checked; no confound possible.")
   } else {
     cat(sprintf("  cor(per-individual call rate, heterozygosity) = %+.3f  (p = %.3g, n = %d)\n",
                 cf$overall$r, cf$overall$p_value, cf$overall$n))
@@ -910,25 +1121,26 @@ print.summary.raddiv_het <- function(x, ...) {
 
   cat("\nIdentity disequilibrium g2 (David et al. 2007) -- the standard measure of\n")
   cat("variance in inbreeding among individuals; 0 when individuals do not differ.\n")
-  .print_table(.round_het_table(x$g2, "g2"))
+  .print_compact(.round_het_table(x$g2, "g2"))
   note(.report_text$het_g2)
   note(.report_text$het_van_dongen)
 
   if (!is.null(x$omnibus)) {
     cat(sprintf("\nOverall test across all %d populations (loci that clear min_call in every one)\n",
                 st$n_pops))
-    .print_table(.round_het_table(x$omnibus, "omnibus"))
+    .print_compact(.round_het_table(x$omnibus, "omnibus"))
     note(.report_text$het_omnibus)
   }
 
   n_pairs <- nrow(tests)
-  cat(sprintf("\nPairwise tests -- %d comparison%s. The combined test (p_combined, ci_lo, ci_hi)\n",
-              n_pairs, if (n_pairs == 1) "" else "s"))
-  cat("is primary: it counts both which individuals and which loci were sampled.\n")
-  cat("p_welch (individuals only) and p_wilcox (distribution-free) are for comparison.\n")
-  if (n_pairs > 1)
-    cat(sprintf("p_*_BH are Benjamini-Hochberg adjusted across all %d comparisons.\n", n_pairs))
-  .show_pairwise(tests, 25, "x$pairwise_tests")
+  cat(sprintf("\nPairwise tests, heterozygosity -- %d comparison%s\n", n_pairs,
+              if (n_pairs == 1) "" else "s"))
+  note("The combined test (p_combined, ci_lo, ci_hi) is primary: it counts both which",
+       "individuals and which loci were sampled. p_welch (individuals only) and",
+       "p_wilcox (distribution-free) are for comparison.",
+       if (n_pairs > 1)
+         sprintf("p_*_BH are Benjamini-Hochberg adjusted across all %d comparisons.", n_pairs))
+  .het_pair_blocks(tests, 25, "x$pairwise_tests")
   n_significant <- function(tab) {
     c(combined = sum(tab$p_combined_BH < 0.05, na.rm = TRUE),
       welch = sum(tab$p_welch_BH < 0.05, na.rm = TRUE),
@@ -942,7 +1154,7 @@ print.summary.raddiv_het <- function(x, ...) {
   F_tests <- x$pairwise_F_tests
   cat("\n")
   cat(paste0(.report_text$het_F_tests, "\n"), sep = "")
-  .show_pairwise(F_tests, 25, "x$pairwise_F_tests")
+  .het_pair_blocks(F_tests, 25, "x$pairwise_F_tests")
   sig_F <- n_significant(F_tests)
   cat(sprintf("\n  pairs significant at BH < 0.05: combined %d (Welch %d, Wilcoxon %d), of %d\n",
               sig_F[["combined"]], sig_F[["welch"]], sig_F[["wilcox"]], nrow(F_tests)))

@@ -30,7 +30,8 @@ Hardy-Weinberg test (a report, never a filter).
 Every analysis function takes \code{vcf} (a file path or the object from
 \code{\link[=read_stacks_vcf]{read_stacks_vcf()}}) and, where populations matter, \code{popmap} (a file path
 or the list from \code{\link[=read_popmap]{read_popmap()}}). Printing a result shows its main
-tables; \code{summary()} shows the full report. Standard errors and confidence
+tables; \code{summary()} is a short summary and \code{summary(details = TRUE)} the full
+report. Standard errors and confidence
 intervals resample whole RAD loci. The command-line scripts are in
 \code{system.file("scripts", package = "RADdiversity")}; the statistical
 rationale is in \code{vignette("rationale")}.

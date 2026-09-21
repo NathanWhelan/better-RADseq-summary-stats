@@ -15,7 +15,7 @@ diversity_stats(
   sites = NULL,
   min_n = 2L,
   complete_case = FALSE,
-  se_individuals = FALSE,
+  se_individuals = TRUE,
   hierfstat_check = FALSE,
   outdir = NULL,
   stem = NULL,
@@ -25,7 +25,7 @@ diversity_stats(
 
 \method{print}{raddiv_diversity}(x, ...)
 
-\method{summary}{raddiv_diversity}(object, ...)
+\method{summary}{raddiv_diversity}(object, details = FALSE, ...)
 }
 \arguments{
 \item{vcf}{Path to \code{populations.snps.vcf} or \code{populations.haps.vcf}
@@ -46,7 +46,7 @@ default), \code{"individuals"} (within each population, as diveRsity does) or
 \code{"both"} are for comparison only: in a coverage simulation their
 intervals badly missed the true He and FIS (\code{vignette("rationale")},
 "Why not bootstrap individuals?"). For uncertainty over individuals use
-\code{se_individuals = TRUE} instead (see "How standard errors are
+\code{se_individuals} (on by default) instead (see "How standard errors are
 calculated" below).}
 
 \item{sites}{Number of sequenced sites, to turn Ho and He into per-site
@@ -107,13 +107,16 @@ population is genotyped there (Schmidt et al. 2021, recommendation (b)).
 Default \code{FALSE}.}
 
 \item{se_individuals}{Also compute the uncertainty from which individuals
-were sampled, and add three columns each for Ho, He and FIS: \verb{_se_ind}
-(a jackknife over individuals) and \verb{_se_combined} (locus and individual
-uncertainty together). \strong{Report \verb{_se_combined} for Ho, He and FIS.} Ar and
-privAr keep their locus-based \verb{_se}, \verb{_lo} and \verb{_hi}, which already cover
-both sources. See "How standard errors are calculated" below. Default
-\code{FALSE}, because the jackknife over individuals takes longer on large
-datasets.}
+were sampled, and add two columns each for Ho, He and FIS (and their
+per-site values): \verb{_se_ind} (a jackknife over individuals) and
+\verb{_se_combined} (locus and individual uncertainty together). \strong{Report
+\verb{_se_combined} for Ho, He and FIS.} Ar and privAr keep their locus-based
+\verb{_se}, \verb{_lo} and \verb{_hi}, which already cover both sources. See "How
+standard errors are calculated" below. Default \code{TRUE}, because
+\verb{_se_combined} is the recommended standard error and the extra work is
+small: about 30\% more run time (300,000 records and 60 individuals: 3.9
+seconds became 5.2). \code{FALSE} skips it; then only the locus-based columns
+exist, and they can be too small when individuals differ in inbreeding.}
 
 \item{hierfstat_check}{If \code{TRUE} and the \code{hierfstat} package is installed,
 also compute per-record Ho/Hs with \code{hierfstat::basic.stats()} and
@@ -143,20 +146,35 @@ your session's random-number stream as it was.}
 \code{diversity_stats()}.}
 
 \item{...}{Ignored.}
+
+\item{details}{For \code{summary()}: \code{FALSE} (the default) prints a short view --
+the main results as \code{estimate (SE)} with the one recommended standard
+error for each statistic, what to take from this run, and a list of
+checks. \code{TRUE} prints the full report: every uncertainty column, the
+estimators, the filters and every explanation. Either way, the object
+returned holds the tables the short view prints, in \verb{$tables} (see "Tables
+for a paper").}
 }
 \value{
 An object of class \code{raddiv_diversity}, a list of:
 \describe{
 \item{per_population}{Ho, He, FIS and \% polymorphic records per
 population, each with its locus jackknife SE (\verb{_se}) and 95\% locus
-bootstrap interval (\verb{_lo}, \verb{_hi}). With \code{se_individuals = TRUE}, also
-\verb{_se_ind} and \verb{_se_combined} for Ho, He and FIS.}
+bootstrap interval (\verb{_lo}, \verb{_hi}). With \code{se_individuals = TRUE} (the
+default), also \verb{_se_ind} and \verb{_se_combined} for Ho, He and FIS.}
 \item{richness}{Ar, privAr and priv_total per population, with the
 number of records each rests on (\code{Ar_n}, \code{privAr_n}).}
-\item{autosomal}{Per-sequenced-site Ho/He, with the \code{sites_used} and
-\code{variant_records} each population was scaled by; \code{NULL} unless
-\code{sites} gave at least one population a plausible value, and always
-\code{NULL} for a haplotype VCF.}
+\item{autosomal}{Per-sequenced-site Ho/He (\code{Ho_autosomal},
+\code{He_autosomal}), with the \code{sites_used} and \code{variant_records} each
+population was scaled by, and the same uncertainty columns as Ho and
+He: \verb{_se}, \verb{_lo}, \verb{_hi} and, with \code{se_individuals = TRUE}, \verb{_se_ind}
+and \verb{_se_combined} (e.g. \code{Ho_autosomal_se_combined}). A per-site value
+is Ho (or He) times \code{variant_records / sites_used}, a fixed multiplier
+for each population, so each of these is the matching Ho or He
+column times the same multiplier. This treats \code{variant_records / sites_used} as fixed: it leaves out uncertainty in how many SNPs there
+are per sequenced site, as the per-site value itself does. \code{NULL}
+unless \code{sites} gave at least one population a plausible value, and
+always \code{NULL} for a haplotype VCF.}
 \item{estimator_comparison}{He and FIS from Nei & Chesser and from the
 estimator behind Stacks' \code{Pi}, side by side.}
 \item{he_difference}{For two populations with \code{nboot > 0}: the He
@@ -179,8 +197,11 @@ Computes Ho, He, FIS (Nei & Chesser 1983, ratio of sums), rarefied allelic
 richness and rarefied private allelic richness from a Stacks 2
 \code{populations} VCF and popmap, with a delete-one-locus jackknife standard
 error and a bootstrap confidence interval over RAD loci. Printing the
-result shows the main tables; \code{summary()} shows the full report with notes
-on interpretation; \code{outdir} also writes the tables to TSV files.
+result shows the main tables. \code{summary()} is short: the results as
+\code{estimate (SE)} with the one recommended standard error for each statistic,
+what to take from this run, and a list of checks. \code{summary(details = TRUE)}
+is the full report, with every uncertainty column and notes on
+interpretation. \code{outdir} also writes the tables to TSV files.
 }
 \details{
 Run it twice: \code{populations.snps.vcf} gives Ho, He, \code{pct_poly} and the
@@ -218,8 +239,8 @@ holds the individuals fixed.
 \item \verb{_lo}, \verb{_hi}: a bootstrap over RAD loci. Loci are drawn at random, with
 replacement, thousands of times; the middle 95\% of the results is the
 interval. It also holds the individuals fixed.
-\item \verb{_se_ind} (with \code{se_individuals = TRUE}): a jackknife over individuals.
-Each individual is left out in turn. It holds the loci fixed.
+\item \verb{_se_ind} (with \code{se_individuals = TRUE}, the default): a jackknife over
+individuals. Each individual is left out in turn. It holds the loci fixed.
 \item \verb{_se_combined}: both sources together, \verb{sqrt(_se^2 + _se_ind^2)}.
 }
 
@@ -227,7 +248,10 @@ Whole RAD loci, not single SNPs, are resampled, because SNPs on one RAD
 locus are inherited together.
 
 \strong{Which to report.} For \strong{Ho, He and FIS}, report \verb{_se_combined}. For
-\strong{Ar and privAr}, report \verb{_se} (or \verb{_lo}, \verb{_hi}). This rule comes from
+\strong{Ar and privAr}, report \verb{_se} (or \verb{_lo}, \verb{_hi}). The per-site Ho and He
+(\code{Ho_autosomal}, \code{He_autosomal}) follow the same rule for Ho and He: report
+\code{Ho_autosomal_se_combined} and \code{He_autosomal_se_combined}. The short
+\code{summary()} shows only these recommended standard errors. This rule comes from
 simulated populations with a known true value, where each simulated study
 was repeated 300 times with new loci and new individuals, and we counted how
 often the 95\% interval contained the truth (it should be about 95\%). With
@@ -248,6 +272,34 @@ themselves; screen with \code{\link[=kinship_check]{kinship_check()}}), filterin
 dropout, and linkage between separate RAD loci.
 }
 
+\section{Tables for a paper}{
+
+Put in the table exactly what the short \code{summary()} reports, and nothing
+more. \code{summary(x)$tables} holds those tables as data frames, with the same
+\code{estimate (SE)} text the summary prints: \code{results} (Ho, He and \code{pct_poly}
+for a SNP VCF; FIS, Ar and privAr for a haplotype VCF) and, for a SNP VCF run
+with \code{sites}, \code{per_site}. Join the two runs by population name, never by row
+order:
+
+\if{html}{\out{<div class="sourceCode">}}\preformatted{snp <- summary(res_snps)$tables
+hap <- summary(res_haps)$tables
+parts <- list(snp$results, snp$per_site,
+              hap$results[names(hap$results) != "n"])
+table1 <- Reduce(function(a, b) merge(a, b, by = "population", sort = FALSE),
+                 Filter(Negate(is.null), parts))
+table1 <- table1[match(snp$results$population, table1$population), ]
+}\if{html}{\out{</div>}}
+
+Leave out the other uncertainty columns (they are in the result tables and
+the \code{outdir} files, for a supplement) and the counts behind a value (\code{Ar_n},
+\code{privAr_n}, \code{priv_total}, \code{sites_used}); state those in the methods. Say in
+the caption which VCF each column came from, the rarefaction size \code{g}, and
+which standard error each column is. Add something to the table only when a
+check in the summary said \code{look} and readers need the number to judge it.
+See the README ("Make a table for a manuscript") and the workflow vignette
+("A table for your manuscript").
+}
+
 \examples{
 # A toy dataset shipped with the package: 80 RAD loci, 2 populations of 4
 # and 3 individuals (real studies need far more individuals).
@@ -256,8 +308,11 @@ snps   <- system.file("extdata", "small.snps.vcf", package = "RADdiversity")
 popmap <- system.file("extdata", "small_popmap.tsv", package = "RADdiversity")
 
 # Haplotype VCF: FIS, allelic richness, private allelic richness.
+# se_individuals = FALSE only because these toy populations have 3 and 4
+# individuals, too few for the individual standard errors. Leave it at its
+# default (TRUE) for real data.
 set.seed(1)
-res <- diversity_stats(haps, popmap, g = 4, nboot = 100)
+res <- diversity_stats(haps, popmap, g = 4, nboot = 100, se_individuals = FALSE)
 res                    # the main tables
 res$per_population     # one table
 
@@ -266,11 +321,18 @@ res$per_population     # one table
 sumstats <- system.file("extdata", "populations.sumstats_summary.tsv",
                         package = "RADdiversity")
 res_snps <- diversity_stats(snps, popmap, g = 4, nboot = 0, sites = sumstats,
-                            verbose = FALSE)
+                            se_individuals = FALSE, verbose = FALSE)
 res_snps$autosomal
 
-# The full report, with notes on interpreting each number:
+# A short summary: each estimate with its recommended SE, what to take from
+# this run, and the checks.
 summary(res_snps)
+
+# The full report, with every uncertainty column and notes on each number:
+summary(res_snps, details = TRUE)
+
+# The tables the short summary prints, to build a table for a paper from:
+summary(res_snps)$tables$results
 }
 \references{
 Nei, M. & Chesser, R.K. (1983) Estimation of fixation indices and gene

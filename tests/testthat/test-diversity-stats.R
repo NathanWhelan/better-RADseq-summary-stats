@@ -1,5 +1,13 @@
 fx <- function(name) test_path("fixtures", name)
 
+## The individual standard errors (se_individuals) are on by default, but the
+## toy fixtures have only 3-4 individuals per population, so they warn there.
+## Most tests here are not about those SEs, so this wrapper runs them with the
+## option off; a test that needs them passes se_individuals = TRUE. The default
+## itself is tested in test-jackknife-individuals.R.
+diversity_stats <- function(..., se_individuals = FALSE)
+  RADdiversity::diversity_stats(..., se_individuals = se_individuals)
+
 test_that("diversity_stats() returns the expected structure on a small fixture", {
   outdir <- tempfile("raddiversity-test-")
   dir.create(outdir)
@@ -30,9 +38,13 @@ test_that("results are quiet objects: no files without outdir, tables on print()
   expect_identical(p, res)                                # print() returns its input
   expect_true(any(grepl("Take from this haplotype VCF", short)))
   expect_lt(length(short), 40)                            # print() stays short
-  full <- capture.output(print(summary(res)))
+  brief <- capture.output(print(summary(res)))            # summary() is short by default ...
+  expect_true(any(grepl("TAKE FROM THIS RUN", brief)))
+  expect_lt(length(brief), 45)
+  full <- capture.output(print(summary(res, details = TRUE)))   # ... details = TRUE has it all
   expect_true(any(grepl("TAKE FROM THIS RUN", full)))
   expect_gt(length(full), length(short))
+  expect_gt(length(full), 2 * length(brief))
 
   het <- suppressMessages(het_between_pops(vcf, pm, min_call = 0.5))
   expect_s3_class(het, "raddiv_het")
@@ -187,6 +199,49 @@ test_that("diversity_stats() sites= rejects a bad shape before the VCF is even r
   expect_error(diversity_stats("nonexistent.vcf", fx("small_popmap.tsv"), g = 4,
                                 sites = "no/such/file.tsv"),
                "not found")
+})
+
+test_that("per-site values carry the same uncertainty columns as Ho and He, scaled by records / sites", {
+  ## Ho_autosomal = Ho * records / sites, a fixed multiplier per population, so
+  ## every SE and bootstrap bound is the Ho (or He) one times that multiplier.
+  set.seed(11)
+  g <- sim_genotypes(stats::runif(600, 0.1, 0.9), 20)
+  samp <- c(paste0("a", 1:10), paste0("b", 1:10))
+  A1 <- g$A1; A2 <- g$A2; dimnames(A1) <- dimnames(A2) <- list(NULL, samp)
+  H <- sim_H(A1, A2, records_per_locus = 3L)
+  pops <- list(A = samp[1:10], B = samp[11:20])
+  run <- function(...) diversity_stats(H, pops, g = 10, sites = c(A = 40000, B = 50000),
+                                       verbose = FALSE, ...)
+  res <- run(nboot = 100, se_individuals = TRUE)
+  pp <- res$per_population
+  aut <- res$autosomal
+  multiplier <- aut$variant_records / aut$sites_used
+  suffixes <- c("", "_se", "_se_ind", "_se_combined", "_lo", "_hi")
+  for (stat in c("Ho", "He"))
+    for (suffix in suffixes) {
+      col <- paste0(stat, "_autosomal", suffix)
+      expect_true(col %in% names(aut), info = col)
+      expect_equal(aut[[col]], pp[[paste0(stat, suffix)]] * multiplier, info = col)
+    }
+  expect_identical(names(aut)[4:9], paste0("Ho_autosomal", suffixes))   # estimate, then its uncertainty
+  expect_equal(aut$He_autosomal, autosomal_het(pp$He, aut$variant_records, aut$sites_used))
+
+  ## Without the individual SEs there are no _se_ind / _se_combined columns;
+  ## without the bootstrap the bounds are NA, as they are for Ho and He.
+  plain <- run(nboot = 0, se_individuals = FALSE)$autosomal
+  expect_false(any(grepl("_se_ind|_se_combined", names(plain))))
+  expect_true(all(is.na(plain$Ho_autosomal_lo)) && all(is.na(plain$He_autosomal_hi)))
+  expect_true(all(is.finite(plain$Ho_autosomal_se)))
+
+  ## A population whose sites value is implausible (fewer sites than variant
+  ## records) gets NA in every per-site column and does not touch the others.
+  odd <- diversity_stats(H, pops, g = 10, sites = c(A = 40000, B = 5), nboot = 0,
+                         se_individuals = TRUE, verbose = FALSE)$autosomal
+  per_site <- grep("_autosomal", names(odd), value = TRUE)
+  expect_true(all(is.na(unlist(odd[odd$population == "B", per_site]))))
+  expect_true(all(is.finite(unlist(odd[odd$population == "A",
+                                       setdiff(per_site, c("Ho_autosomal_lo", "Ho_autosomal_hi",
+                                                           "He_autosomal_lo", "He_autosomal_hi"))]))))
 })
 
 test_that("diversity_stats() ignores sites= entirely (autosomal NULL) on a haplotype VCF", {
@@ -364,7 +419,7 @@ test_that("RAD loci emptied by a MAC filter give no loci warning; loci removed b
   expect_true(grepl(sprintf("%d whole RAD loci were removed after reading by filter_call_rate.",
                             H_call$filter_log$loci_removed[2]), loci_warning, fixed = TRUE))
   ## The full report lists the filters.
-  report <- capture.output(print(summary(res)))
+  report <- capture.output(print(summary(res, details = TRUE)))
   expect_true(any(grepl("2. filter_call_rate (min_call = 0.95, pooled)", report, fixed = TRUE)))
 })
 
@@ -396,8 +451,22 @@ test_that("`sites` on a haplotype VCF is reported as needing the SNP VCF, whatev
     printed <- capture.output(print(res))
     expect_true(any(grepl("per-site values need the SNP VCF", printed)))
     expect_false(any(grepl("smaller than the number of variant records", printed)))
-    expect_true(any(grepl("HAPLOTYPE VCF, so the autosomal", capture.output(print(summary(res))))))
+    expect_true(any(grepl("HAPLOTYPE VCF, so the autosomal",
+                          capture.output(print(summary(res, details = TRUE))))))
   }
+})
+
+test_that("the 'Ar is capped at 2' note is for SNP VCFs, not haplotype VCFs", {
+  ## Both toy files have mean Ar below 2. On the SNP VCF that is the biallelic
+  ## ceiling. On the haplotype VCF it is only a low mean, and the note would
+  ## tell the user to run the file they already ran.
+  capped <- function(vcf) {
+    res <- diversity_stats(fx(vcf), fx("small_popmap.tsv"), g = 4, nboot = 0, verbose = FALSE)
+    expect_lt(max(res$richness$Ar), 2.001)
+    any(grepl("Ar is capped at 2", capture.output(print(summary(res, details = TRUE)))))
+  }
+  expect_true(capped("small.snps.vcf"))
+  expect_false(capped("small.haps.vcf"))
 })
 
 test_that("fis_by_call_rate is flat without dropout and rises with it", {
@@ -450,7 +519,18 @@ test_that("print() and summary() note when Ar rests on uneven records between po
   uneven <- diversity_stats(sim_H(A1, A2), pops, g = 12, nboot = 0, verbose = FALSE)
   expect_lt(uneven$richness$Ar_n[2], 0.9 * uneven$richness$Ar_n[1])
   expect_true(any(grepl("Ar rests on under 90%", capture.output(print(uneven)))))
-  expect_true(any(grepl("Ar_n differs by more than 10%", capture.output(print(summary(uneven))))))
+  expect_true(any(grepl("Ar_n differs by more than 10%",
+                        capture.output(print(summary(uneven, details = TRUE))))))
+
+  ## The short summary shows it as a `look` check (for haplotype data only: on a
+  ## SNP VCF Ar is not shown, so its coverage is not either).
+  Hh <- sim_H(A1, A2)
+  Hh$alleles <- rep(list(c("AT", "CG")), L)               # multi-base alleles: haplotype data
+  brief <- capture.output(print(summary(diversity_stats(Hh, pops, g = 12, nboot = 0,
+                                                        verbose = FALSE))))
+  brief <- gsub("\\s+", " ", paste(brief, collapse = " "))
+  expect_match(brief, "look Ar is averaged over [0-9,]+ loci in popA but [0-9,]+ in popB")
+  expect_match(brief, "populations are compared over partly different loci")
 })
 
 test_that("fis_by_call_rate's SE uses only the loci in each call-rate group", {
@@ -511,7 +591,7 @@ test_that("diversity_stats() notices data that were filtered by minor allele cou
   expect_true(pf2$looks_mac_filtered)
   expect_equal(pf2$n_samples, 30L)
   expect_true(any(grepl("over the 30 individuals in the popmap",
-                        capture.output(summary(res)))))
+                        capture.output(summary(res, details = TRUE)))))
 })
 
 test_that("het_between_pops() returns the expected structure on a small fixture", {

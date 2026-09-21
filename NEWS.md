@@ -18,9 +18,62 @@ stand-alone scripts:
   | `filter_maf()`, `filter_mac()` | `stats` | `allele_stats` |
   | `read_stacks_vcf()` | `read_haps_vcf()` (old function name) | removed; use `read_stacks_vcf()` |
 
-* Printing a result shows its main tables; `summary(result)` shows the full
-  report that printing used to show. The command-line scripts still print the
-  full report and write to the working directory.
+* Printing a result shows its main tables. `summary(result)` is now a short
+  view, and `summary(result, details = TRUE)` is the full report that
+  `summary()` used to print. This holds for `diversity_stats()`,
+  `differentiation_stats()`, `het_between_pops()` and `pi_allsites()`:
+  * The short view leads with the results as `estimate (SE)`, then what to
+    take from the run, then a list of checks marked `ok`, `info` or `look`.
+    Every column of `estimate (SE)` cells has "(SE)" in its header, and a line
+    under the table says which standard error it is and what each column means.
+  * Only the standard error the package recommends is shown, one per
+    statistic: `_se_combined` for Ho, He, FIS and the per-site Ho and He; `_se`
+    for Ar, privAr, FST, D, pi, `dxy` and `da_nc`; the combined test for
+    `het_between_pops()`. The standard errors of FST, D, pi and dxy count RAD
+    loci only and have not been checked by simulation; the summaries say so. The
+    other uncertainty columns are in the tables and in `details = TRUE`.
+  * The full report gives each statistic its own small table, so no row of
+    numbers is left without its population name (the wide tables used to wrap
+    into three blocks at the default console width). Its explanations are
+    rewritten in shorter sentences, and "TAKE FROM THIS RUN" comes first.
+  * The command-line scripts print the short summary; `--details` prints the
+    full report. They still write to the working directory.
+* `diversity_stats(se_individuals = )` now defaults to `TRUE`, because
+  `_se_combined` is the recommended standard error for Ho, He and FIS. It adds
+  about 30% to the run time (300,000 records and 60 individuals: 3.9 seconds
+  became 5.2). `se_individuals = FALSE` skips it. On populations with very few
+  individuals it can warn that the individual standard errors are probably too
+  large; the help-page examples that use the tiny toy data set it to `FALSE`. In
+  the shell script `diversity_stats.R`, `--se-individuals` (never in a release)
+  is replaced by `--no-se-individuals`, which turns them off.
+* The per-site values `Ho_autosomal` and `He_autosomal` have the same
+  uncertainty columns as Ho and He (`_se`, `_se_ind`, `_se_combined`, `_lo`,
+  `_hi`). A per-site value is Ho or He times `variant_records / sites_used`, so
+  each is the matching Ho or He column times that multiplier. This treats the
+  multiplier as fixed: it leaves out uncertainty in how many SNPs there are per
+  sequenced site.
+* `summary()` now returns the tables its short view prints, in `summary(x)$tables`
+  (`results` and `per_site` for `diversity_stats()`; `results` for
+  `differentiation_stats()`; `results`, `between` and `individual_het` for
+  `pi_allsites()`; `heterozygosity`, `inbreeding` and `populations` for
+  `het_between_pops()`). They hold every population or pair, where the printed
+  view cuts long lists of pairs. A table for a paper is exactly these tables:
+  the README ("Make a table for a manuscript"), the workflow vignette ("A table
+  for your manuscript") and the help pages ("Tables for a paper") show how to
+  build it, what stays out of it and why, and when to add more.
+* `print()` of a diversity or pi result repeats the population name on every
+  block of a wide table, as the summaries do. The per-site table has 15 columns
+  now, and R's own wrapping left its later blocks without a population name.
+* The short `diversity_stats()` summary says why a population has no per-site
+  value (a `sites` value smaller than its variant records is ignored for that
+  population), instead of showing `NA (NA)` without a reason.
+* The heterozygosity missingness check no longer says "every individual was
+  called at every locus" when an individual with no genotypes is present. It
+  says call rate does not vary among the individuals checked.
+* Small fixes to the wording of the reports: "1 copies" is now "1 copy",
+  "absent from all 1 others" is now "absent from the other population", and the
+  pointer to "the per-population lines printed while it ran" says the lines are
+  shown unless `verbose = FALSE`.
 * Result tables keep full precision; printing and the TSV files round them
   as before. Tables that used to be hidden in the `"report"` attribute are now
   list elements: `het_between_pops()` returns `population_summary`, `g2` and
@@ -114,7 +167,7 @@ you to report.
     settings once individuals differed in inbreeding;
   * from the individual SE alone: Ho and FIS 75–94%, but He 47–86%;
   * from the combined SE, `sqrt(_se^2 + _se_ind^2)`: Ho, He and FIS 90–99%.
-  `diversity_stats(se_individuals = TRUE)` now adds `Ho_se_combined`,
+  `diversity_stats()` now adds `Ho_se_combined`,
   `He_se_combined` and `Fis_se_combined`; report those. A bootstrap over
   individuals was also checked and is not a substitute: its He intervals
   contained the truth 6–8% of the time. How each SE is calculated is
@@ -391,8 +444,9 @@ These change reported numbers.
   inbreeding, next to whether they differ in diversity.
 * `identity_disequilibrium()`: g2 per population, also reported by
   `het_between_pops()`.
-* `diversity_stats(se_individuals = TRUE)` adds, for Ho, He and FIS, a
-  jackknife SE over individuals (`_se_ind`) and `_se_combined`, which puts
+* `diversity_stats()` adds, for Ho, He and FIS, a
+  jackknife SE over individuals (`_se_ind`) and `_se_combined` (on by default;
+  `se_individuals = FALSE` skips them), which puts
   the uncertainty from which loci and which individuals were sampled
   together. See "Standard errors" below.
 * `pi_allsites()`: pi, dxy, Da and per-individual heterozygosity per
@@ -407,6 +461,11 @@ These change reported numbers.
 
 ## Bug fixes
 
+* `summary()` of `diversity_stats()` no longer says that Ar is "capped at 2
+  because these are biallelic SNPs" (and to run the haplotype VCF) for a
+  haplotype VCF. The note was triggered by a mean Ar of 2 or less, which is
+  common on haplotype data with few SNPs per RAD locus. It now appears only
+  for SNP VCFs.
 * `kinship_check()`: at a biallelic record whose two observed alleles are not
   numbered 1 and 2 (a haplotype record declaring three alleles of which only
   the 2nd and 3rd are carried), KING missed opposite homozygotes and beta

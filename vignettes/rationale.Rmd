@@ -75,7 +75,7 @@ genotyped in a large population while mostly missing in a small one. The
 small population then carries more missing data than the large one, and
 any effect of missing data on heterozygosity or FIS differs between
 exactly the two samples being compared. Therefore, this package
-recommends useing `-r` with `-p` equal to the number of populations, or
+recommends using `-r` with `-p` equal to the number of populations, or
 `filter_call_rate(H, min_call, popmap = pops)` in R.
 
 ### Allele-frequency filters
@@ -129,9 +129,11 @@ regions assembled as one locus), and is reasonable to use.
 Many VCFs arrive already filtered. The analyses still run; the table in
 `vignette("workflow")` ("If your data were already filtered") lists what
 each common filter changes and what to report, and `summary()` of a
-`diversity_stats()` result shows what the data look filtered at (the
-rarest allele count left, the lowest call rates, the highest per-record
-Ho). An HWE filter cannot be detected from the data.
+`diversity_stats()` result shows what the data look filtered at when you ask
+for `summary(details = TRUE)` (the rarest allele count left, the lowest call
+rates, the highest per-record Ho); the short `summary()` says whether the data
+look filtered by minor allele count. An HWE filter cannot be detected from the
+data.
 
 ### Which records each population uses
 
@@ -151,9 +153,9 @@ covered in section 5.)
 
 One consequence: two populations can rest on somewhat different records.
 With `-p` equal to the number of populations (above) the sets are nearly
-the same. Compare `Ar_n` between populations; the printed result adds a
-note when one population's Ar rests on under 90% as many records as
-another population's.
+the same. Compare `Ar_n` between populations; the printed result and the
+`CHECKS` of `summary()` add a note when one population's Ar rests on under 90%
+as many records as another population's.
 
 `complete_case = TRUE` uses a record only if every individual of every
 population is genotyped there (Schmidt et al. 2021, recommendation (b)).
@@ -278,6 +280,14 @@ counts a site for a population only where it has at least one genotyped
 individual (`SumStatsSummary::accumulate()`, Stacks 2.68), and with
 several populations and `-p` below their number, a population can be
 absent from many records.
+
+Each per-site value gets the same standard errors and bootstrap interval as
+Ho or He (`Ho_autosomal_se_combined`, `_lo`, `_hi`, and so on). The
+multiplier, (variant records) ÷ (sequenced sites), is a fixed positive number
+for each population, so a jackknife SE or a percentile bootstrap bound of the
+per-site value is exactly that multiplier times the Ho or He one. This treats
+the multiplier as fixed. It leaves out uncertainty in how many SNPs there are
+per sequenced site, as the per-site value itself does.
 
 Three conditions apply.
 
@@ -489,8 +499,8 @@ heterozygosity into exactly these two parts.
 |------------------|------------------|------------------|------------------|
 | `_se` | RAD loci | Leave out one RAD locus and recompute; do this for every locus. How much those values spread gives the SE. This is a *jackknife*. | the individuals |
 | `_lo`, `_hi` | RAD loci | Draw as many RAD loci as you have, at random and with replacement, and recompute; do this thousands of times. The middle 95% of the results is the interval. This is a *bootstrap*. | the individuals |
-| `_se_ind` | individuals | Leave out one individual and recompute; do this for every individual (a jackknife). Needs `se_individuals = TRUE`. | the loci |
-| `_se_combined` | both | Square `_se` and `_se_ind`, add them, and take the square root. Needs `se_individuals = TRUE`. | nothing |
+| `_se_ind` | individuals | Leave out one individual and recompute; do this for every individual (a jackknife). Computed by default; `se_individuals = FALSE` turns it off. | the loci |
+| `_se_combined` | both | Square `_se` and `_se_ind`, add them, and take the square root. Computed by default; `se_individuals = FALSE` turns it off. | nothing |
 
 Three details:
 
@@ -574,12 +584,30 @@ in inbreeding.
 
 ### The rule
 
-> **Ho, He and FIS:** run `diversity_stats(..., se_individuals = TRUE)`
-> and report `_se_combined`. A 95% interval is the estimate ± 1.96 ×
-> `_se_combined`.
+> **Ho, He and FIS:** report `_se_combined`, which `diversity_stats()`
+> computes by default (`se_individuals = TRUE`). A 95% interval is the
+> estimate ± 1.96 × `_se_combined`. The per-site Ho and He take the same
+> rule: report `Ho_autosomal_se_combined` and `He_autosomal_se_combined`.
 >
-> **Ar and privAr:** report `_se`, or the bootstrap interval `_lo` to
-> `_hi`.
+> **Ar and privAr:** report `_se`. The bootstrap interval `_lo` to `_hi` is
+> also available; in these simulations it held the true value about as often
+> as the SE, or slightly less often (Ar: 92–93% against 93–94%).
+
+The short `summary()` of `diversity_stats()` shows only these recommended
+standard errors, and says which kind each one is. It quotes the wider ranges
+over all the simulated settings (the second table above): 90–99% for the
+combined SE of Ho, He and FIS, and 88–96% for the locus SE of Ar and privAr.
+For He alone the locus SE was also close (95–96%); the combined SE is used for
+all three so that the choice does not depend on how much individuals differ
+in inbreeding.
+
+No simulation has checked the standard errors of FST, D, beta, pi, `dxy` and
+`da_nc` (`differentiation_stats()`, `pi_allsites()`). They are jackknifes over RAD
+loci only, and their summaries say "not checked by simulation". The
+heterozygosity test of `het_between_pops()` is different: its combined test
+has its own simulation, with a false-positive rate of 3–7.5% when populations
+do not differ, against up to 30% for Welch's t alone
+(`inst/sims/het_test_null.R`).
 
 ### Why not bootstrap individuals?
 

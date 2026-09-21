@@ -12,17 +12,21 @@
 
 lg <- function(name) test_path("fixtures", "legacy", name)
 
-run_div <- function(vcf, popmap = "popmap.tsv", g = 20, ...) {
+## The golden files were made before the individual SEs existed, so the golden
+## test runs with them off (`se_individuals = FALSE`); the estimates are the same
+## either way. Tests of the report pass TRUE, the package default.
+run_div <- function(vcf, popmap = "popmap.tsv", g = 20, se_individuals = FALSE, ...) {
   od <- tempfile("legacy-"); dir.create(od)
   res <- NULL
   suppressMessages(
-    res <- diversity_stats(lg(vcf), lg(popmap), g = g, nboot = 0, outdir = od, ...))
+    res <- diversity_stats(lg(vcf), lg(popmap), g = g, nboot = 0, outdir = od,
+                           se_individuals = se_individuals, ...))
   ## The report is what print() on the result shows.
   ## The full report, printed as the command-line script prints it (wide, so
   ## no table is split across lines).
   old <- options(width = 200)
   on.exit(options(old), add = TRUE)
-  list(res = res, out = capture.output(print(summary(res))), dir = od)
+  list(res = res, out = capture.output(print(summary(res, details = TRUE))), dir = od)
 }
 
 ## Same rule as the old check_golden.R: identical columns and rows, numbers
@@ -198,7 +202,7 @@ test_that("the full report never names a column it does not print", {
   ## header -- except mentions that explicitly point to the OTHER run.
   id_re <- "\\b(?:Ho|He|Fis|Ar|priv|pct)[A-Za-z0-9_]*\\b"
   for (f in c("sim.allsnps.vcf.gz", "sim.haps.vcf.gz")) {
-    out <- run_div(f, sites = 1e6)$out
+    out <- run_div(f, sites = 1e6, se_individuals = TRUE)$out
     txt <- paste(out, collapse = "\n")
     cols <- unique(unlist(strsplit(trimws(grep("^ *population ", out, value = TRUE)), " +")))
     expect_gt(length(cols), 5)                       # a vacuous pass would find none

@@ -5,6 +5,12 @@
 fx <- function(name) test_path("fixtures", name)
 haps <- function() read_stacks_vcf(fx("small.haps.vcf"), verbose = FALSE)
 
+## The individual SEs are on by default but warn on the 3-4 individual toy
+## fixtures, and these tests are about something else: run them with the SEs off
+## (see test-jackknife-individuals.R for the default).
+diversity_stats <- function(..., se_individuals = FALSE)
+  RADdiversity::diversity_stats(..., se_individuals = se_individuals)
+
 test_that("scalar arguments are checked with a message naming the argument", {
   vcf <- fx("small.haps.vcf")
   pm <- fx("small_popmap.tsv")
@@ -63,10 +69,13 @@ test_that("every table of a het_between_pops() result is a list element, not hid
 
 test_that("filters chain, including filter_low_conf_alt()", {
   H <- read_stacks_vcf(fx("small_ad.haps.vcf"), verbose = FALSE)
-  out <- H |>
-    filter_low_conf_alt(min_alt_reads = 2, verbose = FALSE) |>
-    filter_max_het(max_ho = 1, verbose = FALSE) |>
-    filter_thin_one_snp(verbose = FALSE)
+  ## Each filter takes an H and returns an H, so they chain (written without the
+  ## native pipe, which needs R 4.1; the package supports R 4.0).
+  out <- filter_thin_one_snp(
+    filter_max_het(
+      filter_low_conf_alt(H, min_alt_reads = 2, verbose = FALSE),
+      max_ho = 1, verbose = FALSE),
+    verbose = FALSE)
   expect_s3_class(out, "raddiv_vcf")
   expect_true(all(c("A1", "A2", "locus", "locus_raw", "fields", "ad_ref", "ad_alt", "depth")
                   %in% names(out)))

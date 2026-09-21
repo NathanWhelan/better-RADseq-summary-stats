@@ -489,7 +489,14 @@
   per_population = list(digits = 4, round_cols = c(pct_poly = 1)),
   richness = list(digits = 4, round_cols = c(priv_total = 1, priv_total_se = 1,
                                              priv_total_lo = 1, priv_total_hi = 1)),
-  autosomal = list(digits = 4, signif_cols = c(Ho_autosomal = 4, He_autosomal = 4)),
+  ## Per-site values and their uncertainty are small numbers (0.00530, SE
+  ## 0.00017), so they are rounded to 4 significant digits, not 4 decimals.
+  autosomal = list(digits = 4, signif_cols = {
+    cols <- c(outer(c("Ho", "He"),
+                    c("_autosomal", "_autosomal_se", "_autosomal_se_ind",
+                      "_autosomal_se_combined", "_autosomal_lo", "_autosomal_hi"), paste0))
+    stats::setNames(rep(4, length(cols)), cols)
+  }),
   estimator_comparison = list(digits = 4, round_cols = c(pct_diff = 2)),
   he_difference = list(digits = 4),
   fis_by_call_rate = list(digits = 4)
@@ -576,6 +583,14 @@
   ## for populations with a plausible sites value (see ok_sites). Each
   ## population uses its OWN sequenced sites and its OWN count of variant
   ## records (see .autosomal_counts() in R/diversity_stats.R).
+  ##
+  ## A per-site value is Ho (or He) times records / sites, a fixed positive
+  ## multiplier for each population. A jackknife SE, or a percentile bootstrap
+  ## bound, of a value times a constant is exactly that constant times the
+  ## original, so each per-site value gets the same uncertainty columns as Ho
+  ## and He, made with the same autosomal_het() scaling. This treats
+  ## records / sites as fixed: it leaves out uncertainty in how many SNPs there
+  ## are per sequenced site, as the point estimate already does.
   autosomal <- NULL
   if (any(ok_sites) && !is_haplotype) {
     records <- unname(variant_records)
@@ -584,9 +599,12 @@
       population = pop_names,
       sites_used = sites_ok,
       variant_records = ifelse(ok_sites, records, NA_real_),
-      Ho_autosomal = autosomal_het(value("Ho_"), records, sites_ok),
-      He_autosomal = autosomal_het(value("He_"), records, sites_ok),
       row.names = NULL)
+    suffixes <- c("", "_se", if (!is.null(se_ind)) c("_se_ind", "_se_combined"), "_lo", "_hi")
+    for (stat in c("Ho", "He"))
+      for (suffix in suffixes)
+        autosomal[[paste0(stat, "_autosomal", suffix)]] <-
+          autosomal_het(per_population[[paste0(stat, suffix)]], records, sites_ok)
   }
 
   ## Two populations: the locus-bootstrap interval of their He difference.

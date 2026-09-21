@@ -129,9 +129,10 @@ knowing what each filter changes and reporting it:
 | one SNP per RAD locus (`--write-single-snp`) | fewer SNPs; He per SNP shifts differently in different populations; per-site He comes out far too low, because most SNPs are missing | use all SNPs for He and per-site values |
 | any filter applied after Stacks `populations` | Stacks' `Sites` no longer matches the data if whole RAD loci were removed | give `sites` for the loci you kept (see "The SNP run" in section 5) |
 
-`summary()` of a `diversity_stats()` result (section 5) shows what the
-data look filtered at: the rarest allele count left, the lowest call
-rates, and the highest heterozygosity of any record.
+`summary(details = TRUE)` of a `diversity_stats()` result (section 5) shows
+what the data look filtered at: the rarest allele count left, the lowest call
+rates, and the highest heterozygosity of any record. The short `summary()` says
+whether the data look filtered by minor allele count.
 
 ## 2. Read the data and look at it
 
@@ -281,8 +282,10 @@ div_haps
 - `Fis` is `r round(div_haps$per_population$Fis[1], 3)` in north and
   `r round(div_haps$per_population$Fis[2], 3)` in south. `_se` is a
   jackknife standard error over RAD loci; `_lo` and `_hi` are a 95%
-  bootstrap interval over RAD loci. (Use `nboot = 10000`, the default,
-  for real analyses; 200 keeps this vignette fast.)
+  bootstrap interval over RAD loci; `_se_combined` also counts which
+  individuals were sampled, and is the one to report for `Fis` (section 6).
+  (Use `nboot = 10000`, the default, for real analyses; 200 keeps this
+  vignette fast.)
 - `Ar` and `privAr` are per locus. North, the larger and
   non-bottlenecked population, has more alleles and more private
   alleles.
@@ -291,8 +294,11 @@ div_haps
 - These intervals describe one population's estimate. They are **not** a
   test of whether the populations differ; that is section 7.
 
-`summary(div_haps)` prints the full report, with a note under each
-table. One table there checks for potential null alleles:
+`summary(div_haps)` is short: each estimate as `estimate (SE)` with the
+recommended standard error, what to take from this run, and a list of checks.
+`summary(div_haps, details = TRUE)` is the full report, with every
+uncertainty column (and `Ar_n`, `privAr_n`) and a note under each table. One
+table there checks for potential null alleles:
 
 ```{r}
 div_haps$fis_by_call_rate
@@ -312,7 +318,8 @@ have wide standard errors).
 div_snps <- diversity_stats(snps, pops, g = 16, nboot = 200, sites = sumstats,
                             verbose = FALSE)
 div_snps$per_population[, c("population", "Ho", "He", "pct_poly")]
-div_snps$autosomal
+div_snps$autosomal[, c("population", "sites_used", "Ho_autosomal", "He_autosomal",
+                       "He_autosomal_se_combined", "He_autosomal_lo", "He_autosomal_hi")]
 ```
 
 **What.** He averaged over SNPs depends on how many SNPs the run called,
@@ -329,6 +336,14 @@ filtered after `populations`. Otherwise give `sites` yourself: the
 sequenced sites of the loci you kept, counting a site for a population
 only where at least one of its individuals is genotyped.
 `diversity_stats()` warns in both cases.
+
+Each per-site value has the same standard errors and interval as Ho or He
+(`Ho_autosomal_se_combined`, `_lo`, `_hi`, and so on). A per-site value is Ho
+or He times `variant_records / sites_used`, a fixed multiplier for each
+population, so its SEs and bounds are the Ho or He ones times that same
+multiplier. This treats the multiplier as fixed, so it leaves out uncertainty
+in how many SNPs there are per sequenced site, as the per-site value itself
+does.
 
 **Reading the output.** South has
 `r sprintf("%.0f%%", 100 * (1 - div_snps$autosomal$He_autosomal[2] / div_snps$autosomal$He_autosomal[1]))`
@@ -361,16 +376,16 @@ permutation test of g2 = 0. An interval that lies above 0 means
 individuals differ in inbreeding; here that holds for
 `r paste(id$population[id$g2_lo > 0], collapse = " and ")`.
 
-**What to report.** If individuals differ in inbreeding, turn on
-`se_individuals = TRUE`. It adds `_se_ind`, a jackknife over individuals
-(each one left out in turn), and `_se_combined`, which puts both sources
-together. For Ho, He and FIS, report `_se_combined`. For Ar and privAr,
-report the locus-based `_se` (or `_lo` and `_hi`), which already covered
-the truth well in simulation.
+**What to report.** `diversity_stats()` computes `_se_ind`, a jackknife over
+individuals (each one left out in turn), and `_se_combined`, which puts both
+sources together, by default. (`se_individuals = FALSE` skips them and saves
+about 30% of the run time.) For Ho, He and FIS, report `_se_combined`. For Ar
+and privAr, report the locus-based `_se`, which already covered the truth well
+in simulation. A short `summary()` shows only these recommended standard
+errors.
 
 ```{r}
-div_ind <- diversity_stats(haps, pops, g = 16, nboot = 0, se_individuals = TRUE,
-                           verbose = FALSE)
+div_ind <- diversity_stats(haps, pops, g = 16, nboot = 0, verbose = FALSE)
 div_ind$per_population[, c("population", "Fis", "Fis_se", "Fis_se_ind", "Fis_se_combined")]
 ```
 
@@ -426,7 +441,8 @@ het
   significant. It uses individuals only, so confirm a difference with
   `p_combined_BH`.
 
-`summary(het)` adds two checks worth reading before reporting the test:
+The `CHECKS` in `summary(het)` list two things worth reading before
+reporting the test (`summary(het, details = TRUE)` has the numbers):
 
 ```{r}
 het$missingness_confound$overall
@@ -448,6 +464,7 @@ het$g2
 ```{r}
 dif <- differentiation_stats(haps, pops, nboot = 200, verbose = FALSE)
 dif$global
+dif$pairwise
 ```
 
 **What.** FST (Weir & Cockerham 1984) is the share of genetic variance
@@ -459,7 +476,12 @@ is Weir & Cockerham's, pooled over populations.
 
 **Reading the output.** FST of `r round(dif$global$FST, 3)` is modest
 differentiation. On haplotype data report D (or beta) alongside FST. On
-large datasets, `beta = FALSE` skips the slow hierfstat step.
+large datasets, `beta = FALSE` skips the slow hierfstat step. `summary(dif)`
+shows FST and D as `estimate (SE)`, and beta, which is a point estimate with no
+SE. The FST and D standard errors (`FST_se`, `D_se`) are jackknifes over RAD
+loci only. Unlike the diversity standard errors in section 6, no simulation
+has checked how often their intervals hold the true value, so the summary
+says so.
 
 **Which records D uses.** The global D uses **only records genotyped in
 every population**; `D_records` in `dif$global` says how many (here
@@ -484,14 +506,16 @@ pixy; Korunes & Samuk 2021). Note that the `--vcf-all` output from
 
 ```{r}
 pi_res <- pi_allsites(allsites, pops, nboot = 200, verbose = FALSE)
-pi_res$pi[, c("population", "pi", "pi_lo", "pi_hi", "pi_nc", "sites")]
-pi_res$dxy[, c("pop1", "pop2", "dxy", "da", "da_nc")]
+pi_res$pi[, c("population", "pi_nc", "pi_nc_se", "pi", "pi_se", "sites")]
+pi_res$dxy[, c("pop1", "pop2", "dxy", "dxy_se", "da", "da_nc", "da_nc_se")]
 ```
 
 **Reading the output.** `pi` is the estimator of pixy, VCFtools and
 Stacks; `pi_nc` leaves out the comparison between the two gene copies
 inside each individual, which keeps it unbiased when individuals are
-inbred. Here `pi_nc` for north (`r signif(pi_res$pi$pi_nc[1], 3)`) is
+inbred. Report `pi_nc`, and `pi` only to compare with those tools. The
+standard errors (`_se`) count RAD loci only and have not been checked by
+simulation. Here `pi_nc` for north (`r signif(pi_res$pi$pi_nc[1], 3)`) is
 close to `He_autosomal` from section 5
 (`r signif(div_snps$autosomal$He_autosomal[1], 3)`), as it should be
 with little missing data. `dxy` is the divergence between populations;
@@ -540,6 +564,60 @@ individuals take about 400 MB once read. Read a VCF once and pass the
 object to every function, rather than the path each time.
 `differentiation_stats(beta = FALSE)` skips its slowest step.
 
+## A table for your manuscript
+
+**What.** Put in the table exactly what the short `summary()` of each result
+reports, and nothing more. For each statistic it shows the one standard error
+that was most accurate in the package's simulations (section 6), so the table
+holds what you were told to report. `summary(x)$tables` gives those tables as
+data frames, with the same `estimate (SE)` text the summary prints and one row
+for every population or pair.
+
+```{r}
+snp <- summary(div_snps)$tables   # results: Ho, He, pct_poly.  per_site: Ho, He per site
+hap <- summary(div_haps)$tables   # results: Fis, Ar, privAr
+
+## Ho and He come from the SNP VCF, Fis, Ar and privAr from the haplotype VCF.
+## `n` is in both tables, so keep one copy. Join by population name, never by row order.
+parts  <- list(snp$results, snp$per_site, hap$results[names(hap$results) != "n"])
+table1 <- Reduce(function(a, b) merge(a, b, by = "population", sort = FALSE),
+                 Filter(Negate(is.null), parts))       # per_site is NULL without `sites`
+table1 <- table1[match(snp$results$population, table1$population), ]   # popmap order
+knitr::kable(table1, row.names = FALSE)
+```
+
+```{r}
+table2 <- summary(dif)$tables$results   # FST (SE), D (SE) and beta for each pair
+knitr::kable(table2, row.names = FALSE)
+```
+
+`write.csv(table1, "table1_diversity.csv", row.names = FALSE)` writes the table
+for Excel or Word. The other functions work the same way:
+`summary(het)$tables` holds `heterozygosity` and `inbreeding` (the difference
+with its SE, 95% interval, p and Hedges' g for each pair) and `populations`;
+`summary(pi_res)$tables` holds `results` (`pi_nc`, `pi`), `between` (`dxy`,
+`da_nc`) and `individual_het`.
+
+```{r}
+knitr::kable(summary(het)$tables$heterozygosity, row.names = FALSE)
+```
+
+**Why only these columns.** Each column the summary leaves out is left out for a
+reason. The other uncertainty columns (`_se`, `_se_ind`, `_lo`, `_hi`) are less
+accurate than the SE shown, and two uncertainty measures side by side invite
+readers to pick the narrower one; they belong in a supplementary table (the
+`outdir` files). Counts such as `Ar_n`, `privAr_n`, `priv_total` and
+`sites_used` are checks for you, so state them in the methods ("Ar was averaged
+over 739 loci"). Ho and He from the haplotype VCF are not comparable with other
+studies, so they stay out. Add something only when a check said `look` and
+readers need the number to judge the table: for example, footnote the `Ar_n`
+counts if Ar rests on different loci in different populations.
+
+**What goes in the caption and methods.** The rarefaction size `g`, which VCF
+each column came from, which standard error each column is (the legend under the
+summary's table says), and the filters and thresholds you used. Section "A
+reporting checklist" below lists them.
+
 ## A reporting checklist
 
 - The Stacks version and `populations` settings, and any filters applied
@@ -547,7 +625,8 @@ object to every function, rather than the path each time.
 - Which VCF each statistic came from (haplotype or SNP).
 - The He estimator (Nei & Chesser 1983) and that FIS is a ratio of sums
   over loci.
-- `g` for allelic richness, and `Ar_n`/`privAr_n`.
+- `g` for allelic richness, and `Ar_n`/`privAr_n` (in the methods or a table
+  footnote, not as table columns).
 - The `sites` value(s) behind per-site heterozygosity.
 - Whether relatives were removed, the g2 result, and which standard
   errors are reported (over loci or individuals).

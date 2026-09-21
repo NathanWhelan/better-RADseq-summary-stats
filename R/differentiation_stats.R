@@ -266,7 +266,9 @@
 #' Weir & Cockerham's (1984) FST and FIS and Jost's (2008) D, for all
 #' populations together (global) and for each pair, and, when the `hierfstat`
 #' package is installed, Weir & Goudet's (2017) pairwise beta. Printing the
-#' result shows the tables; `summary()` adds notes on interpretation.
+#' result shows the tables. `summary()` shows FST and D as `estimate (SE)`, what
+#' to report and a list of checks; `summary(details = TRUE)` adds every
+#' uncertainty column and the notes on interpretation.
 #'
 #' @details
 #' **Why report both FST and D.** FST's ceiling shrinks as a locus's own
@@ -361,6 +363,16 @@
 #'   Values are stored at full precision. With `outdir`, `global` and
 #'   `pairwise` are written to `differentiation_global.<stem>.tsv` and
 #'   `differentiation_pairwise.<stem>.tsv`.
+#' @section Tables for a paper:
+#' Put in the table exactly what the short `summary()` reports.
+#' `summary(x)$tables$results` is that table as a data frame: one row for every
+#' pair of populations (and an "all populations" row when there are 3 or more),
+#' with `FST (SE)` and `D (SE)` as `estimate (SE)` text and `beta` as a plain
+#' number (it is a point estimate and has no SE). The FST and D standard errors
+#' are jackknifes over RAD loci; they count RAD loci only, and no simulation has
+#' checked how often their 95% intervals hold the true value, so the summary
+#' says so. The other uncertainty columns (`_lo`, `_hi`) are in `global` and
+#' `pairwise`, for a supplement. On a haplotype VCF report D (or beta) with FST.
 #' @examples
 #' vcf    <- system.file("extdata", "small.haps.vcf", package = "RADdiversity")
 #' popmap <- system.file("extdata", "small_popmap.tsv", package = "RADdiversity")
@@ -368,6 +380,7 @@
 #' res <- differentiation_stats(vcf, popmap, nboot = 100, verbose = FALSE)
 #' res
 #' res$global$D
+#' summary(res)$tables$results     # the table to put in a paper
 #' @export
 differentiation_stats <- function(vcf, popmap, nboot = 10000L, beta = TRUE,
                                   hierfstat_check = FALSE, outdir = NULL, stem = NULL,
@@ -691,19 +704,128 @@ print.raddiv_differentiation <- function(x, ...) {
   cat("\n")
   if (st$is_haplotype) cat("NOTE: haplotype VCF -- prefer D (or beta) over FST (see summary()).\n")
   if (is.null(x$pairwise_beta)) cat("NOTE:", .beta_note(st), "\n")
-  cat("summary() prints the full report.\n")
+  cat("summary() shows what to report and what to check; summary(x, details = TRUE) explains every number.\n")
   invisible(x)
 }
 
 #' @rdname differentiation_stats
+#' @param details For `summary()`: `FALSE` (the default) prints a short view --
+#'   FST, D and beta as `estimate (SE)`, what to report, and a list of checks.
+#'   `TRUE` prints the full report: every uncertainty column, the explanations
+#'   and the notes on missing data. Either way, the object returned holds the
+#'   table the short view prints, in `$tables$results` (see "Tables for a
+#'   paper").
 #' @export
-summary.raddiv_differentiation <- function(object, ...) {
-  structure(list(result = object), class = "summary.raddiv_differentiation")
+summary.raddiv_differentiation <- function(object, details = FALSE, ...) {
+  .check_flag(details, "details")
+  ## The table the short view prints, with every pair (the short view shows at
+  ## most 10), so a table for a paper can be built from exactly what it shows.
+  structure(list(result = object, details = details,
+                 tables = list(results = .differentiation_results(object, max_rows = Inf)$table)),
+            class = "summary.raddiv_differentiation")
 }
 
 #' @export
 print.summary.raddiv_differentiation <- function(x, ...) {
-  res <- x$result
+  if (isTRUE(x$details)) .differentiation_report(x$result) else .differentiation_brief(x$result)
+  invisible(x)
+}
+
+## Not exported. The RESULTS table of the short summary: one row per pair of
+## populations (and, with 3 or more populations, an "all populations" row), FST
+## and D as "estimate (SE)" with their locus-jackknife SE, and beta, which is a
+## point estimate and has no SE. At most 10 pairs are shown. The SE counts RAD
+## loci only, and no simulation has checked how often its 95% interval holds
+## the truth (unlike the diversity_stats() SEs), so the legend says so.
+.differentiation_results <- function(res, max_rows = 10L) {
+  st <- res$settings
+  pw <- res$pairwise
+  shown <- utils::head(pw, max_rows)
+  labels <- paste(shown$pop1, "-", shown$pop2)
+  fst <- shown$FST; fst_se <- shown$FST_se
+  d <- shown$D; d_se <- shown$D_se
+  has_beta <- "beta" %in% names(shown) && !is.null(res$pairwise_beta)
+  beta <- if (has_beta) shown$beta
+  if (st$n_pops > 2L) {
+    labels <- c("all populations", labels)
+    fst <- c(res$global$FST, fst); fst_se <- c(res$global$FST_se, fst_se)
+    d <- c(res$global$D, d); d_se <- c(res$global$D_se, d_se)
+    if (has_beta) beta <- c(NA, beta)
+  }
+  tab <- data.frame(pair = labels, stringsAsFactors = FALSE, check.names = FALSE)
+  tab[["FST (SE)"]] <- .est_se(fst, fst_se)
+  tab[["D (SE)"]] <- .est_se(d, d_se)
+  if (has_beta) tab[["beta"]] <- ifelse(is.finite(beta), sprintf("%.4f", beta), "-")
+  list(table = tab, has_beta = has_beta, n_shown = nrow(shown), n_pairs = nrow(pw))
+}
+
+## Not exported. What to report, for the short view and the full one.
+.differentiation_report_advice <- function(st, full = FALSE) {
+  if (st$is_haplotype) {
+    if (full) .report_text$differentiation_haplotype
+    else c("Report D (or beta) with FST. On a haplotype VCF FST's ceiling shrinks as",
+           "marker diversity grows (Jost 2008).")
+  } else {
+    "Report FST and D, each with its SE."
+  }
+}
+
+## Not exported. The checks of a differentiation_stats() result, as .check()
+## lists: how many records the global D rests on, the records FST skipped, and
+## whether beta was computed.
+.differentiation_checks <- function(res) {
+  st <- res$settings
+  checks <- list()
+  if (!is.null(st$d_records_global)) {
+    few <- .d_records_few(st)
+    sentence <- .d_records_sentence(st$d_records_global, st$n_records, st$n_pops)
+    checks[[length(checks) + 1L]] <-
+      if (few) .check("look", paste0(sentence, ". Global D rests on fewer than half the records: report pairwise D as well"))
+      else .check("ok", sentence)
+  }
+  skipped <- st$fst_records_skipped
+  if (!is.null(skipped) && any(skipped > 0))
+    checks[[length(checks) + 1L]] <- .check("info",
+      sprintf("FST skipped records typed in fewer than 2 compared populations, or with one individual per typed population (%s)",
+              paste(sprintf("%s %s", names(skipped)[skipped > 0], .big(skipped[skipped > 0])),
+                    collapse = ", ")))
+  note <- .beta_note(st)
+  if (!is.null(note)) checks[[length(checks) + 1L]] <- .check("info", sub("\\.$", "", note))
+  checks
+}
+
+## Not exported. The short summary(): FST, D and beta, what to report, and the
+## checks. `summary(x, details = TRUE)` prints the full report.
+.differentiation_brief <- function(res) {
+  st <- res$settings
+  cat(sprintf("DIFFERENTIATION: %d populations, %s records on %s RAD loci (%s VCF)\n",
+              st$n_pops, .big(st$n_records), .big(st$n_loci),
+              if (st$is_haplotype) "haplotype" else "SNP"))
+  r <- .differentiation_results(res)
+  .section("RESULTS   each cell is estimate (standard error)")
+  .print_compact(r$table)
+  .legend(sprintf("FST   share of genetic variation between populations (%s).",
+                  "Weir & Cockerham 1984"),
+          "D     does not shrink as loci get more variable (Jost 2008).",
+          if (r$has_beta) "beta  Weir & Goudet (2017), a point estimate: it has no SE.",
+          "SE counts variation among RAD loci only (not checked by simulation).",
+          if (r$n_shown < r$n_pairs)
+            sprintf("Showing the first %d of %d pairs; the full table is x$pairwise.",
+                    r$n_shown, r$n_pairs))
+  .section("WHAT TO REPORT")
+  .legend(.differentiation_report_advice(st))
+  .section("CHECKS")
+  .check_lines(.differentiation_checks(res))
+  .section("Not shown here: FIS, the bootstrap intervals and the explanations.")
+  .legend("summary(x, details = TRUE)   explains every column and check",
+          "x$global, x$pairwise         hold every SE and interval")
+  invisible(NULL)
+}
+
+## Not exported. The full differentiation report (summary(x, details = TRUE),
+## and what a command-line run prints with --details). Numbers come from the
+## result object; the longer fixed paragraphs are in .report_text.
+.differentiation_report <- function(res) {
   st <- res$settings
   note <- function(...) cat(paste0("  ", c(...), "\n"), sep = "")
   rule <- function(char) cat(strrep(char, 69), "\n", sep = "")
@@ -715,32 +837,54 @@ print.summary.raddiv_differentiation <- function(x, ...) {
   if (st$nboot > 0)
     cat("  95% CI from ", .big(st$nboot), " bootstrap replicates over RAD loci\n", sep = "")
   rule("=")
+
+  ## The same RESULTS table as the short summary, then what to report, then
+  ## every column, one small table per statistic.
+  r <- .differentiation_results(res)
+  .section("RESULTS   each cell is estimate (standard error)")
+  .print_compact(r$table)
+  note("SE counts variation among RAD loci only (not checked by simulation).",
+       if (r$has_beta) "beta is a point estimate: it has no SE.")
   cat("\n")
-  .print_table(.round_table(res$global))
+  rule("-")
+  note(.differentiation_report_advice(st, full = TRUE))
+  rule("-")
+
+  cat("\nFULL TABLES -- every uncertainty column, one small table per statistic\n")
+  cat("\nAll populations together\n")
+  .print_blocks(.stat_blocks(cbind(scope = "all populations", .round_table(res$global)),
+                             c("FST", "FIS", "D")),
+                list(FST = .report_text$differentiation_block_note,
+                     FIS = .report_text$differentiation_fis_note,
+                     D = .report_text$differentiation_block_note))
   note(.report_text$differentiation_se_columns)
   if (!is.null(st$d_records_global)) {
-    note(paste0(.d_records_sentence(st$d_records_global, st$n_records, st$n_pops), "."),
+    note(strwrap(paste0(.d_records_sentence(st$d_records_global, st$n_records, st$n_pops), "."),
+                 width = 76),
          .report_text$differentiation_d_global_records)
     if (.d_records_few(st))
       note("NOTE: global D rests on fewer than half the records here; report pairwise D as well.")
   }
   skipped <- st$fst_records_skipped
   if (!is.null(skipped) && any(skipped > 0))
-    note(sprintf("FST skipped records typed in fewer than 2 compared populations, or with one individual per typed population (%s):",
-                 paste(sprintf("%s %s", names(skipped)[skipped > 0], .big(skipped[skipped > 0])),
-                       collapse = ", ")),
+    note(strwrap(sprintf("FST skipped records typed in fewer than 2 compared populations, or with one individual per typed population (%s):",
+                         paste(sprintf("%s %s", names(skipped)[skipped > 0], .big(skipped[skipped > 0])),
+                               collapse = ", ")), width = 76),
          .report_text$differentiation_one_pop_records)
-  cat("\nPairwise FST / (beta) / D\n")
-  .print_table(.round_table(res$pairwise))
-  if (!is.null(res$pairwise_beta))
-    note("beta = Weir & Goudet (2017), via hierfstat::pairwise.betas() -- a point estimate only.")
-  else
-    note(.beta_note(st))
-  cat("\n")
-  rule("-")
-  if (st$is_haplotype) note(.report_text$differentiation_haplotype)
-  rule("-")
+
+  cat("\nEach pair of populations\n")
+  pw <- cbind(pair = paste(res$pairwise$pop1, "-", res$pairwise$pop2),
+              .round_table(res$pairwise[, setdiff(names(res$pairwise), c("pop1", "pop2")), drop = FALSE]))
+  ## beta has a column even when it was not computed (all NA): leave it out then,
+  ## and say why once, instead of printing an empty table and an explanation of it.
+  if (is.null(res$pairwise_beta)) pw$beta <- NULL
+  .print_blocks(.stat_blocks(pw, c("FST", "beta", "D")),
+                list(FST = .report_text$differentiation_block_note,
+                     beta = c("beta is Weir & Goudet (2017), via hierfstat::pairwise.betas().",
+                              "It is a point estimate: it has no SE."),
+                     D = .report_text$differentiation_block_note))
+  if (is.null(res$pairwise_beta)) note(.beta_note(st))
   if (length(st$files)) cat("\nWrote ", paste(st$files, collapse = " and "), "\n", sep = "")
   cat("\n")
-  invisible(x)
+  invisible(NULL)
 }

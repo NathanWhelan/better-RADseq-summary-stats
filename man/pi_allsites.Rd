@@ -22,7 +22,7 @@ pi_allsites(
 
 \method{print}{raddiv_pi}(x, ...)
 
-\method{summary}{raddiv_pi}(object, ...)
+\method{summary}{raddiv_pi}(object, details = FALSE, ...)
 }
 \arguments{
 \item{vcf}{Path to an all-sites VCF (\code{.vcf} or \code{.vcf.gz}). Unlike the other
@@ -81,6 +81,13 @@ your session's random-number stream as it was.}
 \item{x, object}{A \code{raddiv_pi} object, as returned by \code{pi_allsites()}.}
 
 \item{...}{Ignored.}
+
+\item{details}{For \code{summary()}: \code{FALSE} (the default) prints a short view --
+\code{pi_nc}, \code{pi}, \code{dxy} and \code{da_nc} as \code{estimate (SE)}, what to report, and
+what each population's pi is averaged over. \code{TRUE} prints the full report:
+every uncertainty column and the explanations. Either way, the object
+returned holds the tables the short view prints, in \verb{$tables} (see "Tables
+for a paper").}
 }
 \value{
 An object of class \code{raddiv_pi}, a list of:
@@ -149,6 +156,21 @@ jackknife and intervals a block bootstrap, both over RAD loci (see
 \strong{Memory.} The file is read \code{chunk_lines} records at a time and only
 per-RAD-locus sums are kept, so it is never held in memory whole.
 }
+\section{Tables for a paper}{
+
+Put in the table exactly what the short \code{summary()} reports.
+\code{summary(x)$tables} holds those tables as data frames, with \code{estimate (SE)}
+text: \code{results} (one row per population: \code{pi_nc (SE)} and \code{pi (SE)}, and the
+\code{sites} each rests on), \code{between} (one row per pair: \code{dxy (SE)} and
+\code{da_nc (SE)}) and \code{individual_het} (population means of per-individual
+heterozygosity per site, which have no SE). Report \code{pi_nc} as the estimate,
+and \code{pi} only to compare with pixy, VCFtools or Stacks; report \code{dxy} and
+\code{da_nc} for divergence (\code{da} runs a little high when individuals are
+inbred). The standard errors count RAD loci only, and no simulation has
+checked how often their 95\% intervals hold the true value, so the summary says
+so. The other uncertainty columns are in \code{pi} and \code{dxy}, for a supplement.
+}
+
 \examples{
 # A tiny all-sites VCF: two RAD loci (in CHROM, as in Stacks 2 de novo
 # output), invariant sites included, one missing genotype.

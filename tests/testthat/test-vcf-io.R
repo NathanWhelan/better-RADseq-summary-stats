@@ -1,5 +1,11 @@
 fx <- function(name) test_path("fixtures", name)
 
+## The individual SEs are on by default but warn on these 3-4 individual toy
+## fixtures, and no test here is about them: run diversity_stats() with them off
+## (see test-jackknife-individuals.R for the default).
+diversity_stats <- function(..., se_individuals = FALSE)
+  RADdiversity::diversity_stats(..., se_individuals = se_individuals)
+
 test_that("read_stacks_vcf() parses the small fixture", {
   H <- suppressMessages(read_stacks_vcf(fx("small.haps.vcf")))
   expect_setequal(H$samples,

@@ -20,7 +20,7 @@ differentiation_stats(
 
 \method{print}{raddiv_differentiation}(x, ...)
 
-\method{summary}{raddiv_differentiation}(object, ...)
+\method{summary}{raddiv_differentiation}(object, details = FALSE, ...)
 }
 \arguments{
 \item{vcf}{Path to \code{populations.snps.vcf} or \code{populations.haps.vcf}
@@ -63,6 +63,13 @@ your session's random-number stream as it was.}
 \code{differentiation_stats()}.}
 
 \item{...}{Ignored.}
+
+\item{details}{For \code{summary()}: \code{FALSE} (the default) prints a short view --
+FST, D and beta as \code{estimate (SE)}, what to report, and a list of checks.
+\code{TRUE} prints the full report: every uncertainty column, the explanations
+and the notes on missing data. Either way, the object returned holds the
+table the short view prints, in \verb{$tables$results} (see "Tables for a
+paper").}
 }
 \value{
 An object of class \code{raddiv_differentiation}, a list of:
@@ -90,7 +97,9 @@ Computes how much populations differ from each other (as opposed to
 Weir & Cockerham's (1984) FST and FIS and Jost's (2008) D, for all
 populations together (global) and for each pair, and, when the \code{hierfstat}
 package is installed, Weir & Goudet's (2017) pairwise beta. Printing the
-result shows the tables; \code{summary()} adds notes on interpretation.
+result shows the tables. \code{summary()} shows FST and D as \code{estimate (SE)}, what
+to report and a list of checks; \code{summary(details = TRUE)} adds every
+uncertainty column and the notes on interpretation.
 }
 \details{
 \strong{Why report both FST and D.} FST's ceiling shrinks as a locus's own
@@ -156,6 +165,19 @@ differentiation statistics. \emph{Molecular Ecology Resources} 12:1158-1160.
 Goudet, J. (2005) HIERFSTAT, a package for R to compute and test
 hierarchical F-statistics. \emph{Molecular Ecology Notes} 5:184-186.
 }
+\section{Tables for a paper}{
+
+Put in the table exactly what the short \code{summary()} reports.
+\code{summary(x)$tables$results} is that table as a data frame: one row for every
+pair of populations (and an "all populations" row when there are 3 or more),
+with \code{FST (SE)} and \code{D (SE)} as \code{estimate (SE)} text and \code{beta} as a plain
+number (it is a point estimate and has no SE). The FST and D standard errors
+are jackknifes over RAD loci; they count RAD loci only, and no simulation has
+checked how often their 95\% intervals hold the true value, so the summary
+says so. The other uncertainty columns (\verb{_lo}, \verb{_hi}) are in \code{global} and
+\code{pairwise}, for a supplement. On a haplotype VCF report D (or beta) with FST.
+}
+
 \examples{
 vcf    <- system.file("extdata", "small.haps.vcf", package = "RADdiversity")
 popmap <- system.file("extdata", "small_popmap.tsv", package = "RADdiversity")
@@ -163,4 +185,5 @@ set.seed(1)
 res <- differentiation_stats(vcf, popmap, nboot = 100, verbose = FALSE)
 res
 res$global$D
+summary(res)$tables$results     # the table to put in a paper
 }

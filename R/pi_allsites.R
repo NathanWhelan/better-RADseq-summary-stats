@@ -159,6 +159,18 @@
 #' Schmidt, T.L., Jasper, M.-E., Weeks, A.R. & Hoffmann, A.A. (2021) Unbiased
 #' population heterozygosity estimates from genome-wide sequence data.
 #' *Methods in Ecology and Evolution* 12:1888-1898.
+#' @section Tables for a paper:
+#' Put in the table exactly what the short `summary()` reports.
+#' `summary(x)$tables` holds those tables as data frames, with `estimate (SE)`
+#' text: `results` (one row per population: `pi_nc (SE)` and `pi (SE)`, and the
+#' `sites` each rests on), `between` (one row per pair: `dxy (SE)` and
+#' `da_nc (SE)`) and `individual_het` (population means of per-individual
+#' heterozygosity per site, which have no SE). Report `pi_nc` as the estimate,
+#' and `pi` only to compare with pixy, VCFtools or Stacks; report `dxy` and
+#' `da_nc` for divergence (`da` runs a little high when individuals are
+#' inbred). The standard errors count RAD loci only, and no simulation has
+#' checked how often their 95% intervals hold the true value, so the summary says
+#' so. The other uncertainty columns are in `pi` and `dxy`, for a supplement.
 #' @examples
 #' # A tiny all-sites VCF: two RAD loci (in CHROM, as in Stacks 2 de novo
 #' # output), invariant sites included, one missing genotype.
@@ -422,26 +434,123 @@ print.raddiv_pi <- function(x, ...) {
               .big(st$n_sites), .big(st$n_loci)))
   cat("  pi and dxy per sequenced site, missing data handled site by site (pixy); _se: jackknife over RAD loci\n")
   cat("\n$pi\n")
-  .print_table(.round_pi_table(x$pi))
+  .print_compact(.round_pi_table(x$pi))            # repeats the population name on wrapped blocks
   if (!is.null(x$dxy)) {
     cat("\n$dxy\n")
     .print_table(.round_pi_table(utils::head(x$dxy, 10)))
     if (nrow(x$dxy) > 10) cat(sprintf("  (first 10 of %d pairs; the full table is x$dxy)\n", nrow(x$dxy)))
   }
   cat("\nPer-individual heterozygosity per site is in $individual.\n")
-  cat("summary() prints the full report.\n")
+  cat("summary() shows what to report; summary(x, details = TRUE) explains every column.\n")
   invisible(x)
 }
 
 #' @rdname pi_allsites
+#' @param details For `summary()`: `FALSE` (the default) prints a short view --
+#'   `pi_nc`, `pi`, `dxy` and `da_nc` as `estimate (SE)`, what to report, and
+#'   what each population's pi is averaged over. `TRUE` prints the full report:
+#'   every uncertainty column and the explanations. Either way, the object
+#'   returned holds the tables the short view prints, in `$tables` (see "Tables
+#'   for a paper").
 #' @export
-summary.raddiv_pi <- function(object, ...) {
-  structure(list(result = object), class = "summary.raddiv_pi")
+summary.raddiv_pi <- function(object, details = FALSE, ...) {
+  .check_flag(details, "details")
+  ## The tables the short view prints, with every pair (the short view shows at
+  ## most 10), so a table for a paper can be built from exactly what it shows.
+  r <- .pi_results(object, max_rows = Inf)
+  structure(list(result = object, details = details,
+                 tables = c(list(results = r$population),
+                            if (!is.null(r$pair)) list(between = r$pair),
+                            list(individual_het = r$het))),
+            class = "summary.raddiv_pi")
 }
 
 #' @export
 print.summary.raddiv_pi <- function(x, ...) {
-  res <- x$result
+  if (isTRUE(x$details)) .pi_report(x$result) else .pi_brief(x$result)
+  invisible(x)
+}
+
+## Not exported. The RESULTS tables of the short summary. Per population:
+## `pi_nc` (the estimate to report) and `pi` (for comparing with pixy, VCFtools
+## and Stacks), each as "estimate (SE)" with the locus-jackknife SE. Between
+## populations: `dxy` and `da_nc` (`da` runs high when individuals are inbred,
+## `da_nc` does not). No simulation has checked these SEs, so the legend says so.
+.pi_results <- function(res, max_rows = 10L) {
+  p <- res$pi
+  pop <- data.frame(population = p$population, sites = .big(p$sites), stringsAsFactors = FALSE,
+                    check.names = FALSE)
+  pop[["pi_nc (SE)"]] <- .est_se(p$pi_nc, p$pi_nc_se)
+  pop[["pi (SE)"]] <- .est_se(p$pi, p$pi_se)
+  pair <- NULL
+  n_pairs <- 0L
+  if (!is.null(res$dxy)) {
+    n_pairs <- nrow(res$dxy)
+    shown <- utils::head(res$dxy, max_rows)
+    pair <- data.frame(pair = paste(shown$pop1, "-", shown$pop2), stringsAsFactors = FALSE,
+                       check.names = FALSE)
+    pair[["dxy (SE)"]] <- .est_se(shown$dxy, shown$dxy_se)
+    pair[["da_nc (SE)"]] <- .est_se(shown$da_nc, shown$da_nc_se)
+  }
+  mean_het <- tapply(res$individual$het_per_site, res$individual$population, mean, na.rm = TRUE)
+  het <- data.frame(population = names(mean_het),
+                    `mean het per site (no SE)` = sprintf("%.6f", as.numeric(mean_het)),
+                    stringsAsFactors = FALSE, check.names = FALSE)
+  list(population = pop, pair = pair, n_pairs = n_pairs, het = het)
+}
+
+## Not exported. What pi is averaged over, as one .check() (tag "info").
+.pi_checks <- function(res) {
+  st <- res$settings
+  p <- res$pi
+  checks <- list(.check("info",
+    sprintf("each population's pi is averaged over its own sites with at least two typed gene copies (%s)",
+            paste(sprintf("%s %s", p$population, .big(p$sites)), collapse = ", "))))
+  if (isTRUE(st$complete_sites))
+    checks[[2L]] <- .check("info",
+      "complete_sites: each population uses only sites typed in all its individuals")
+  checks
+}
+
+## Not exported. The short summary(): pi_nc and pi, dxy and da_nc, what to
+## report, and what pi is averaged over. `summary(x, details = TRUE)` prints
+## the full report.
+.pi_brief <- function(res) {
+  st <- res$settings
+  cat(sprintf("NUCLEOTIDE DIVERSITY: %s sites on %s RAD loci (all-sites VCF)\n",
+              .big(st$n_sites), .big(st$n_loci)))
+  r <- .pi_results(res)
+  .section("RESULTS   each cell is estimate (standard error)")
+  .print_compact(r$population)
+  .legend("pi_nc  REPORT THIS. Unbiased when individuals are inbred.",
+          "pi     as pixy, VCFtools and Stacks compute it; use it to compare with them.",
+          "sites  sites with at least two typed gene copies in that population.",
+          "SE counts variation among RAD loci only (not checked by simulation).")
+  if (!is.null(r$pair)) {
+    .section("BETWEEN POPULATIONS")
+    .print_compact(r$pair)
+    .legend("dxy    divergence between the populations.",
+            "da_nc  net divergence: dxy minus the mean pi_nc of the two populations.",
+            if (r$n_pairs > 10L)
+              sprintf("Showing the first 10 of %d pairs; the full table is x$dxy.", r$n_pairs))
+  }
+  .section("PER-INDIVIDUAL HETEROZYGOSITY PER SITE   population means")
+  .print_compact(r$het)
+  .section("WHAT TO REPORT")
+  .legend("Report pi_nc as the estimate, and pi only to compare with pixy, VCFtools or",
+          "Stacks. For divergence report dxy and da_nc: da runs a little high when",
+          "individuals are inbred.")
+  .section("CHECKS")
+  .check_lines(.pi_checks(res))
+  .section("Not shown here: the bootstrap intervals, da and the explanations.")
+  .legend("summary(x, details = TRUE)   explains every column",
+          "x$pi, x$dxy, x$individual    hold every SE, interval and value")
+  invisible(NULL)
+}
+
+## Not exported. The full report (summary(x, details = TRUE)): the same RESULTS
+## and advice first, then every column, one small table per statistic.
+.pi_report <- function(res) {
   st <- res$settings
   note <- function(...) cat(paste0("  ", c(...), "\n"), sep = "")
   rule <- strrep("=", 69)
@@ -453,20 +562,34 @@ print.summary.raddiv_pi <- function(x, ...) {
     note("complete_sites: each population uses only sites typed in all its individuals")
   if (st$nboot > 0)
     cat("  95% CI from ", .big(st$nboot), " bootstrap replicates over RAD loci\n", sep = "")
-  cat(rule, "\n\n", sep = "")
-  .print_table(.round_pi_table(res$pi))
+  cat(rule, "\n", sep = "")
+
+  r <- .pi_results(res)
+  .section("RESULTS   each cell is estimate (standard error)")
+  .print_compact(r$population)
+  note("SE counts variation among RAD loci only (not checked by simulation).")
+  cat("\n", strrep("-", 69), "\n", sep = "")
+  note("Report pi_nc as the estimate, and pi only to compare with pixy, VCFtools or",
+       "Stacks. For divergence report dxy and da_nc: da runs a little high when",
+       "individuals are inbred.")
+  cat(strrep("-", 69), "\n", sep = "")
+
+  cat("\nFULL TABLES -- every uncertainty column, one small table per statistic\n")
+  cat("\nEach population\n")
+  .print_blocks(.stat_blocks(.round_pi_table(res$pi), c("pi_nc", "pi"), always = "sites"),
+                list(pi_nc = .report_text$pi_block_notes$pi_nc, pi = .report_text$pi_block_notes$pi))
   note(.report_text$pi_columns)
   if (!is.null(res$dxy)) {
-    cat("\nBetween populations: dxy (absolute divergence) and Da = dxy - mean(pi) (net)\n")
-    .print_table(.round_pi_table(res$dxy))
+    cat("\nBetween populations\n")
+    dxy <- cbind(pair = paste(res$dxy$pop1, "-", res$dxy$pop2),
+                 .round_pi_table(res$dxy[, setdiff(names(res$dxy), c("pop1", "pop2")), drop = FALSE]))
+    .print_blocks(.stat_blocks(dxy, c("dxy", "da_nc", "da")),
+                  .report_text$pi_block_notes[c("dxy", "da_nc", "da")])
   }
   cat("\nPer-individual heterozygosity per sequenced site (Schmidt et al. 2021),\n")
-  cat("population means:\n")
-  mean_het <- tapply(res$individual$het_per_site, res$individual$population, mean, na.rm = TRUE)
-  .print_table(data.frame(population = names(mean_het),
-                          mean_het_per_site = signif(as.numeric(mean_het), 4)))
-  note("(the full table is x$individual)")
+  cat("population means (no SE); the full table is x$individual:\n")
+  .print_compact(r$het)
   if (length(st$files)) cat("\nWrote ", paste(st$files, collapse = ", "), "\n", sep = "")
   cat("\n")
-  invisible(x)
+  invisible(NULL)
 }

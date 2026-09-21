@@ -21,7 +21,8 @@
 #' Every analysis function takes `vcf` (a file path or the object from
 #' [read_stacks_vcf()]) and, where populations matter, `popmap` (a file path
 #' or the list from [read_popmap()]). Printing a result shows its main
-#' tables; `summary()` shows the full report. Standard errors and confidence
+#' tables; `summary()` is a short summary and `summary(details = TRUE)` the full
+#' report. Standard errors and confidence
 #' intervals resample whole RAD loci. The command-line scripts are in
 #' `system.file("scripts", package = "RADdiversity")`; the statistical
 #' rationale is in `vignette("rationale")`.

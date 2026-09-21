@@ -1,6 +1,6 @@
 # RADdiversity
 
-## PLEASE NOTE: This was mostly written by Claude AI, but it has been checked and edited. If something seems off, please post an issue. If you notice something that's horribly wrong, I would love to hear feedback. --N. Whelan (Sept 8, 2026).
+## PLEASE NOTE: This was mostly written by Claude AI with considerable human input and checks. Both Sonnet 5 and Opus 5 models were used. The README and Vignettes have been human checked and edited. If something seems off, please post an issue. If you notice something that's wrong, or even seems potentially wrong, I would love to hear feedback. --N. Whelan (Sept 8, 2026).
 
 This package provides several methods for calculating population-genetic
 statistics from RAD-seq data. It was built with output from Stacks 2 in mind,

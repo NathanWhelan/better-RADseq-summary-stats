@@ -25,11 +25,12 @@ Three things routine RAD-seq summaries tend to get wrong:
 2. **Comparing populations.** Bootstrapping or testing over loci treats loci
    as independent replicates of a population mean. However, they are repeated
    measurements on the same animals. In simulations of two populations with
-   identical diversity, a locus bootstrap rejected the null about half the
-   time when individuals differed moderately in inbreeding, and about 80% of
-   the time when they differed considerably in inbreeding
-   (`het_between_pops_selftest()`). Here, populations are compared on one
-   number per individual -- heterozygosity, or individual F.
+   identical diversity, a locus bootstrap rejected the null 53% of the time
+   when individuals differed in inbreeding (standard deviation of F 0.10), and
+   39% of the time when the populations were also differentiated -- against a
+   nominal 5% (`het_between_pops_selftest()`, which prints these numbers).
+   Here, populations are compared on one number per individual --
+   heterozygosity, or individual F.
 3. **Uncertainty.** SNPs on one RAD tag are linked, so standard errors and
    intervals resample whole RAD loci, never SNP rows. And when individuals
    differ in inbreeding, even that is too optimistic for population-level
@@ -49,7 +50,8 @@ R ≥ 4.0; base R is enough. Optional: `hierfstat` (Weir & Goudet's beta in
 ## Quick start
 
 On the simulated example dataset that ships with the package (two
-populations of 15 and 10 individuals, 1,000 RAD loci):
+populations of 15 and 10 individuals, 1,000 simulated RAD loci, 741 of them
+variable and so present in the two VCFs below):
 
 ```r
 library(RADdiversity)
@@ -187,7 +189,7 @@ needed.
 |---|---|
 | `diversity_stats()` | `diversity_per_population.<stem>.tsv`, `diversity_richness.<stem>.tsv`, and `diversity_autosomal.<stem>.tsv` (only when `sites` gave per-site values) |
 | `differentiation_stats()` | `differentiation_global.<stem>.tsv`, `differentiation_pairwise.<stem>.tsv` |
-| `het_between_pops()` | `individual_heterozygosity.<stem>.tsv`, `het_between_pops_tests.<stem>.tsv`, `het_between_pops_F_tests.<stem>.tsv` |
+| `het_between_pops()` | `individual_heterozygosity.<stem>.tsv`, `het_between_pops_tests.<stem>.tsv`, `het_between_pops_F_tests.<stem>.tsv`, and `het_between_pops_omnibus.<stem>.tsv` (only with 3 or more populations) |
 
 `<stem>` is `haps` or `snps`, taken from the VCF's file name, so the two runs
 can share one folder. If you pass an object from `read_stacks_vcf()`, give

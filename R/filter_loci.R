@@ -729,6 +729,10 @@ filter_genotype_depth <- function(H, min_dp, max_dp = Inf, verbose = TRUE) {
   if (max_dp < min_dp)
     stop("`max_dp` (", max_dp, ") must be at least `min_dp` (", min_dp, ").", call. = FALSE)
   .check_flag(verbose, "verbose")
+  ## Taken before anything is masked, as in every other filter. Masking removes
+  ## no record, RAD locus or sample, so these counts do not change here; taking
+  ## them first keeps the log honest if that ever ceases to be true.
+  before <- .filter_start(H)
   depth <- .genotype_depth(H)
   typed <- !is.na(H$A1)
   known <- typed & !is.na(depth)
@@ -745,7 +749,7 @@ filter_genotype_depth <- function(H, min_dp, max_dp = Inf, verbose = TRUE) {
     .inform(verbose, sprintf("  %s calls have no readable depth and were kept.", .big(sum(typed & !known))))
   H$A1[masked] <- NA_integer_
   H$A2[masked] <- NA_integer_
-  .log_filter(H, .filter_start(H), "filter_genotype_depth",
+  .log_filter(H, before, "filter_genotype_depth",
               sprintf("min_dp = %g, max_dp = %g", min_dp, max_dp), calls_masked = sum(masked))
 }
 

@@ -461,6 +461,11 @@ These change reported numbers.
 
 ## Bug fixes
 
+* `pi_allsites()`: the per-individual heterozygosity table -- in the printed
+  `summary()` and in `summary(x)$tables$individual_het` -- listed populations
+  in alphabetical order while every other table followed the popmap, so with a
+  popmap that is not alphabetical the two could not be read, or joined, row by
+  row. Every table now follows the popmap.
 * `summary()` of `diversity_stats()` no longer says that Ar is "capped at 2
   because these are biallelic SNPs" (and to run the haplotype VCF) for a
   haplotype VCF. The note was triggered by a mean Ar of 2 or less, which is

@@ -492,8 +492,12 @@ print.summary.raddiv_pi <- function(x, ...) {
     pair[["dxy (SE)"]] <- .est_se(shown$dxy, shown$dxy_se)
     pair[["da_nc (SE)"]] <- .est_se(shown$da_nc, shown$da_nc_se)
   }
-  mean_het <- tapply(res$individual$het_per_site, res$individual$population, mean, na.rm = TRUE)
-  het <- data.frame(population = names(mean_het),
+  ## Populations stay in popmap order, as in every other table here. tapply()
+  ## on plain text would sort them alphabetically, so the levels are set from
+  ## the pi table, and a reader can line the two tables up row by row.
+  pop_factor <- factor(res$individual$population, levels = res$pi$population)
+  mean_het <- tapply(res$individual$het_per_site, pop_factor, mean, na.rm = TRUE)
+  het <- data.frame(population = levels(pop_factor),
                     `mean het per site (no SE)` = sprintf("%.6f", as.numeric(mean_het)),
                     stringsAsFactors = FALSE, check.names = FALSE)
   list(population = pop, pair = pair, n_pairs = n_pairs, het = het)

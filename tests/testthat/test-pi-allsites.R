@@ -112,6 +112,25 @@ test_that("results do not depend on chunk size, and .gz input works", {
   expect_equal(big$pi$sites[1], 300L)
 })
 
+test_that("every table keeps the popmap's population order, not alphabetical order", {
+  ## popB first in the popmap: a table ordered alphabetically would come back
+  ## popA, popB, and a reader (or a merge by row position) would line the wrong
+  ## rows up with $pi.
+  pm_rev <- write_tmp(c("b1\tpopB", "b2\tpopB", "a1\tpopA", "a2\tpopA"), ".tsv")
+  vcf <- write_tmp(c(hdr4, site("1", 1, c("0/0", "0/1", "1/1", "1/1")),
+                           site("1", 2, c("0/1", "0/0", "0/0", "0/1")),
+                           site("2", 1, c("0/1", "./.", "0/0", "0/1"))))
+  res <- suppressMessages(pi_allsites(vcf, pm_rev, nboot = 0))
+  expect_equal(res$pi$population, c("popB", "popA"))
+  tabs <- summary(res)$tables
+  expect_equal(tabs$results$population, c("popB", "popA"))
+  expect_equal(tabs$individual_het$population, res$pi$population)
+  ## and the means belong to the populations they are printed against
+  by_pop <- tapply(res$individual$het_per_site, res$individual$population, mean)
+  expect_equal(tabs$individual_het[[2]],
+               sprintf("%.6f", unname(by_pop[res$pi$population])))
+})
+
 test_that("complete_sites uses only sites typed in every individual of the population", {
   vcf <- write_tmp(c(hdr4, site("1", 1, c("0/1", "./.", "0/0", "0/1")),
                            site("1", 2, c("0/1", "0/0", "0/0", "0/0"))))

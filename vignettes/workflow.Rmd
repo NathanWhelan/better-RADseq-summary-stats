@@ -259,16 +259,18 @@ rests on. At `g = 20` private richness rests on far fewer loci than at
 populations count. Pick the largest `g` that keeps most loci (here 16,
 eight individuals' worth), and report it.
 
-**Recommendation.** Use 2(r\*p) where is p is the number of populations
-in the popmap, corresponding to the -p parameter passed to *populations*
-if following above recommendations, and where r is the percentage of
-individuals required to have a locus in a population to pass filters,
-corresponding to the -r value passed to *populations*. The product is
-multiplied by 2 because individuals are assumed to be diploid. Because
-of the order of filtering done by *populations*, a small number of loci
-will be present in less than r\*p, which is why automatic g calculations
-by functions in other packages can be problematic. This is also why `g`
-does not have default value. `g` must be at least 2.
+**Recommendation.** Use *g* = 2 × *r* × *n*, where *n* is the number of
+individuals in your **smallest** population and *r* is the fraction of a
+population's individuals a locus must be genotyped in to pass filters
+(the `-r` value passed to *populations*; 0.8 above, with `-p` set to the
+number of populations). The product is multiplied by 2 because
+individuals are assumed to be diploid. With `-r 0.8` and a smallest
+population of 10 individuals that gives 2 × 0.8 × 10 = 16, the value
+used below. Because of the order of filtering done by *populations*, a
+small number of loci will still be genotyped in fewer than *r* × *n*
+individuals, which is why automatic *g* calculations by functions in
+other packages can be problematic. This is also why `g` has no default
+value. `g` must be at least 2.
 
 ### The haplotype run
 
@@ -399,9 +401,9 @@ behind this rule, are in `vignette("rationale")`, section 4.
 
 ## 7. Do the populations differ?
 
-***This test has not been as thoroughly as I'd like. Use with caution
-and consider if 1) this test is necessary for your study and 2) if the
-approach is sound. –N. Whelan (September 18, 2026)***
+***This test has not been tested as thoroughly as I'd like. Use with
+caution and consider if 1) this test is necessary for your study and 2)
+if the approach is sound. –N. Whelan (September 18, 2026)***
 
 **Why individuals and loci.** The usual approaches (a bootstrap over
 loci, or a paired test on per-locus values) treat thousands of loci as

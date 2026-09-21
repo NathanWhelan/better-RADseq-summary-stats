@@ -237,7 +237,7 @@ other software can be reconciled.
 
 ### Why F<sub>IS</sub> is a ratio of sums
 
-F<sub>IS</sub>. combines thousands of loci. It can be computed per locus
+F<sub>IS</sub> combines thousands of loci. It can be computed per locus
 and then averaged ("mean of ratios"), or computed once from the sums
 over loci: F<sub>IS</sub> = 1 − ΣH<sub>o</sub>/ΣH<sub>s</sub> ("ratio of
 sums"). A batting average is the everyday version: adding every hit and

@@ -197,10 +197,8 @@ can share one folder. If you pass an object from `read_stacks_vcf()`, give
 (`estimator_comparison`, `he_difference`, `fis_by_call_rate`) are not written;
 `summary(details = TRUE)` prints them.
 
-**Make a table for a manuscript.** Use what the short `summary()` reports, and
-nothing more. For each statistic it shows the one standard error the package
-found most accurate, so the table already holds what you should report.
-`summary(x)$tables` gives those tables as data frames, with the same
+**Make a table for a manuscript.** The information printed by `summary()` is likely sufficient for most studies and manuscripts. For each statistic it shows the one standard error the package
+found most accurate, so the table already holds what you should report. However, as noted elsewhere, different statistics should be reported from the .snps. and .haps/ vcf files, which is accounted for in the code below. `summary(x)$tables` gives those tables as data frames, with the same
 `estimate (SE)` text the summary prints and one row for every population or
 pair (the printed summary cuts long lists of pairs):
 

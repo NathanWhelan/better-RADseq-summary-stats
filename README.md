@@ -141,14 +141,14 @@ het      <- het_between_pops(H_snps, pops)
 dif      <- differentiation_stats(H_haps, pops)
 ```
 
-VCF from another pipeline (ipyrad, dDocent, ...)? Use it as `snps` and skip
+Is your VCF from another pipeline like ipyrad or dDocent? Use it as `snps` and skip
 `haps`. If its RAD loci are not recognized, read it with
 `read_stacks_vcf(snps, locus_from = "CHROM")` (see `?read_stacks_vcf`).
 
 ### Printing and saving results
 
 **Look at the results.** Printing a result shows its main tables, every
-column, rounded. `summary()` is short. It shows the main results as
+column, rounded. `summary()` prints less information, focusing on the most important results. `summary()` shows the main results as
 `estimate (SE)`, what to take from this run, and a list of checks marked `ok`,
 `info` or `look`. `summary(x, details = TRUE)` is the full report, with every
 uncertainty column and a note on how to read each number. Both work for
@@ -167,8 +167,8 @@ dif$pairwise                      # one row per pair of populations
 In a short `summary()`, every column of `estimate (SE)` cells has "(SE)" in its
 header, and the lines under the table say which standard error it is and what
 each column means. Only the recommended standard error is shown for each
-statistic; the other columns are in `details = TRUE` and in the tables. The
-names that are not obvious:
+statistic with `summary()`; the other columns are in `details = TRUE` and in the tables. The
+names that may not be obvious:
 
 * `Ar`, allelic richness: the number of different alleles a population shows
   at a locus when you look at `g` gene copies, averaged over loci. Every

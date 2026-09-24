@@ -64,8 +64,8 @@ next one in a likelihood-ratio test (`--gt-alpha`, default 0.05), and
 otherwise leaves it missing (`models.cc`, Stacks 2.68). Its default
 model also weighs the population's genotype frequencies. So at the
 lowest depths, many heterozygotes that show one allele become missing
-rather than false homozygotes, and the table overstates the error
-there. How many depends on the allele frequencies.
+rather than false homozygotes, and the table overstates the error there.
+How many depends on the allele frequencies.
 
 ### Missing data: filter within populations
 
@@ -107,8 +107,8 @@ says what share of the SNPs such a filter removes: a site with *i*
 derived copies is found in proportion to 1/*i*, so sites with a minor
 allele count of 2 or less are (1 + 1/2 + 1/(*N* − 2) + 1/(*N* − 1)) /
 (1 + 1/2 + … + 1/(*N* − 1)) of the SNPs, 36.5% at 20 diploids. The
-filter removes many SNPs but little diversity. Stacks does not
-delete a SNP that fails the filter: it turns it into a fixed site
+filter removes many SNPs but little diversity. Stacks does not delete a
+SNP that fails the filter: it turns it into a fixed site
 (`LocusFilter::erase_snp()`, Stacks 2.68), so the site still counts in
 `Sites` and the loss shows up in Stacks' own all-positions `Pi` as well.
 Allelic richness and rarefied private alleles lose even more, because
@@ -140,11 +140,11 @@ regions assembled as one locus), and is reasonable to use.
 Many VCFs arrive already filtered. The analyses still run; the table in
 `vignette("workflow")` ("If your data were already filtered") lists what
 each common filter changes and what to report, and `summary()` of a
-`diversity_stats()` result shows what the data look filtered at when you ask
-for `summary(details = TRUE)` (the rarest allele count left, the lowest call
-rates, the highest per-record Ho); the short `summary()` says whether the data
-look filtered by minor allele count. An HWE filter cannot be detected from the
-data.
+`diversity_stats()` result shows what the data look filtered at when you
+ask for `summary(details = TRUE)` (the rarest allele count left, the
+lowest call rates, the highest per-record Ho); the short `summary()`
+says whether the data look filtered by minor allele count. An HWE filter
+cannot be detected from the data.
 
 ### Which records each population uses
 
@@ -153,20 +153,20 @@ has at least `min_n` genotyped individuals there (default 2, the
 smallest number for which He and FIS are defined). This is decided for
 each population separately, so an individual missing in one population
 does not cost the other population that record. Every record counts
-equally in FIS, however many individuals are typed there. No correction
-for this is needed, because Ho and He at each record are unbiased on
-their own, so their sums are too. Records with few typed individuals
-only add noise. `diversity_core_selftest()` checks by simulation that
-FIS stays unbiased when missingness is clustered by locus, as it is in
-real RAD data. (That check makes genotypes go missing at random.
-Missingness that depends on the genotype, such as allele dropout, is
-covered in section 5.)
+equally in FIS, regardless of how many individuals are typed at the
+record. No correction for this is needed because Ho and He at each
+record are unbiased on their own, so their sums are too. Records with
+few typed individuals only add noise. `diversity_core_selftest()` checks
+by simulation that FIS stays unbiased when missingness is clustered by
+locus, as it is in real RAD data. (That check makes genotypes go missing
+at random. Missingness that depends on the genotype, such as allele
+dropout, is covered in section 5.)
 
 One consequence: two populations can rest on somewhat different records.
 With `-p` equal to the number of populations (above) the sets are nearly
 the same. Compare `Ar_n` between populations; the printed result and the
-`CHECKS` of `summary()` add a note when one population's Ar rests on under 90%
-as many records as another population's.
+`CHECKS` of `summary()` add a note when one population's Ar rests on
+under 90% as many records as another population's.
 
 `complete_case = TRUE` uses a record only if every individual of every
 population is genotyped there (Schmidt et al. 2021, recommendation (b)).
@@ -292,13 +292,14 @@ individual (`SumStatsSummary::accumulate()`, Stacks 2.68), and with
 several populations and `-p` below their number, a population can be
 absent from many records.
 
-Each per-site value gets the same standard errors and bootstrap interval as
-Ho or He (`Ho_autosomal_se_combined`, `_lo`, `_hi`, and so on). The
-multiplier, (variant records) ÷ (sequenced sites), is a fixed positive number
-for each population, so a jackknife SE or a percentile bootstrap bound of the
-per-site value is exactly that multiplier times the Ho or He one. This treats
-the multiplier as fixed. It leaves out uncertainty in how many SNPs there are
-per sequenced site, as the per-site value itself does.
+Each per-site value gets the same standard errors and bootstrap interval
+as Ho or He (`Ho_autosomal_se_combined`, `_lo`, `_hi`, and so on). The
+multiplier, (variant records) ÷ (sequenced sites), is a fixed positive
+number for each population, so a jackknife SE or a percentile bootstrap
+bound of the per-site value is exactly that multiplier times the Ho or
+He one. This treats the multiplier as fixed. It leaves out uncertainty
+in how many SNPs there are per sequenced site, as the per-site value
+itself does.
 
 Three conditions apply.
 
@@ -318,9 +319,9 @@ per-site He by the diversity those SNPs carried (section 1). Stacks' own
 `Variant_Sites` is deliberately not used as the SNP count: it also
 counts SNPs removed after Stacks, and multiplying by it would credit
 each removed SNP with the average He of the SNPs kept. After a MAC
-filter of 3 with 20 diploids, that would inflate per-site He by 41% under
-a neutral site-frequency spectrum: the filter removes 36.5% of the SNPs
-but only 10.3% of the diversity (derivation in section 1).
+filter of 3 with 20 diploids, that would inflate per-site He by 41%
+under a neutral site-frequency spectrum: the filter removes 36.5% of the
+SNPs but only 10.3% of the diversity (derivation in section 1).
 `diversity_stats()` warns when records or whole loci were removed after
 reading, or when the VCF's SNP count does not match the Stacks file.
 
@@ -367,8 +368,8 @@ copies drawn without replacement from a population's *N* copies is
 > A(*g*) = Σ<sub>i</sub> [1 − C(*N* − *N*<sub>i</sub>, *g*)/C(*N*, *g*)]
 
 (Hurlbert 1971; El Mousadik & Petit 1996), where *N*<sub>i</sub> is the
-count of allele *i*. The expected number of private alleles at a locus is
-the expected number of alleles drawn in one population and in none of
+count of allele *i*. The expected number of private alleles at a locus
+is the expected number of alleles drawn in one population and in none of
 the others, each sampled to *g* copies (Kalinowski 2004; Szpiech et al.
 2008). The package reports it added up over the loci where every
 population has at least *g* copies (`priv_total`, "rarefied private
@@ -386,8 +387,8 @@ not independent draws.
 
 **Choosing *g*.** A locus counts for a population only where it has at
 least *g* gene copies, and for rarefied private alleles only where
-*every* population does. A large *g* therefore discards loci with missing data:
-compare `Ar_n` and `privAr_n` for two values of *g*
+*every* population does. A large *g* therefore discards loci with
+missing data: compare `Ar_n` and `privAr_n` for two values of *g*
 (`vignette("workflow")`, section 5). A good start is *g* = 2 × *r* ×
 *n*, rounded down, for Stacks' `-r` value *r* and the smallest
 population's *n*. Rarefied private alleles depend on how many other
@@ -537,7 +538,7 @@ Three details:
   an individual happens to carry at a locus is counted in both SEs, so
   the combined SE is a little too large rather than too small. Owen
   (2007) found the same when resampling both the rows and the columns of
-  a data table.
+         a data table.
 - In the jackknife over individuals, the records each population uses
   are decided once, from all of its individuals, and kept in every
   repeat. Otherwise a record with exactly `min_n` genotyped individuals
@@ -562,12 +563,12 @@ of 0, 0.10 or 0.25 (`inst/sims/uncertainty_sources.R`, part `main`). The
 table gives the range over those three settings.
 
 | statistic | locus SE | locus bootstrap | individual SE | **combined SE** |
-|-----------|----------|-----------------|---------------|-----------------|
-| Ho        | 41–96%   | 39–95%          | 88–91%        | **93–98%**      |
-| He        | 95–96%   | 93–95%          | 72–77%        | **98–99%**      |
-| FIS       | 31–94%   | 30–94%          | 92–93%        | **93–98%**      |
-| Ar        | 93–94%   | 92–93%          | 98–100%       | 100%            |
-| private alleles, per locus | 92–93%   | 91–93%          | 31–36%        | 92–94%          |
+|---------------|---------------|---------------|---------------|---------------|
+| Ho | 41–96% | 39–95% | 88–91% | **93–98%** |
+| He | 95–96% | 93–95% | 72–77% | **98–99%** |
+| FIS | 31–94% | 30–94% | 92–93% | **93–98%** |
+| Ar | 93–94% | 92–93% | 98–100% | 100% |
+| private alleles, per locus | 92–93% | 91–93% | 31–36% | 92–94% |
 
 What the table shows:
 
@@ -596,12 +597,12 @@ variants, 8 individuals, 30 individuals at 3,000 loci, 20% missing
 genotypes, 4-allele haplotype loci, and individuals that did not differ
 in inbreeding.
 
-| statistic | combined SE | locus SE | individual SE |
-|-----------|-------------|----------|---------------|
-| Ho        | 91–99%      | 45–94%   | 75–93%        |
-| He        | 96–98%      | 93–97%   | 47–86%        |
-| FIS       | 90–99%      | 30–94%   | 89–94%        |
-| Ar        | 97–100%     | 88–96%   | 73–99%        |
+| statistic                  | combined SE | locus SE | individual SE |
+|----------------------------|-------------|----------|---------------|
+| Ho                         | 91–99%      | 45–94%   | 75–93%        |
+| He                         | 96–98%      | 93–97%   | 47–86%        |
+| FIS                        | 90–99%      | 30–94%   | 89–94%        |
+| Ar                         | 97–100%     | 88–96%   | 73–99%        |
 | private alleles, per locus | 89–99%      | 89–95%   | 9–91%         |
 
 ### The rule
@@ -609,28 +610,29 @@ in inbreeding.
 > **Ho, He and FIS:** report `_se_combined`, which `diversity_stats()`
 > computes by default (`se_individuals = TRUE`). A 95% interval is the
 > estimate ± 1.96 × `_se_combined`. The per-site Ho and He take the same
-> rule: report `Ho_autosomal_se_combined` and `He_autosomal_se_combined`.
+> rule: report `Ho_autosomal_se_combined` and
+> `He_autosomal_se_combined`.
 >
-> **Ar and rarefied private alleles:** report `_se`. The bootstrap interval `_lo` to
-> `_hi` is also available; in these simulations it held the true value about
-> as often as the SE, or slightly less often (Ar: 92–93% against 93–94%).
+> **Ar and rarefied private alleles:** report `_se`. The bootstrap
+> interval `_lo` to `_hi` is also available; in these simulations it
+> held the true value about as often as the SE, or slightly less often
+> (Ar: 92–93% against 93–94%).
 
-The short `summary()` of `diversity_stats()` shows only these recommended
-standard errors, and says which kind each one is. It quotes the wider ranges
-over all the simulated settings (the second table above): 90–99% for the
-combined SE of Ho, He and FIS, and 88–96% for the locus SE of Ar and rarefied
-private alleles.
-For He alone the locus SE was also close (95–96%); the combined SE is used for
-all three so that the choice does not depend on how much individuals differ
-in inbreeding.
+The short `summary()` of `diversity_stats()` shows only these
+recommended standard errors, and says which kind each one is. It quotes
+the wider ranges over all the simulated settings (the second table
+above): 90–99% for the combined SE of Ho, He and FIS, and 88–96% for the
+locus SE of Ar and rarefied private alleles. For He alone the locus SE
+was also close (95–96%); the combined SE is used for all three so that
+the choice does not depend on how much individuals differ in inbreeding.
 
-No simulation has checked the standard errors of FST, D, beta, pi, `dxy` and
-`da_nc` (`differentiation_stats()`, `pi_allsites()`). They are jackknifes over RAD
-loci only, and their summaries say "not checked by simulation". The
-heterozygosity test of `het_between_pops()` is different: its combined test
-has its own simulation, with a false-positive rate of 3–7.5% when populations
-do not differ, against up to 30% for Welch's t alone
-(`inst/sims/het_test_null.R`).
+No simulation has checked the standard errors of FST, D, beta, pi, `dxy`
+and `da_nc` (`differentiation_stats()`, `pi_allsites()`). They are
+jackknifes over RAD loci only, and their summaries say "not checked by
+simulation". The heterozygosity test of `het_between_pops()` is
+different: its combined test has its own simulation, with a
+false-positive rate of 3–7.5% when populations do not differ, against up
+to 30% for Welch's t alone (`inst/sims/het_test_null.R`).
 
 ### Why not bootstrap individuals?
 
@@ -775,21 +777,22 @@ with the pairs' `p_combined_BH`.
   heterozygosity and flags a positive correlation.
 - **g2.** Whether individuals differ in inbreeding (David et al. 2007).
   When they do, heterozygosity is correlated across loci within an
-  individual, and that is exactly when a locus-based test goes wrong.
-  g2 assumes the two loci of each pair are inherited independently, and
+  individual, and that is exactly when a locus-based test goes wrong. g2
+  assumes the two loci of each pair are inherited independently, and
   SNPs on one RAD locus are not: an individual with two different
   haplotypes is heterozygous at several of them at once. So pairs of
   SNPs on the same RAD locus are left out, and the permutation test
   moves a RAD locus's SNPs together. Before this was done, in
   simulations with 20 individuals, no inbreeding and about two SNPs per
-  RAD locus, the test found g2 above 0 in 54–56% of runs, at 500 to 8,000
-  loci; after, in 2–4% (nominal 5%). Real variance in inbreeding was still
-  found every time (`inst/sims/g2_linked_snps.R`). SNP and haplotype VCFs
-  now both work. With few individuals, test g2 > 0 with the permutation
-  p-value, not the bootstrap interval. With no inbreeding, the 95%
-  interval missed 0 in 17–19% of simulated data sets with 8 individuals,
-  10–15% with 15 and 7% with 30, nearly always by lying below 0; the
-  permutation test rejected in 2–5% (`inst/sims/g2_ci_small_n.R`).
+  RAD locus, the test found g2 above 0 in 54–56% of runs, at 500 to
+  8,000 loci; after, in 2–4% (nominal 5%). Real variance in inbreeding
+  was still found every time (`inst/sims/g2_linked_snps.R`). SNP and
+  haplotype VCFs now both work. With few individuals, test g2 \> 0 with
+  the permutation p-value, not the bootstrap interval. With no
+  inbreeding, the 95% interval missed 0 in 17–19% of simulated data sets
+  with 8 individuals, 10–15% with 15 and 7% with 30, nearly always by
+  lying below 0; the permutation test rejected in 2–5%
+  (`inst/sims/g2_ci_small_n.R`).
 - **Sex-linked loci.** In the sex with one copy of a sex chromosome (XY
   males, ZW females), loci on it look homozygous. They raise FIS and
   lower those individuals' heterozygosity. If the samples differ in sex
@@ -920,42 +923,41 @@ that two genes from the same population are identical, and Q<sub>d</sub>
 for two genes from populations at distance *d*. For a pair of
 populations:
 
-| statistic | in these terms |
-|---|---|
-| FST/(1 − FST) | (Q₀ − Q<sub>d</sub>) / (1 − Q₀) |
-| D | (Q₀ − Q<sub>d</sub>) / Q₀ |
-| D/(1 − D) | (Q₀ − Q<sub>d</sub>) / Q<sub>d</sub> |
+| statistic     | in these terms                       |
+|---------------|--------------------------------------|
+| FST/(1 − FST) | (Q₀ − Q<sub>d</sub>) / (1 − Q₀)      |
+| D             | (Q₀ − Q<sub>d</sub>) / Q₀            |
+| D/(1 − D)     | (Q₀ − Q<sub>d</sub>) / Q<sub>d</sub> |
 
 Rousset's straight line comes from the top part, Q₀ − Q<sub>d</sub>.
 FST/(1 − FST) and D divide it by numbers that do not change with
-distance, when the populations are about equally diverse. So
-D = FST/(1 − FST) × H<sub>s</sub>/(1 − H<sub>s</sub>): D is a straight
-line whenever FST/(1 − FST) is. D/(1 − D) divides by Q<sub>d</sub>,
-which falls with distance, so its line bends upward, and more so the
-larger D is.
+distance, when the populations are about equally diverse. So D = FST/(1
+− FST) × H<sub>s</sub>/(1 − H<sub>s</sub>): D is a straight line
+whenever FST/(1 − FST) is. D/(1 − D) divides by Q<sub>d</sub>, which
+falls with distance, so its line bends upward, and more so the larger D
+is.
 
 We checked this with exact identity probabilities in stepping-stone
-models, at distances of 2 to 20 steps (`inst/sims/ibd_d_transform.R`;
-no sampling noise). "Bend" is the slope over the far half of the
-distances divided by the slope over the near half; 1 is a straight
-line.
+models, at distances of 2 to 20 steps (`inst/sims/ibd_d_transform.R`; no
+sampling noise). "Bend" is the slope over the far half of the distances
+divided by the slope over the near half; 1 is a straight line.
 
 | setting | D | bend of FST/(1 − FST) | bend of D | bend of D/(1 − D) |
-|---|---|---|---|---|
+|----|----|----|----|----|
 | 1-D, low mutation | 0.002–0.06 | 0.97–0.99 | the same | 1.01–1.03 |
 | 1-D, higher mutation | 0.02–0.47 | 0.74–0.91 | the same | 1.10–1.35 |
 | 2-D | 0.19–0.90 | 0.78–0.99 | the same | 1.41–4.44 |
 
-In every setting, D ÷ [FST/(1 − FST)] equaled
-H<sub>s</sub>/(1 − H<sub>s</sub>). Where FST/(1 − FST) itself bends
-(higher mutation, as distances approach the limit of Rousset's
-approximation), D/(1 − D) bends the other way by an amount set by the
-size of D, not by dispersal, so it does not correct that.
+In every setting, D ÷ [FST/(1 − FST)] equaled H<sub>s</sub>/(1 −
+H<sub>s</sub>). Where FST/(1 − FST) itself bends (higher mutation, as
+distances approach the limit of Rousset's approximation), D/(1 − D)
+bends the other way by an amount set by the size of D, not by dispersal,
+so it does not correct that.
 
 A Mantel test on D/(1 − D) would still keep its false-positive rate (any
 permutation test does), and with ranks (`method = "spearman"`) it gives
-the same answer as D. But nothing supports it, so it is not offered.
-The slope of D equals the FST slope times H<sub>s</sub>/(1 − H<sub>s</sub>),
+the same answer as D. But nothing supports it, so it is not offered. The
+slope of D equals the FST slope times H<sub>s</sub>/(1 − H<sub>s</sub>),
 so it depends on diversity as well as dispersal. The package reports it,
 but only the FST slope estimates dispersal.
 
@@ -963,18 +965,18 @@ but only the FST slope estimates dispersal.
 contain a), so the correlation *r* between genetic and geographic values
 cannot be tested like an ordinary correlation. The Mantel test (Mantel
 1967) shuffles the populations among the places and recomputes *r* each
-time. The p-value is the share of orderings that give an *r* at least
-as large as the data's. It is one-sided, because isolation by distance
+time. The p-value is the share of orderings that give an *r* at least as
+large as the data's. It is one-sided, because isolation by distance
 predicts a positive *r*. With 7 or fewer populations every ordering is
 tried, so the p-value is exact and the same on every run. With more,
 9,999 random orderings are used, and p = (b + 1)/(9,999 + 1), where b
 counts those at least as large (Phipson & Smyth 2010). With few
 populations the test has little power:
 
-| populations | 3 | 4 | 5 | 6 | 7 | 8 or more |
-|---|---|---|---|---|---|---|
-| orderings | 6 | 24 | 120 | 720 | 5,040 | 9,999 random |
-| smallest possible p | 0.17 | 0.042 | 0.0083 | 0.0014 | 0.0002 | 0.0001 |
+| populations         | 3    | 4     | 5      | 6      | 7      | 8 or more    |
+|---------------------|------|-------|--------|--------|--------|--------------|
+| orderings           | 6    | 24    | 120    | 720    | 5,040  | 9,999 random |
+| smallest possible p | 0.17 | 0.042 | 0.0083 | 0.0014 | 0.0002 | 0.0001       |
 
 The smallest p is larger when the distances are symmetric. For example,
 evenly spaced sites give the same *r* in reverse order, so 4 evenly

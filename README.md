@@ -20,14 +20,9 @@ Routine RAD-seq summaries often get three things wrong:
    Nei & Chesser's (1983) estimator, which is unbiased at any F<sub>IS</sub>,
    and F<sub>IS</sub> = 1 − ΣH<sub>o</sub>/ΣH<sub>e</sub> over loci (a ratio of
    sums).
-2. **Comparing populations.** A bootstrap over loci treats loci as independent
-   replicates, but every locus is measured on the same individuals. In
-   simulations of two populations with the same diversity, a locus bootstrap
-   found a "significant" difference 53% of the time when individuals differed
-   in inbreeding, at a nominal 5% (`het_between_pops_selftest()` shows this).
-   Here, each individual gives one value, and the test counts both which
-   individuals and which loci were sampled.
-3. **Uncertainty.** SNPs on one RAD tag are linked, so every standard error
+2. **One package to generate useful statistics with clear methods.** Population genetics has a history of the same, or similar, terms being conflated (e.g., F<sub>IS</sub> is calculated differently by STACKS than other approaches. Sometimes, it can be unclear what method or formula is being used to calculate a metric. This package prioritizes calculating the most robust metrics for making conclusions from RADseq data. This package includes methods that have previously not previously been available in a single package.
+
+4. **Uncertainty.** SNPs on one RAD tag are linked, so every standard error
    resamples whole RAD loci, never single SNPs. The standard errors the
    package recommends also count which individuals were sampled.
 
@@ -40,7 +35,7 @@ remotes::install_github("NathanWhelan/better-RADseq-summary-stats", build_vignet
 
 `build_vignettes = TRUE` installs the two guides, `vignette("workflow")` and
 `vignette("rationale")`. It needs the knitr and rmarkdown packages and pandoc
-(RStudio includes pandoc). R ≥ 4.0; nothing else is required. Optional:
+(RStudio includes pandoc). R ≥ 4.0. Optional:
 hierfstat (Weir & Goudet's beta) and adegenet (`as_genind()`, `as_genlight()`).
 
 ## Quick start
@@ -68,7 +63,7 @@ summary(dif)
 ```
 
 On a large dataset the slow parts are the bootstrap (`nboot`, default 10,000)
-and the `beta` step of `differentiation_stats()`, which calls hierfstat. For a
+and the `beta` step of `differentiation_stats()`, which calls hierfstat. In testing, this was not a huge issue. If you are concerned about slow analyses, for a
 first look, use `nboot = 1000` and `beta = FALSE`. Run again with the defaults
 for the results you report. `verbose = FALSE` silences progress messages.
 
@@ -109,7 +104,7 @@ A VCF from another pipeline (ipyrad, dDocent) can be used as `snps`; skip
 ## Reading and saving results
 
 * Printing a result shows its main tables, rounded.
-* `summary(x)` is short: each estimate as `estimate (SE)` with the one
+* `summary(x)` is short: each estimate is printed as `estimate (SE)` with the one
   standard error the package recommends, what to take from this run, and
   checks marked `ok`, `info` or `look`.
 * `summary(x, details = TRUE)` is the full report, with every uncertainty

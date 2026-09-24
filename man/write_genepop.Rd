@@ -37,6 +37,11 @@ individual (\verb{name ,} then its genotypes). Missing genotypes are all zeros
 (e.g. \code{0000}), as in the Genepop manual. Genepop ends a name at the first
 comma, so a sample name containing a comma stops the function.
 }
+\details{
+In locus names every \code{.} becomes \verb{_}: the SNPs of one RAD locus are named
+\code{6}, \code{6.1}, \code{6.2}, ..., and \code{adegenet::read.genepop()} cannot read a locus
+name with a dot. So \code{6.1} is written as \verb{6_1}.
+}
 \examples{
 H <- read_stacks_vcf(system.file("extdata", "small.haps.vcf",
                                  package = "RADdiversity"), verbose = FALSE)

@@ -9,8 +9,9 @@ low_conf_alt_sensitivity(H, thresholds = c(1, 2, 3, 4, 5, 10))
 \arguments{
 \item{H}{The object returned by \code{\link[=read_stacks_vcf]{read_stacks_vcf()}} (optionally filtered).
 The allele depths come from \code{H$ad_ref} and \code{H$ad_alt}, which
-\code{\link[=read_stacks_vcf]{read_stacks_vcf()}} fills from each call's \code{AD} (allele depth) field; they
-are \code{NULL} for a VCF without \code{AD}, in which case nothing is flagged.}
+\code{\link[=read_stacks_vcf]{read_stacks_vcf()}} fills from each call's \code{AD} (allele depth) field. A
+VCF without \code{AD}, such as a Stacks haplotype VCF, stops the function with
+a message. A call whose own \code{AD} is missing is never flagged.}
 
 \item{thresholds}{The \code{min_alt_reads} values to try. Default
 \code{c(1, 2, 3, 4, 5, 10)}.}
@@ -25,7 +26,7 @@ For a range of \code{min_alt_reads} thresholds, how many ALT-containing genotype
 calls \code{\link[=filter_low_conf_alt]{filter_low_conf_alt()}} would flag. Use it to choose a threshold.
 }
 \examples{
-H <- read_stacks_vcf(system.file("extdata", "small.haps.vcf",
+H <- read_stacks_vcf(system.file("extdata", "example.snps.vcf.gz",
                                  package = "RADdiversity"), verbose = FALSE)
 low_conf_alt_sensitivity(H)
 }

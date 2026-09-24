@@ -123,6 +123,19 @@
   invisible(NULL)
 }
 
+## Not exported. Legend lines for a named character vector of column
+## descriptions: each name (the column) padded to one width, then its text,
+## wrapped so that every line fits in `width` and continuation lines line up
+## under the text.
+.legend_entries <- function(entries, width = 76L) {
+  key_width <- max(nchar(names(entries))) + 2L
+  unlist(lapply(names(entries), function(key) {
+    lines <- strwrap(entries[[key]], width = width - key_width)
+    c(paste0(formatC(key, width = -key_width), lines[1L]),
+      if (length(lines) > 1L) paste0(strrep(" ", key_width), lines[-1L]))
+  }), use.names = FALSE)
+}
+
 ## Not exported. One check for the CHECKS list. `tag` is "ok" (nothing to do),
 ## "info" (a fact worth knowing) or "look" (act on it); `text` is one plain
 ## sentence saying what was found and, for "look", what to do.

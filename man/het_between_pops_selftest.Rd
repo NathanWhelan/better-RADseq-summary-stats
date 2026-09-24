@@ -30,6 +30,6 @@ wrong); and both. The full grid is in \code{inst/sims/het_test_null.R}.
 }
 \examples{
 \donttest{
-het_between_pops_selftest()   # a few seconds of simulation
+het_between_pops_selftest()   # about half a minute of simulation
 }
 }

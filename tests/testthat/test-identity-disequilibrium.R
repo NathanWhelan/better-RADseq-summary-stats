@@ -98,3 +98,70 @@ test_that("identity_disequilibrium() stops for a population it cannot analyze", 
   expect_error(identity_disequilibrium(H, "no_such_popmap.tsv", verbose = FALSE),
                "Popmap file not found")
 })
+
+## Brute force with RAD loci: only pairs of records on DIFFERENT RAD loci count.
+g2_brute_blocks <- function(a1, a2, block) {
+  m <- !is.na(a1); h <- m & (a1 != a2)
+  L <- nrow(h); n <- ncol(h)
+  s_num <- s_den <- d_num <- d_den <- 0
+  for (i in 1:n) for (j in 1:n) for (l in 1:L) for (k in 1:L) {
+    if (block[l] == block[k] || !m[l, i] || !m[k, j]) next
+    v <- h[l, i] * h[k, j]
+    if (i == j) { s_num <- s_num + v; s_den <- s_den + 1 }
+    else        { d_num <- d_num + v; d_den <- d_den + 1 }
+  }
+  (s_num / s_den) / (d_num / d_den) - 1
+}
+
+test_that("with several SNPs per RAD locus, g2 leaves out pairs on the same locus", {
+  H <- sim_F(runif(6, 0, 0.6), 12, seed = 7)
+  H$A1[cbind(c(2, 5, 9), c(1, 3, 6))] <- NA
+  H$A2[cbind(c(2, 5, 9), c(1, 3, 6))] <- NA
+  block <- rep(c("r1", "r2", "r3", "r4", "r5"), c(3, 2, 1, 4, 2))
+  got <- RADdiversity:::.g2_summary(H$A1, H$A2, nboot = 0, nperm = 0, block = block)$g2
+  expect_equal(got, unname(g2_brute_blocks(H$A1, H$A2, block)), tolerance = 1e-12)
+})
+
+test_that("copying every record within its RAD locus does not change g2", {
+  ## Two identical SNPs on a tag carry no more information about inbreeding
+  ## than one. Counting the pair between them used to inflate g2.
+  H <- sim_F(rep(c(0, 0.3), 8), 300, seed = 8)
+  one <- RADdiversity:::.g2_summary(H$A1, H$A2, 0, 0, block = H$locus_raw)$g2
+  twice <- RADdiversity:::.g2_summary(rbind(H$A1, H$A1), rbind(H$A2, H$A2), 0, 0,
+                                      block = c(H$locus_raw, H$locus_raw))$g2
+  expect_equal(twice, one, tolerance = 1e-12)
+  naive <- RADdiversity:::.g2_summary(rbind(H$A1, H$A1), rbind(H$A2, H$A2), 0, 0)$g2
+  expect_gt(naive, one)                             # the old way: inflated
+})
+
+test_that("with one record per RAD locus, the RAD-locus rule changes nothing", {
+  H <- sim_F(rep(c(0, 0.3), 8), 200, seed = 9)
+  set.seed(3)
+  a <- RADdiversity:::.g2_summary(H$A1, H$A2, nboot = 50, nperm = 50)
+  set.seed(3)
+  b <- RADdiversity:::.g2_summary(H$A1, H$A2, nboot = 50, nperm = 50, block = H$locus_raw)
+  expect_identical(a, b)
+})
+
+test_that("the permutation moves a RAD locus's records together", {
+  ## Complete data, no inbreeding, 3 SNPs per tag drawn from 2 haplotypes (so
+  ## an individual is heterozygous at all 3 or at none). The block permutation
+  ## keeps that linkage, so its null is centred on the estimate's null; the old
+  ## per-record shuffle made the observed value look extreme.
+  set.seed(10)
+  n <- 20; tags <- 150
+  f <- runif(tags, 0.2, 0.8)
+  h1 <- matrix(runif(tags * n) < f, tags, n); h2 <- matrix(runif(tags * n) < f, tags, n)
+  a1 <- 1L + h1[rep(seq_len(tags), each = 3), ]; a2 <- 1L + h2[rep(seq_len(tags), each = 3), ]
+  block <- rep(seq_len(tags), each = 3)
+  p <- RADdiversity:::.g2_summary(a1, a2, nboot = 0, nperm = 400, block = block)$p_value
+  expect_gt(p, 0.01)
+})
+
+test_that("identity_disequilibrium() reports RAD loci, not records, in n_loci", {
+  H <- sim_F(rep(0.1, 8), 60, seed = 11)
+  H$locus_raw <- rep(paste0("tag", 1:20), each = 3)
+  res <- identity_disequilibrium(H, list(pop = H$samples), nboot = 0, nperm = 0,
+                                 min_call = 0, verbose = FALSE)
+  expect_equal(res$n_loci, 20)
+})

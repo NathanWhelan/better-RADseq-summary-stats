@@ -46,6 +46,11 @@ test_that("verbose = FALSE silences every progress message", {
   expect_no_message(kinship_check(vcf, verbose = FALSE))
   expect_no_message(read_stacks_vcf(vcf, verbose = FALSE))
   expect_no_message(filter_call_rate(haps(), 0.5, popmap = pm, verbose = FALSE))
+  km <- system.file("extdata", "ibd_example_distances.csv", package = "RADdiversity")
+  expect_no_message(read_distances(km, verbose = FALSE))
+  fst <- matrix(c(0, 0.02, 0.05, 0.02, 0, 0.03, 0.05, 0.03, 0), 3,
+                dimnames = rep(list(c("site1", "site2", "site3")), 2))
+  expect_no_message(isolation_by_distance(fst, km, habitat = "1D", verbose = FALSE))
 })
 
 test_that("results keep full precision; only print() and the files round", {
@@ -81,11 +86,14 @@ test_that("filters chain, including filter_low_conf_alt()", {
                   %in% names(out)))
 })
 
-test_that("filter_low_conf_alt() flags nothing without AD, and explains a hand-built H", {
+test_that("the low-confidence-ALT functions stop without AD, and explain a hand-built H", {
   H <- haps()                                   # GT-only VCF: no AD
   expect_null(H$ad_ref)
-  expect_equal(nrow(low_conf_alt_calls(H)$flagged_calls), 0L)
-  expect_identical(filter_low_conf_alt(H, verbose = FALSE)$A1, H$A1)
+  ## Nothing can be judged, so they stop instead of reporting "0 flagged" and
+  ## logging a filter that did nothing.
+  expect_error(filter_low_conf_alt(H, verbose = FALSE), "no AD \\(allele depth\\) field")
+  expect_error(low_conf_alt_calls(H), "no AD \\(allele depth\\) field")
+  expect_error(low_conf_alt_sensitivity(H), "no AD \\(allele depth\\) field")
   H$fields <- NULL                              # as if built by hand
   expect_error(filter_low_conf_alt(H, verbose = FALSE), "H\\$ad_ref")
   expect_error(low_conf_alt_calls(H), "H\\$ad_ref")

@@ -20,7 +20,7 @@
 ## vignette. The het test's number is its false-positive rate when populations
 ## do not differ (inst/sims/het_test_null.R; ?het_between_pops).
 ##   combined  Ho, He, Fis with _se_combined (SE over loci AND individuals)
-##   loci      Ar, privAr with _se (SE over RAD loci only)
+##   loci      Ar and rarefied private alleles with _se (SE over RAD loci only)
 ##   het_test  the combined heterozygosity test, nominal 5%
 .coverage <- list(combined = "90-99%", loci = "88-96%", het_test = "3-7.5%")
 
@@ -28,27 +28,28 @@
 
   ## ---- summary() short views, diversity_stats() -------------------------------
 
-  ## What each column of the short RESULTS table is. {se} is filled in with the
-  ## kind of SE the table shows.
+  ## What each column of the short RESULTS table is. {g} is the rarefaction
+  ## size and {loci} says which loci the rarefied private alleles are added up
+  ## over.
   diversity_legend_snp = c(
-    "Ho, He    observed and expected heterozygosity, averaged over SNPs.",
-    "pct_poly  percent of SNPs that vary within the population. It has no SE."),
+    "Ho, He    observed and expected heterozygosity, averaged over SNPs."),
+  ## One entry per column, printed by .legend_entries() (key, then wrapped text).
   diversity_legend_hap = c(
-    "Fis       inbreeding: 0 = random mating; above 0 = fewer heterozygotes",
-    "          than expected.",
-    "Ar        allelic richness: alleles per locus, counted in g = {g} gene",
-    "          copies and averaged over loci.",
-    "privAr    private allelic richness: the same, counting only alleles found",
-    "          in this population and in no other."),
+    Fis = "inbreeding: 0 = random mating; above 0 = fewer heterozygotes than expected.",
+    Ar = "allelic richness: alleles per locus, counted in g = {g} gene copies and averaged over loci.",
+    "rarefied private alleles" = paste(
+      "the expected number of alleles found only in this population, when every",
+      "population is cut to g = {g} gene copies at each locus, added up over {loci}.",
+      "It is an expected value, so it need not be a whole number.")),
 
   diversity_take_snp_short = c(
-    "Get Fis, Ar and privAr from the haplotype VCF: on SNPs, Ar cannot pass 2.",
-    "Never compare Ho or He between the SNP VCF and the haplotype VCF.",
-    "Report pct_poly beside Ho and He."),
+    "Get Fis, Ar and rarefied private alleles from the haplotype VCF: on SNPs,",
+    "Ar cannot pass 2. Never compare Ho or He between the SNP VCF and the",
+    "haplotype VCF."),
   diversity_take_haplotype_short = c(
     "Get Ho and He from the SNP VCF; haplotype Ho and He are not comparable.",
-    "Compare Ar and privAr only among populations analyzed together (same",
-    "run, filters and g)."),
+    "Compare Ar and rarefied private alleles only among populations analyzed",
+    "together (same run, filters and g)."),
 
   ## ---- diversity_stats() ----------------------------------------------------
 
@@ -75,7 +76,7 @@
     "_se_ind columns: leave one INDIVIDUAL out at a time (a jackknife). It holds",
     "the loci fixed. _se_combined = sqrt(_se^2 + _se_ind^2): it counts both which",
     "loci and which individuals were sampled. Report _se_combined for Ho, He and",
-    "Fis. For Ar and privAr, report _se (see the note under those tables). The",
+    "Fis. For Ar and priv_total, report _se (see the note under those tables). The",
     "percentages under each table are how often a 95% interval held the true",
     "value in the package's simulations (2 populations of 15 individuals, 1,000",
     "loci). More in ?diversity_stats, \"How standard errors are calculated\", and",
@@ -89,10 +90,10 @@
   ## %s is the number of loci in all.
   diversity_ar_n_columns = c(
     "Ar_n: the loci that went into that population's Ar (it has at least g gene",
-    "copies typed there). privAr_n: the loci that went into privAr (EVERY",
-    "population has at least g typed there), so privAr_n is never larger than",
-    "Ar_n, and can be much smaller when there is missing data. There are %s loci",
-    "in all."),
+    "copies typed there). privAr_n: the loci the rarefied private alleles are",
+    "added up over (EVERY population has at least g typed there), so privAr_n is",
+    "never larger than Ar_n, and can be much smaller when there is missing data.",
+    "There are %s loci in all."),
 
   ## Under each "one small table per statistic" block of the full report. What
   ## to report, and how often a 95% interval from each measure held the true
@@ -108,8 +109,11 @@
             "30-94%. Fis_se_ind: 92-93%."),
     Ar = c("Report Ar_se (loci only): 93-94%. Ar_lo to Ar_hi: 92-93%. No individual SE is",
            "computed for Ar: it was too wide (1.4 to 1.5 times the true SE)."),
-    privAr = c("Report privAr_se (loci only): 92-93%. privAr_lo to privAr_hi: 91-93%. No",
-               "individual SE is computed: it was far too small (31-36%)."),
+    priv_total = c("priv_total is the rarefied private alleles of the results table: private",
+                   "alleles per locus (privAr, in x$richness) added up over the privAr_n loci.",
+                   "Report priv_total_se (loci only): the per-locus SE times privAr_n. In",
+                   "simulations the per-locus SE held the truth 92-93% of the time; an individual",
+                   "SE was far too small (31-36%)."),
     Ho_autosomal = "Report Ho_autosomal_se_combined: the Ho SE times records / sites.",
     He_autosomal = "Report He_autosomal_se_combined: the He SE times records / sites."),
 
@@ -119,12 +123,13 @@
     He = "He_se counts RAD loci only. The SE to report needs se_individuals = TRUE.",
     Fis = "Fis_se counts RAD loci only. The SE to report needs se_individuals = TRUE.",
     Ar = c("Report Ar_se (loci only): 93-94%. Ar_lo to Ar_hi: 92-93%."),
-    privAr = c("Report privAr_se (loci only): 92-93%. privAr_lo to privAr_hi: 91-93%.")),
+    priv_total = c("Report priv_total_se (loci only): the per-locus SE times privAr_n. In",
+                   "simulations the per-locus SE held the truth 92-93% of the time.")),
 
   diversity_ar_capped = c(
     "NOTE: Ar is capped at 2 because these are biallelic SNPs, so rarefaction",
-    "has almost nothing to correct. Run this on the HAPLOTYPE VCF for a",
-    "richness worth reporting; private allelic richness is still informative."),
+    "has almost nothing to correct. Run the HAPLOTYPE VCF for Ar and private",
+    "alleles worth reporting."),
 
   diversity_two_estimators = c(
     "He_NeiChesser  (n/(n-1))(1 - sum p^2 - Ho/2n): unbiased at any FIS.",
@@ -141,8 +146,8 @@
     "No variable record has an allele seen only once or twice, so these data look",
     "filtered by minor allele count (a common RAD-seq step). State the threshold in",
     "your methods. Removing rare alleles lowers He per sequenced site, pct_poly, Ar",
-    "and privAr, and lowers them more in smaller samples. So compare values only",
-    "between datasets filtered the same way."),
+    "and rarefied private alleles, and lowers them more in smaller samples. So",
+    "compare values only between datasets filtered the same way."),
 
   diversity_prior_filters = c(
     "These describe the popmap's individuals as given; samples in the VCF but not",
@@ -196,23 +201,24 @@
     "populations.sumstats_summary.tsv) to get the autosomal value."),
 
   diversity_take_haplotype = c(
-    "TAKE FROM THIS RUN:  Fis, Ar, privAr.",
+    "TAKE FROM THIS RUN:  Fis, Ar, rarefied private alleles.",
     "NOT Ho or He. A haplotype locus's gene diversity has a ceiling that rises",
     "with the number of SNPs in the tag, so it changes with read length, enzyme",
     "and SNP calling and cannot be compared across studies. Run",
     "populations.snps.vcf for those. Fis is a ratio, so the scale cancels: that",
     "is why it belongs here.",
-    "Ar and privAr depend on the number of SNPs per locus too (more SNPs, more",
-    "possible haplotypes). Compare them only among populations analyzed together",
-    "(same run, filters and g), never with other studies. Which population is",
-    "richer is reliable; how much richer also depends on SNPs per locus. The loci",
-    "averaged over are the ones variable in this run, so adding or dropping",
-    "populations from the Stacks run changes them."),
+    "Ar and rarefied private alleles depend on the number of SNPs per locus too",
+    "(more SNPs, more possible haplotypes). Compare them only among populations",
+    "analyzed together (same run, filters and g), never with other studies. Which",
+    "population is richer is reliable; how much richer also depends on SNPs per",
+    "locus. The loci averaged over are the ones variable in this run, so adding or",
+    "dropping populations from the Stacks run changes them."),
 
   diversity_take_snp = c(
-    "TAKE FROM THIS RUN:  Ho, He, pct_poly, Ho_autosomal, He_autosomal.",
-    "Run populations.haps.vcf for Fis, Ar and privAr: on biallelic SNPs, rarefied",
-    "richness cannot pass 2, and Fis is more precise from multi-allelic loci."),
+    "TAKE FROM THIS RUN:  Ho, He, Ho_autosomal, He_autosomal.",
+    "Run populations.haps.vcf for Fis, Ar and rarefied private alleles: on",
+    "biallelic SNPs, rarefied richness cannot pass 2, and Fis is more precise from",
+    "multi-allelic loci."),
 
   diversity_take_common = c(
     "Fis is comparable between the two files. Ho and He are NOT: haplotype Ho",
@@ -221,10 +227,11 @@
     "",
     "Ho and He above are averaged over ALL retained records, including records",
     "where the population does not vary (the 'pooled' denominator, as in Stacks'",
-    "Variant-positions block). Report pct_poly beside them, because:",
-    "    He(pooled) = He(variable in that population) x pct_poly/100   (exactly)",
-    "Do not switch to averaging only over records that vary within a population:",
-    "that conditions on the outcome and can reverse a real difference."),
+    "Variant-positions block). Do not switch to averaging only over records that",
+    "vary within a population: that conditions on the outcome and can reverse a",
+    "real difference. pct_poly (percent of records variable in the population)",
+    "converts between the two if a reader asks:",
+    "    He(pooled) = He(variable in that population) x pct_poly/100   (exactly)"),
 
   diversity_he_difference_loci = c(
     "CAUTION: this interval treats LOCI as the only replicate (boot=\"loci\") and",
@@ -250,6 +257,12 @@
     "heterozygous, which is the allele-dropout signature. Re-run on a",
     "complete-data locus set (min_call = 1.0) before quoting the test below; if",
     "the difference survives that, it is not a coverage artifact."),
+
+  het_confound_negative = c(
+    "NEGATIVE and significant: individuals with more missing data look MORE",
+    "heterozygous. That is not allele dropout. Look at the per-individual table",
+    "(x$individual_heterozygosity) for outliers, such as a contaminated or mixed",
+    "sample, before quoting the test below."),
 
   het_call_rate_gap = c(
     "WARNING: mean call rate differs between populations by more than 2",
@@ -362,5 +375,46 @@
             "affect it. Report dxy_se (loci only; not checked by simulation)."),
     da_nc = "Report da_nc. It is dxy minus the mean pi_nc of the two populations.",
     da = c("da is dxy minus the mean pi, so it comes out a little high when individuals",
-           "are inbred."))
+           "are inbred.")),
+
+  ## ---- isolation_by_distance() -----------------------------------------------
+
+  ibd_mantel = c(
+    "How the test works: the populations are shuffled among the geographic",
+    "positions and r is recomputed each time. p is the share of these orderings",
+    "that give an r at least as large as the data's. Pairs share populations, so",
+    "this replaces the ordinary test of a correlation (Mantel 1967). This simple",
+    "Mantel test is valid for isolation by distance (Guillot & Rousset 2013)."),
+
+  ibd_1d = c(
+    "1-D habitat (a river, a coastline): genetic values are compared with the",
+    "distance itself. Under isolation by distance, FST/(1-FST) then rises in a",
+    "straight line with distance (Rousset 1997). If the populations are spread",
+    "over an area, use habitat = \"2D\"."),
+
+  ibd_2d = c(
+    "2-D habitat (an area): genetic values are compared with the natural log of",
+    "the distance. Under isolation by distance, FST/(1-FST) then rises in a",
+    "straight line with ln(distance) (Rousset 1997). If the populations lie",
+    "along a river or a coastline, use habitat = \"1D\"."),
+
+  ibd_slope = c(
+    "The slope is a least-squares line through all pairs. 1/slope estimates",
+    "4 x density x sigma^2 (1-D) or 4 x pi x density x sigma^2 (2-D), where",
+    "density is individuals per unit of length or area and sigma^2 is the mean",
+    "squared parent-offspring distance along one axis (Rousset 1997). This holds",
+    "best for pairs farther apart than sigma, near equilibrium. The slope has no",
+    "SE here; Genepop (Rousset 2008) gives a bootstrap interval for it."),
+
+  ibd_d = c(
+    "D is used as it is. For two populations with similar diversity, D equals",
+    "FST/(1-FST) x Hs/(1-Hs), so D already rises in a straight line under",
+    "isolation by distance; D/(1-D) would bend the line. The slope of D",
+    "describes the pattern; only the FST slope estimates dispersal (see",
+    "vignette(\"rationale\"))."),
+
+  ibd_partial = c(
+    "Partial Mantel tests (which try to control for a third distance matrix)",
+    "are not offered: they are not valid for spatially structured data",
+    "(Guillot & Rousset 2013).")
 )

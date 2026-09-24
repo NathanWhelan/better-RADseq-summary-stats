@@ -27,12 +27,14 @@ depend on the R version, and the regression tests compare them at the same
 
 ## Downstream dependency notes
 
-* `Imports` is limited to base packages (`stats`, `utils`); there are no
-  CRAN package dependencies beyond base R.
-* `Suggests` lists `hierfstat`, `inbreedR`, `knitr`, `pegas`, `rmarkdown`,
-  and `testthat`. Every use of `hierfstat`, `inbreedR`, and `pegas` in the
-  package and its tests is guarded with `requireNamespace()` (in package
-  code) or `testthat::skip_if_not_installed()` (in tests), so the package
+* `Imports` is limited to base packages (`graphics`, `stats`, `utils`);
+  there are no CRAN package dependencies beyond base R.
+* `Suggests` lists `adegenet`, `hierfstat`, `inbreedR`, `knitr`, `pegas`,
+  `rmarkdown`, `testthat`, and `vegan`. Every use of `adegenet`,
+  `hierfstat`, `inbreedR`, and `pegas` in the package, its examples and its
+  tests is guarded with `requireNamespace()` (in package code and examples)
+  or `testthat::skip_if_not_installed()` (in tests); `vegan` is used only in
+  one test, as a cross-check, and is guarded the same way. So the package
   and its test suite run correctly when any of these optional packages is
   unavailable.
 * There is no compiled code and no use of external system dependencies.

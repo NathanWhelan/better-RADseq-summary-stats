@@ -7,17 +7,20 @@ Description: Population-genetic summary statistics from RAD-seq data,
     designed around 'Stacks' 2 'populations' VCF output. Computes observed
     and expected heterozygosity (Nei and Chesser (1983)
     <doi:10.1111/j.1469-1809.1983.tb00993.x>), FIS as a ratio of sums,
-    rarefied allelic and private allelic richness (Kalinowski (2004)
+    rarefied allelic richness and rarefied private alleles (Kalinowski (2004)
     <doi:10.1023/B:COGE.0000041021.91777.1a>), per-sequenced-site
     heterozygosity (Schmidt et al. (2021) <doi:10.1111/2041-210X.13659>),
     and Weir and Cockerham (1984) <doi:10.1111/j.1558-5646.1984.tb05657.x>
     FST and Jost (2008) <doi:10.1111/j.1365-294X.2008.03887.x> D, with block
     jackknife standard errors and block bootstrap confidence intervals over
-    RAD loci. Tests whether populations differ in heterozygosity using the
-    individual, not the locus, as the unit of replication. Also provides
-    locus and genotype filters, an exact Hardy-Weinberg test, a kinship
-    screen, and export to 'PLINK', 'STRUCTURE', 'Genepop', 'FSTAT',
-    'RADpainter' and VCF formats.
+    RAD loci. Tests whether populations differ in heterozygosity with one
+    value per individual and a standard error that counts both individuals
+    and RAD loci. Also provides locus and genotype filters, an exact
+    Hardy-Weinberg test, a kinship screen, a Mantel (1967) test for
+    isolation by distance with pairwise FST/(1 - FST) (Rousset (1997)
+    <doi:10.1093/genetics/145.4.1219>) or Jost's D, a manuscript-ready
+    diversity table, export to 'PLINK', 'STRUCTURE', 'Genepop', 'FSTAT', 'RADpainter'
+    and VCF formats, and conversion to 'adegenet' objects.
 License: MIT + file LICENSE
 Copyright: See file inst/NOTICE for third-party code adapted in this package.
 Language: en-US
@@ -26,15 +29,18 @@ Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.3
 Depends: R (>= 4.0.0)
 Imports:
+    graphics,
     stats,
     utils
 Suggests:
+    adegenet,
     hierfstat,
     inbreedR,
     knitr,
     pegas,
     rmarkdown,
-    testthat (>= 3.1.7)
+    testthat (>= 3.1.7),
+    vegan
 VignetteBuilder: knitr
 Config/testthat/edition: 3
 URL: https://github.com/NathanWhelan/better-RADseq-summary-stats

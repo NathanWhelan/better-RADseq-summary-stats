@@ -15,8 +15,9 @@ filter_low_conf_alt(
 \arguments{
 \item{H}{The object returned by \code{\link[=read_stacks_vcf]{read_stacks_vcf()}} (optionally filtered).
 The allele depths come from \code{H$ad_ref} and \code{H$ad_alt}, which
-\code{\link[=read_stacks_vcf]{read_stacks_vcf()}} fills from each call's \code{AD} (allele depth) field; they
-are \code{NULL} for a VCF without \code{AD}, in which case nothing is flagged.}
+\code{\link[=read_stacks_vcf]{read_stacks_vcf()}} fills from each call's \code{AD} (allele depth) field. A
+VCF without \code{AD}, such as a Stacks haplotype VCF, stops the function with
+a message. A call whose own \code{AD} is missing is never flagged.}
 
 \item{min_alt_reads}{A call with this many or fewer reads supporting its
 ALT allele(s) is flagged. Default \code{2}.}

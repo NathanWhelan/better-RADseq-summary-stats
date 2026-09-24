@@ -58,16 +58,22 @@
 #  implemented here.)
 #
 #  WHICH KING FORMULA. Manichaikul et al. give two: the one above (their
-#  eq. 9, denominator N1_i + N1_j) and a "between-family" version whose
-#  denominator uses the smaller of N1_i and N1_j. PLINK 2's --make-king and
-#  Hail use the between-family version for every pair, so their numbers can
-#  differ from this function's when two individuals differ in
-#  heterozygosity. The sum form is kept deliberately: when one individual's
-#  heterozygotes are under-called (allele dropout at low depth, common in
-#  RAD data), it stays closer to the truth. In a simulation with 20% of one
-#  individual's heterozygotes called homozygous, a parent-offspring pair
-#  (true 0.25) read 0.226 with this form and 0.187 with the between-family
-#  form, and an unrelated pair read -0.135 and -0.240.
+#  eq. 9, denominator N1_i + N1_j) and a "between-family" version,
+#
+#      phi_ij = 1/2 - (4*N20 + N10 + N01) / (4 * min(N1_i, N1_j))
+#
+#  (N10, N01: loci where one individual is heterozygous and the other
+#  homozygous). PLINK 2's --make-king uses the between-family version for
+#  every pair (ComputeKinship() in plink2_matrix_calc.cc, read to confirm
+#  this), so its numbers can differ from this function's when two
+#  individuals differ in heterozygosity. The sum form is kept deliberately:
+#  when one individual's heterozygotes are under-called (allele dropout at
+#  low depth, common in RAD data), it stays closer to the truth. With 20% of
+#  one individual's heterozygotes called homozygous, a parent-offspring pair
+#  (true 0.25) reads 1/6 = 0.167 with this form and 1/8 = 0.125 with the
+#  between-family form, whatever the allele frequencies; an unrelated pair
+#  read -0.107 and -0.187 in simulation (inst/sims/kinship_checks.R, part
+#  dropout).
 #
 #  KING's own published scale: identical/duplicate individuals average
 #  ~0.5, parent-offspring or full siblings ~0.25, half-siblings/
@@ -88,11 +94,12 @@
 #  are than the AVERAGE pair of individuals it was given. Given every
 #  individual of several differentiated populations at once, two unrelated
 #  members of the same population are more alike than that pooled average,
-#  and read as relatives. In a simulation of two populations at FST = 0.1
-#  (20 individuals each), 277 of 378 unrelated same-population pairs
-#  exceeded 0.0442 when beta was computed on the pooled sample, and none did
-#  when each population was its own reference -- while a planted full-sib
-#  pair (0.259) and half-sib pair (0.138) were still found. So with `popmap`,
+#  and read as relatives. In simulations of two populations at FST = 0.1
+#  (20 individuals each), 80% of the 378 unrelated same-population pairs
+#  (74-90% over repeats) exceeded 0.0442 when beta was computed on the
+#  pooled sample, and none did when each population was its own reference --
+#  while a planted full-sib pair (0.254) and half-sib pair (0.124) were still
+#  found (inst/sims/kinship_checks.R, part pooled_beta). So with `popmap`,
 #  beta is computed within each population, which is also where relatives
 #  are looked for; pairs from different populations get NA. KING does not
 #  use allele frequencies, so it is computed on every pair either way.
@@ -276,8 +283,9 @@
 #' **Relatives are looked for within populations.** Goudet's beta measures
 #' how much more alike two individuals are than the average pair it is
 #' given. Computed on several differentiated populations at once, unrelated
-#' members of the same population look related (in a simulation at FST =
-#' 0.1, about 70% of unrelated same-population pairs were flagged). With
+#' members of the same population look related (in simulations at FST =
+#' 0.1, 80% of unrelated same-population pairs were flagged;
+#' `inst/sims/kinship_checks.R`). With
 #' `popmap`, beta is computed within each population, each population being
 #' its own reference, and pairs from different populations are `NA`. In a
 #' small population, or one with many relatives, that reference itself
@@ -289,9 +297,13 @@
 #' **Which KING formula.** This is Manichaikul et al.'s (2010) estimator
 #' with the SUM of the two individuals' heterozygote counts in the
 #' denominator. PLINK 2 (`--make-king`) uses their between-family version,
-#' with the SMALLER count, so values can differ when two individuals differ
-#' in heterozygosity. The sum form is less affected by heterozygotes that
-#' were called homozygous in a low-coverage library (see `R/kinship.R`).
+#' `1/2 - (4 N20 + N10 + N01) / (4 min(N1_i, N1_j))`, built on the SMALLER
+#' heterozygote count, so values can differ when two individuals differ in
+#' heterozygosity. The sum form is less affected by heterozygotes that were
+#' called homozygous in a low-coverage library: with 20% of one individual's
+#' heterozygotes called homozygous, a parent-offspring pair (true 0.25) reads
+#' 0.167 with the sum form and 0.125 with PLINK 2's
+#' (`inst/sims/kinship_checks.R`).
 #'
 #' **KING cutpoints**, for choosing `threshold`: ~0.354 (duplicate/identical
 #' twin), ~0.177 (first degree: parent-offspring or full sibling), ~0.0884

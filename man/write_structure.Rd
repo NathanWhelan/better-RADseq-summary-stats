@@ -32,6 +32,10 @@ population column, so the STRUCTURE run's \code{mainparams} should set
 population column is a placeholder \code{1} for everyone. STRUCTURE separates
 columns by white space, so a sample name containing a space stops the
 function.
+
+In the locus-name row every \code{.} becomes \verb{_}: the SNPs of one RAD locus
+are named \code{6}, \code{6.1}, \code{6.2}, ..., and \code{adegenet::read.structure()} cannot
+read a locus name with a dot. So \code{6.1} is written as \verb{6_1}.
 }
 \examples{
 H <- read_stacks_vcf(system.file("extdata", "small.snps.vcf",

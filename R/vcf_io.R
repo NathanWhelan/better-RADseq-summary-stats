@@ -366,7 +366,7 @@ print.raddiv_vcf <- function(x, ...) {
 }
 
 ## Not exported. Opens a VCF (plain or gzip-compressed; file() handles both)
-## and reads up to its #CHROM line. Returns list(con = the open connection,
+## and reads up to its #CHROM line, which must not name a sample twice. Returns list(con = the open connection,
 ## header = the #CHROM line's column names, pending = any record lines read
 ## along with the header). The caller closes `con`.
 .open_vcf <- function(path) {
@@ -386,6 +386,18 @@ print.raddiv_vcf <- function(x, ...) {
   if (is.null(header)) {
     close(con)
     stop("No '#CHROM' header line found. Is this a VCF?", call. = FALSE)
+  }
+  ## Two sample columns with one name: a popmap entry would match only the
+  ## first, while filters and the write_*() functions would still use both.
+  samples <- header[-seq_len(min(9L, length(header)))]
+  repeated <- unique(samples[duplicated(samples)])
+  if (length(repeated)) {
+    close(con)
+    stop("The VCF's #CHROM line names ", length(repeated), " sample(s) more than once: ",
+         paste(utils::head(repeated, 10), collapse = ", "),
+         if (length(repeated) > 10) ", ..." else "",
+         ".\n  Every sample column needs its own name. Rename them (for example with ",
+         "bcftools reheader) and re-run.", call. = FALSE)
   }
   list(con = con, header = header, pending = pending)
 }

@@ -110,8 +110,8 @@ Default \code{FALSE}.}
 were sampled, and add two columns each for Ho, He and FIS (and their
 per-site values): \verb{_se_ind} (a jackknife over individuals) and
 \verb{_se_combined} (locus and individual uncertainty together). \strong{Report
-\verb{_se_combined} for Ho, He and FIS.} Ar and privAr keep their locus-based
-\verb{_se}, \verb{_lo} and \verb{_hi}, which already cover both sources. See "How
+\verb{_se_combined} for Ho, He and FIS.} Ar and rarefied private alleles keep
+their locus-based \verb{_se}, \verb{_lo} and \verb{_hi}, which already cover both sources. See "How
 standard errors are calculated" below. Default \code{TRUE}, because
 \verb{_se_combined} is the recommended standard error and the extra work is
 small: about 30\% more run time (300,000 records and 60 individuals: 3.9
@@ -162,8 +162,13 @@ An object of class \code{raddiv_diversity}, a list of:
 population, each with its locus jackknife SE (\verb{_se}) and 95\% locus
 bootstrap interval (\verb{_lo}, \verb{_hi}). With \code{se_individuals = TRUE} (the
 default), also \verb{_se_ind} and \verb{_se_combined} for Ho, He and FIS.}
-\item{richness}{Ar, privAr and priv_total per population, with the
-number of records each rests on (\code{Ar_n}, \code{privAr_n}).}
+\item{richness}{Per population: \code{Ar}; \code{priv_total}, the rarefied
+private alleles (the expected number of private alleles in \code{g} gene
+copies at each locus, added up over the \code{privAr_n} loci typed at \code{g}
+copies in every population; this is the number summaries and tables
+report); and \code{privAr}, the same per locus. Each has \verb{_se}, \verb{_lo} and
+\verb{_hi}; \code{priv_total}'s are \code{privAr}'s times \code{privAr_n}. \code{Ar_n} and
+\code{privAr_n} count the loci each rests on.}
 \item{autosomal}{Per-sequenced-site Ho/He (\code{Ho_autosomal},
 \code{He_autosomal}), with the \code{sites_used} and \code{variant_records} each
 population was scaled by, and the same uncertainty columns as Ho and
@@ -194,8 +199,8 @@ files round them. With \code{outdir}, \code{per_population}, \code{richness} and
 }
 \description{
 Computes Ho, He, FIS (Nei & Chesser 1983, ratio of sums), rarefied allelic
-richness and rarefied private allelic richness from a Stacks 2
-\code{populations} VCF and popmap, with a delete-one-locus jackknife standard
+richness and rarefied private alleles from a Stacks 2 \code{populations} VCF and
+popmap, with a delete-one-locus jackknife standard
 error and a bootstrap confidence interval over RAD loci. Printing the
 result shows the main tables. \code{summary()} is short: the results as
 \code{estimate (SE)} with the one recommended standard error for each statistic,
@@ -204,14 +209,15 @@ is the full report, with every uncertainty column and notes on
 interpretation. \code{outdir} also writes the tables to TSV files.
 }
 \details{
-Run it twice: \code{populations.snps.vcf} gives Ho, He, \code{pct_poly} and the
-per-sequenced-site values; \code{populations.haps.vcf} gives FIS, Ar and
-privAr. Haplotype Ar and privAr depend on how many SNPs each RAD locus
-holds, which changes with read length, enzyme and SNP calling. Compare them
-only among populations analyzed together (the same run, filters and \code{g}):
-which population is richer is reliable, but the size of the difference
-also depends on SNPs per locus. The printed result says which numbers to
-take from each file. See \code{vignette("rationale")}, section 3.
+Run it twice: \code{populations.snps.vcf} gives Ho, He and the
+per-sequenced-site values; \code{populations.haps.vcf} gives FIS, Ar and rarefied
+private alleles. \code{\link[=diversity_table]{diversity_table()}} joins the two runs into one table.
+Haplotype Ar and rarefied private alleles depend on how many SNPs each RAD
+locus holds, which changes with read length, enzyme and SNP calling. Compare them only among
+populations analyzed together (the same run, filters and \code{g}): which
+population is richer is reliable, but the size of the difference also
+depends on SNPs per locus. The printed result says which numbers to take
+from each file. See \code{vignette("rationale")}, section 3.
 
 The SNP-VCF side was designed for biallelic SNPs, as Stacks writes them.
 A VCF whose alleles are all single bases is treated as one site per record
@@ -248,7 +254,8 @@ Whole RAD loci, not single SNPs, are resampled, because SNPs on one RAD
 locus are inherited together.
 
 \strong{Which to report.} For \strong{Ho, He and FIS}, report \verb{_se_combined}. For
-\strong{Ar and privAr}, report \verb{_se} (or \verb{_lo}, \verb{_hi}). The per-site Ho and He
+\strong{Ar and rarefied private alleles} (\code{priv_total}), report \verb{_se} (or \verb{_lo},
+\verb{_hi}). The per-site Ho and He
 (\code{Ho_autosomal}, \code{He_autosomal}) follow the same rule for Ho and He: report
 \code{Ho_autosomal_se_combined} and \code{He_autosomal_se_combined}. The short
 \code{summary()} shows only these recommended standard errors. This rule comes from
@@ -261,8 +268,12 @@ homozygous at many loci at once, so loci are not independent. With the
 individual SE alone, He intervals contained it 47-86\% of the time, because
 He depends mostly on which loci were typed. The combined SE contained it
 90-99\% of the time for all three, often a little more than 95\% because some
-noise is counted in both SEs. For Ar and privAr the locus SE alone did well
-(88-96\%). A bootstrap over individuals is not offered for reporting:
+noise is counted in both SEs. For Ar and for private alleles per locus
+(\code{privAr}), the locus SE alone did well (88-96\%). The rarefied private
+alleles (\code{priv_total}) are \code{privAr} times the number of loci it is added up
+over, the same for every population, so \code{priv_total_se} is \code{privAr_se}
+times that number and holds the truth as often. A bootstrap over
+individuals is not offered for reporting:
 drawing an individual twice makes the sample look less diverse than it is,
 and its He intervals contained the truth under 10\% of the time. Details are
 in \code{vignette("rationale")}, section 4, and \code{inst/sims/uncertainty_sources.R}.
@@ -275,29 +286,17 @@ dropout, and linkage between separate RAD loci.
 \section{Tables for a paper}{
 
 Put in the table exactly what the short \code{summary()} reports, and nothing
-more. \code{summary(x)$tables} holds those tables as data frames, with the same
-\code{estimate (SE)} text the summary prints: \code{results} (Ho, He and \code{pct_poly}
-for a SNP VCF; FIS, Ar and privAr for a haplotype VCF) and, for a SNP VCF run
-with \code{sites}, \code{per_site}. Join the two runs by population name, never by row
-order:
+more. \code{\link[=diversity_table]{diversity_table()}} does this: \code{diversity_table(res_snps, res_haps)}
+joins the SNP and haplotype runs by population and prints a caption to go
+with the table. \code{summary(x)$tables} holds the same cells for one run:
+\code{results} (Ho and He for a SNP VCF; FIS, Ar and rarefied private alleles for
+a haplotype VCF) and, for a SNP VCF run with \code{sites}, \code{per_site}.
 
-\if{html}{\out{<div class="sourceCode">}}\preformatted{snp <- summary(res_snps)$tables
-hap <- summary(res_haps)$tables
-parts <- list(snp$results, snp$per_site,
-              hap$results[names(hap$results) != "n"])
-table1 <- Reduce(function(a, b) merge(a, b, by = "population", sort = FALSE),
-                 Filter(Negate(is.null), parts))
-table1 <- table1[match(snp$results$population, table1$population), ]
-}\if{html}{\out{</div>}}
-
-Leave out the other uncertainty columns (they are in the result tables and
-the \code{outdir} files, for a supplement) and the counts behind a value (\code{Ar_n},
-\code{privAr_n}, \code{priv_total}, \code{sites_used}); state those in the methods. Say in
-the caption which VCF each column came from, the rarefaction size \code{g}, and
-which standard error each column is. Add something to the table only when a
-check in the summary said \code{look} and readers need the number to judge it.
-See the README ("Make a table for a manuscript") and the workflow vignette
-("A table for your manuscript").
+The other columns (other SEs and intervals, \code{pct_poly}, \code{privAr}, the counts
+\code{Ar_n}, \code{privAr_n} and \code{sites_used}) are in the result tables and the
+\code{outdir} files, for a supplement or the methods. Add one to the table only
+when a check in the summary said \code{look} and readers need the number to judge
+it.
 }
 
 \examples{
@@ -307,7 +306,7 @@ haps   <- system.file("extdata", "small.haps.vcf", package = "RADdiversity")
 snps   <- system.file("extdata", "small.snps.vcf", package = "RADdiversity")
 popmap <- system.file("extdata", "small_popmap.tsv", package = "RADdiversity")
 
-# Haplotype VCF: FIS, allelic richness, private allelic richness.
+# Haplotype VCF: FIS, allelic richness, rarefied private alleles.
 # se_individuals = FALSE only because these toy populations have 3 and 4
 # individuals, too few for the individual standard errors. Leave it at its
 # default (TRUE) for real data.

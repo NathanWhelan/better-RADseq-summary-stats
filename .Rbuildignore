@@ -5,3 +5,4 @@
 ^populations\.
 ^vignettes/reviewer-faq\.Rmd$
 ^het_test_study$
+^IBD-virgata\.R$

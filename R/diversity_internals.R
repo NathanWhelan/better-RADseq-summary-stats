@@ -370,12 +370,9 @@
 ## replicate. Deciding it again in each replicate would make a record with
 ## exactly min_n genotyped individuals vanish whenever one of them is left
 ## out. The estimate then jumps, and a delete-one jackknife overstates the SE
-## when the estimate jumps (Shao & Wu 1989): in a simulation run during the
-## review that made this change, with min_n = 5 of 10 individuals and 30%
-## missing genotypes, the He SE came out 1.64 times its true value, and 1.35
-## with the record set fixed. A record is still lost
-## in a replicate where He becomes undefined, i.e. only one genotyped
-## individual is left; .jackknife_boundary() counts how often that can happen.
+## when the estimate jumps (Shao & Wu 1989). A record is still lost in a
+## replicate where He becomes undefined, i.e. only one genotyped individual
+## is left; .jackknife_boundary() counts how often that can happen.
 ##
 ## Ar and privAr have no individual SE: their locus SE and bootstrap interval
 ## already covered the truth in simulation, while their individual jackknife
@@ -539,14 +536,20 @@
     Fis = value("Fis_"), Fis_se = se("Fis_"), Fis_lo = lo("Fis_"), Fis_hi = hi("Fis_"),
     pct_poly = value("poly_"), row.names = NULL)
 
+  ## priv_total (the rarefied private-allele count) is privAr times privAr_n,
+  ## and privAr_n is the same fixed set of loci for every population. So its
+  ## SE and interval are privAr's times privAr_n: the SE the simulations
+  ## checked. (The resampled sum would also count how many loci pass g,
+  ## which every population shares, and so be too wide for comparisons.)
   richness <- data.frame(
     population = pop_names,
     Ar = value("Ar_"), Ar_se = se("Ar_"), Ar_n = as.integer(ar_n),
     Ar_lo = lo("Ar_"), Ar_hi = hi("Ar_"),
     privAr = value("Pr_"), privAr_se = se("Pr_"), privAr_n = as.integer(pr_n),
     privAr_lo = lo("Pr_"), privAr_hi = hi("Pr_"),
-    priv_total = value("PrTot_"), priv_total_se = se("PrTot_"),
-    priv_total_lo = lo("PrTot_"), priv_total_hi = hi("PrTot_"), row.names = NULL)
+    priv_total = value("PrTot_"), priv_total_se = se("Pr_") * unname(pr_n),
+    priv_total_lo = lo("Pr_") * unname(pr_n), priv_total_hi = hi("Pr_") * unname(pr_n),
+    row.names = NULL)
 
   ## Individual-jackknife SEs, and the combined SE to report, go right after
   ## their locus-based counterparts: Ho_se, Ho_se_ind, Ho_se_combined, ...

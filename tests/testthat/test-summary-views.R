@@ -45,9 +45,9 @@ test_that(".est_se() gives the SE 2 significant digits and the estimate the same
   expect_identical(est_se(0.3, NA), "0.300 (NA)")            # no usable SE: 3 decimals
 })
 
-test_that("the README's est_se() and the package's .est_se() are the same rule", {
-  ## This is the function in README.md ("Make a table for a manuscript"). If you
-  ## change one, change the other.
+test_that("an independent copy of the estimate (SE) rule agrees with .est_se()", {
+  ## The rule in words: SE to 2 significant digits, the estimate to the same
+  ## number of decimals, fixed within a column (see .est_se()).
   readme_est_se <- function(x, se) {
     d <- max(0, 1 - floor(log10(signif(min(se[se > 0]), 2))))
     sprintf("%.*f (%.*f)", d, x, d, se)
@@ -136,11 +136,13 @@ test_that("the short diversity summary is short, fits 80 columns and labels ever
     expect_false(any(grepl("_lo|_hi|_se_ind|Ar_n|priv_total", out)))
   }
 
-  ## SNP VCF: Ho, He, pct_poly (and per-site values), each with the combined SE.
+  ## SNP VCF: Ho and He (and per-site values), each with the combined SE.
+  ## pct_poly is not in the primary table.
   out <- lines_of(snps)
   header <- grep("^ *population +n ", out, value = TRUE)
-  expect_match(header, "Ho \\(SE\\) +He \\(SE\\) +pct_poly \\(%\\)")
-  expect_false(grepl("Fis|Ar|privAr", header))
+  expect_match(header, "Ho \\(SE\\) +He \\(SE\\)$")
+  expect_false(grepl("Fis|Ar|private|pct_poly", header))
+  expect_false(any(grepl("pct_poly", out)))
   pp <- snps$per_population
   est_se <- RADdiversity:::.est_se
   expect_true(all(vapply(est_se(pp$Ho, pp$Ho_se_combined), function(cell) any(grepl(cell, out, fixed = TRUE)),
@@ -153,29 +155,36 @@ test_that("the short diversity summary is short, fits 80 columns and labels ever
   expect_length(site_header, 1L)
   expect_true(any(grepl(est_se(a$He_autosomal, a$He_autosomal_se_combined)[1], out, fixed = TRUE)))
 
-  ## Haplotype VCF: Fis with the combined SE, Ar and privAr with the locus SE.
+  ## Haplotype VCF: Fis with the combined SE, Ar and the rarefied private
+  ## alleles (the count priv_total, not privAr) with the locus SE.
   out <- lines_of(haps)
   header <- grep("^ *population +n ", out, value = TRUE)
-  expect_match(header, "Fis \\(SE\\) +Ar \\(SE\\) +privAr \\(SE\\)")
+  expect_match(header, "Fis \\(SE\\) +Ar \\(SE\\) +rarefied private alleles \\(SE\\)")
   expect_false(grepl("Ho|He|pct_poly", header))
   pp <- haps$per_population
   rich <- haps$richness
   expect_true(any(grepl(est_se(pp$Fis, pp$Fis_se_combined)[1], out, fixed = TRUE)))
   expect_true(any(grepl(est_se(rich$Ar, rich$Ar_se)[1], out, fixed = TRUE)))
-  expect_true(any(grepl(est_se(rich$privAr, rich$privAr_se)[1], out, fixed = TRUE)))
+  expect_true(any(grepl(est_se(rich$priv_total, rich$priv_total_se)[1], out, fixed = TRUE)))
+  expect_false(any(grepl(est_se(rich$privAr, rich$privAr_se)[1], out, fixed = TRUE)))
 })
 
 test_that("the short diversity summary says which SE each column uses, and what simulations showed", {
   snps <- lines_of(div_run("sim.allsnps.vcf.gz"))
   expect_true(any(grepl("SE counts variation among RAD loci and among individuals", snps)))
   expect_true(any(grepl(RADdiversity:::.coverage$combined, snps, fixed = TRUE)))
-  expect_true(any(grepl("pct_poly.*It has no SE", snps)))
+  expect_false(any(grepl("pct_poly", snps)))
 
   haps <- lines_of(div_run("sim.haps.vcf.gz"))
-  expect_true(any(grepl("Ar and privAr SE count variation among RAD loci only", haps)))
+  expect_true(any(grepl("SEs of Ar and rarefied private alleles count variation among RAD loci only", haps)))
   expect_true(any(grepl(RADdiversity:::.coverage$loci, haps, fixed = TRUE)))
   expect_true(any(grepl("allelic richness", haps)))                # what Ar is
-  expect_true(any(grepl("private allelic richness", haps)))        # what privAr is
+  expect_match(gsub("\\s+", " ", paste(haps, collapse = " ")),
+               "found only in this population")                     # what private alleles are
+  expect_match(gsub("\\s+", " ", paste(haps, collapse = " ")),
+               "It is an expected value")                           # not a whole number
+  expect_match(gsub("\\s+", " ", paste(haps, collapse = " ")),
+               "added up over the [0-9,]+ loci")                      # and over which loci
 
   ## Without the individual SEs the cells hold the locus SE, and the header says so.
   off <- div_run("sim.allsnps.vcf.gz", se_individuals = FALSE)
@@ -215,7 +224,12 @@ test_that("print() keeps the population name on every block of a wide table", {
   res <- div_run("sim.allsnps.vcf.gz", sites = 1e6)
   old <- options(width = 80); on.exit(options(old), add = TRUE)
   out <- capture.output(print(res))
+  ## A SNP run does not print Ar and private alleles; the haplotype run does.
+  expect_false(any(grepl("^\\$richness", out)))
+  hap_out <- capture.output(print(div_run("sim.haps.vcf.gz")))
+  snp_out <- out
   for (tab in c("per_population", "richness", "autosomal")) {
+    out <- if (tab == "richness") hap_out else snp_out
     start <- grep(paste0("^\\$", tab, "$"), out)
     stop_at <- min(c(grep("^\\$", out)[grep("^\\$", out) > start], grep("^Take from|^NOTE|^summary", out)))
     block <- out[(start + 1):(stop_at - 1)]
@@ -252,7 +266,7 @@ test_that("summary(details = TRUE) of diversity_stats() is the full report, with
   ## every uncertainty column is there, in one small table per statistic that
   ## starts with the population
   for (col in c("Ho_se", "Ho_se_ind", "Ho_se_combined", "Ho_lo", "Ho_hi", "He_se_combined",
-                "Fis_se_combined", "Ar_se", "privAr_lo", "Ho_autosomal_se_combined",
+                "Fis_se_combined", "Ar_se", "priv_total_lo", "Ho_autosomal_se_combined",
                 "He_autosomal_hi"))
     expect_true(any(grepl(paste0("\\b", col, "\\b"), out)), info = col)
   heads <- grep("^ *population ", out, value = TRUE)
@@ -285,7 +299,9 @@ test_that("the short differentiation summary shows FST and D as estimate (SE) an
   expect_true(any(grepl(est_se(pw$D, pw$D_se)[1], out, fixed = TRUE)))
   expect_true(any(grepl("beta +Weir & Goudet.*it has no SE", out)))
   expect_true(any(grepl("SE counts variation among RAD loci only \\(not checked by simulation\\)", out)))
-  expect_true(any(grepl("global D uses only", out)))
+  ## two populations: one sentence, no separate "global" and "pairwise" D
+  expect_true(any(grepl("D uses the [0-9,]+ of [0-9,]+ records typed in both populations", out)))
+  expect_false(any(grepl("global D|pairwise D uses", out)))
   expect_false(any(grepl("FST_lo|D_lo|FIS_se|_se_", out)))          # no other uncertainty columns
   ## what to report depends on the file
   expect_true(any(grepl("Report D \\(or beta\\) with FST", out)))
@@ -339,7 +355,7 @@ test_that("summary(details = TRUE) of differentiation_stats() has every column i
   expect_true(any(grepl("^ *pair +FST +FST_se +FST_lo +FST_hi", out)))
   expect_true(any(grepl("The FIS to report is", out)))
   expect_lt(grep("^RESULTS", out)[1], grep("^FULL TABLES", out)[1])
-  expect_true(any(grepl("global D uses only", out)))
+  expect_true(any(grepl("D uses the [0-9,]+ of [0-9,]+ records typed in both populations", out)))
 })
 
 ## ---- pi_allsites() ----------------------------------------------------------
@@ -475,6 +491,24 @@ test_that("the short heterozygosity summary flags failed libraries and g2 above 
                "ok g2 is not above 0 in any population")
 })
 
+test_that("the heterozygosity summaries flag call rate tracking heterozygosity either way", {
+  res <- het_run()
+  res$missingness_confound$no_variation <- FALSE
+  res$missingness_confound$too_few <- FALSE
+  res$missingness_confound$overall <- data.frame(r = -0.6, p_value = 0.001, n = 20,
+                                                 call_rate_gap = 0)
+  joined <- gsub("\\s+", " ", paste(lines_of(res), collapse = " "))
+  expect_match(joined, "look individuals with more missing data look MORE heterozygous")
+  expect_true(any(grepl("NEGATIVE and significant", lines_of(res, details = TRUE))))
+  expect_true(any(grepl("MORE heterozygous", capture.output(print(res)))))
+  res$missingness_confound$overall$r <- 0.6
+  joined <- gsub("\\s+", " ", paste(lines_of(res), collapse = " "))
+  expect_match(joined, "look individuals with more missing data look LESS heterozygous")
+  res$missingness_confound$overall$p_value <- 0.2           # not significant either way
+  joined <- gsub("\\s+", " ", paste(lines_of(res), collapse = " "))
+  expect_match(joined, "ok heterozygosity does not track call rate")
+})
+
 test_that("the short heterozygosity summary keeps every row label with long popmap names", {
   pm <- long_popmap()
   on.exit(unlink(pm), add = TRUE)
@@ -542,11 +576,11 @@ test_that("summary(x)$tables holds what the short view prints, for all four func
   expect_named(summary(snps)$tables, c("results", "per_site"))
   expect_named(summary(haps)$tables, "results")
   expect_identical(names(summary(snps)$tables$results),
-                   c("population", "n", "Ho (SE)", "He (SE)", "pct_poly (%)"))
+                   c("population", "n", "Ho (SE)", "He (SE)"))
   expect_identical(names(summary(snps)$tables$per_site),
                    c("population", "Ho_autosomal (SE)", "He_autosomal (SE)"))
   expect_identical(names(summary(haps)$tables$results),
-                   c("population", "n", "Fis (SE)", "Ar (SE)", "privAr (SE)"))
+                   c("population", "n", "Fis (SE)", "Ar (SE)", "rarefied private alleles (SE)"))
   expect_named(summary(div_run("sim.allsnps.vcf.gz"))$tables, "results")   # no `sites`: no per_site
   expect_tables_on_screen(snps, "snps")
   expect_tables_on_screen(haps, "haps")
@@ -589,10 +623,13 @@ test_that("the tables hold every pair, even where the printed summary cuts the l
   expect_equal(sum(grepl("^ *p[1-6] - p[1-6] ", lines_of(het))), 10L)     # 5 per question
 })
 
-## The recipe in README.md (twice: the Quick start block and "Make a table for a
-## manuscript"), the workflow vignette ("A table for your manuscript") and the
-## help page of diversity_stats() ("Tables for a paper"). The test below checks
-## that all four copies still hold these statements.
+## diversity_table() replaced a 5-line recipe the docs used to repeat. The
+## recipe is kept here as the reference the function must match.
+plain_df <- function(x) {
+  class(x) <- "data.frame"
+  attr(x, "caption") <- NULL
+  x
+}
 manuscript_table1 <- function(div_snps, div_haps) {
   snp <- summary(div_snps)$tables
   hap <- summary(div_haps)$tables
@@ -602,34 +639,36 @@ manuscript_table1 <- function(div_snps, div_haps) {
   table1[match(snp$results$population, table1$population), ]
 }
 
-test_that("the manuscript table holds exactly the columns the two default summaries show", {
+test_that("diversity_table() holds exactly the columns the two default summaries show", {
   snps <- div_run("sim.allsnps.vcf.gz", sites = 1e6)
   haps <- div_run("sim.haps.vcf.gz")
-  table1 <- manuscript_table1(snps, haps)
+  table1 <- diversity_table(snps, haps)
+  expect_s3_class(table1, c("raddiv_table", "data.frame"))
   expect_identical(names(table1),
-                   c("population", "n", "Ho (SE)", "He (SE)", "pct_poly (%)",
-                     "Ho_autosomal (SE)", "He_autosomal (SE)", "Fis (SE)", "Ar (SE)", "privAr (SE)"))
-  ## popmap order, one row per population
+                   c("population", "n", "Ho (SE)", "He (SE)", "Ho_autosomal (SE)",
+                     "He_autosomal (SE)", "Fis (SE)", "Ar (SE)", "rarefied private alleles (SE)"))
+  ## the same cells as the old recipe, in popmap order
+  reference <- manuscript_table1(snps, haps)
+  expect_equal(plain_df(table1)[names(reference)], reference, ignore_attr = TRUE)
   expect_identical(table1$population, snps$per_population$population)
-  ## nothing beyond what the two summaries print: every column is a column of one of them
-  shown <- c(names(summary(snps)$tables$results), names(summary(snps)$tables$per_site),
-             names(summary(haps)$tables$results))
-  expect_true(all(names(table1) %in% shown))
-  ## and every cell is printed by the summary of the run it came from
+  ## every cell is printed by the summary of the run it came from
   snp_out <- lines_of(snps); hap_out <- lines_of(haps)
-  for (col in c("Ho (SE)", "He (SE)", "pct_poly (%)", "Ho_autosomal (SE)", "He_autosomal (SE)"))
+  for (col in c("Ho (SE)", "He (SE)", "Ho_autosomal (SE)", "He_autosomal (SE)"))
     for (cell in table1[[col]]) expect_true(any(grepl(cell, snp_out, fixed = TRUE)), info = col)
-  for (col in c("Fis (SE)", "Ar (SE)", "privAr (SE)"))
+  for (col in c("Fis (SE)", "Ar (SE)", "rarefied private alleles (SE)"))
     for (cell in table1[[col]]) expect_true(any(grepl(cell, hap_out, fixed = TRUE)), info = col)
   ## none of the columns the summary leaves out is in the table
-  expect_false(any(grepl("_se|_lo|_hi|_n$|priv_total|sites_used|variant_records", names(table1))))
-  expect_false(any(names(table1) %in% c("Ar_n", "privAr_n")))
+  expect_false(any(grepl("_se|_lo|_hi|_n$|priv_total|privAr|pct_poly|sites_used", names(table1))))
 
-  ## without `sites` there are no per-site columns, and the recipe still works
-  no_sites <- manuscript_table1(div_run("sim.allsnps.vcf.gz"), haps)
-  expect_identical(names(no_sites),
-                   c("population", "n", "Ho (SE)", "He (SE)", "pct_poly (%)",
-                     "Fis (SE)", "Ar (SE)", "privAr (SE)"))
+  ## without `sites` there are no per-site columns
+  expect_identical(names(diversity_table(div_run("sim.allsnps.vcf.gz"), haps)),
+                   c("population", "n", "Ho (SE)", "He (SE)", "Fis (SE)", "Ar (SE)",
+                     "rarefied private alleles (SE)"))
+  ## one run alone works
+  expect_identical(names(diversity_table(snps = snps)),
+                   c("population", "n", "Ho (SE)", "He (SE)", "Ho_autosomal (SE)", "He_autosomal (SE)"))
+  expect_identical(names(diversity_table(haps = haps)),
+                   c("population", "n", "Fis (SE)", "Ar (SE)", "rarefied private alleles (SE)"))
 
   ## rows are joined by population name: reversing the popmap order of the
   ## haplotype run does not scramble the table
@@ -637,42 +676,49 @@ test_that("the manuscript table holds exactly the columns the two default summar
   rev_path <- tempfile(fileext = ".tsv")
   writeLines(c(pm[grepl("popB$", pm)], pm[grepl("popA$", pm)]), rev_path)
   on.exit(unlink(rev_path), add = TRUE)
-  reversed <- manuscript_table1(snps, div_run("sim.haps.vcf.gz", popmap = rev_path))
-  expect_identical(reversed[, names(table1)], table1[, names(table1)], ignore_attr = TRUE)
+  reversed <- diversity_table(snps, div_run("sim.haps.vcf.gz", popmap = rev_path))
+  expect_identical(plain_df(reversed), plain_df(table1))
 })
 
-test_that("every copy of the manuscript-table recipe holds the same statements", {
-  ## README.md, the vignette and the R source are not in an installed package, so
-  ## this runs from the source tree only.
-  root <- normalizePath(test_path("..", ".."), mustWork = FALSE)
-  files <- c(readme = file.path(root, "README.md"),
-             workflow = file.path(root, "vignettes", "workflow.Rmd"),
-             help = file.path(root, "R", "diversity_stats.R"))
-  skip_if_not(all(file.exists(files)), "source files are not available here")
+test_that("diversity_table() stops on swapped or mismatched runs, and warns on a different n", {
+  snps <- div_run("sim.allsnps.vcf.gz")
+  haps <- div_run("sim.haps.vcf.gz")
+  expect_error(diversity_table(), "at least one")
+  expect_error(diversity_table(haps, snps), "Did you swap")
+  expect_error(diversity_table(snps = list(a = 1)), "must be the result of diversity_stats")
+  other <- haps
+  other$per_population$population[1] <- "elsewhere"
+  expect_error(diversity_table(snps, other), "Only in the haplotype run: elsewhere")
+  fewer <- haps
+  fewer$per_population$n[1] <- fewer$per_population$n[1] - 1L
+  expect_warning(diversity_table(snps, fewer), "different individuals")
+})
 
-  ## Drop roxygen markers, comments and all whitespace, so line breaks and
-  ## comments do not matter; the help page names its objects res_snps / res_haps.
-  squash <- function(path) {
-    x <- readLines(path, warn = FALSE)
-    x <- sub("^#'", "", x)
-    x <- sub("#.*$", "", x)
-    x <- gsub("res_snps", "div_snps", gsub("res_haps", "div_haps", x, fixed = TRUE), fixed = TRUE)
-    gsub("[[:space:]]", "", paste(x, collapse = ""))
-  }
-  text <- lapply(files, squash)
-  statements <- c(
-    'snp<-summary(div_snps)$tables',
-    'hap<-summary(div_haps)$tables',
-    'parts<-list(snp$results,snp$per_site,hap$results[names(hap$results)!="n"])',
-    'table1<-Reduce(function(a,b)merge(a,b,by="population",sort=FALSE),Filter(Negate(is.null),parts))',
-    'table1<-table1[match(snp$results$population,table1$population),]')
-  count <- function(pattern, x) lengths(regmatches(x, gregexpr(pattern, x, fixed = TRUE)))
-  for (st in statements) {
-    expect_true(count(st, text$readme) >= if (grepl("^(snp|hap)<-", st)) 1L else 2L, info = st)
-    expect_true(count(st, text$workflow) >= 1L, info = st)
-    expect_true(count(st, text$help) >= 1L, info = st)
-  }
-  ## The Quick start block holds the recipe too (the README's first occurrence is there)
-  expect_lt(regexpr("table1<-table1[match(", text$readme, fixed = TRUE)[[1]],
-            regexpr("Makeatableforamanuscript", text$readme, fixed = TRUE)[[1]])
+test_that("diversity_table()'s caption says where each column came from and which SE it holds", {
+  snps <- div_run("sim.allsnps.vcf.gz", sites = 1e6)
+  haps <- div_run("sim.haps.vcf.gz")
+  cap <- attr(diversity_table(snps, haps), "caption")
+  expect_match(cap, "per-site Ho and He are from the SNP VCF")
+  expect_match(cap, "Fis, Ar and rarefied private alleles are from the haplotype VCF")
+  expect_match(cap, sprintf("g = %d gene copies", haps$settings$g))
+  expect_match(cap, "among RAD loci and among individuals")
+  expect_match(cap, "SEs for Ar and rarefied private alleles count variation among RAD loci only")
+  ## the printed table ends with the caption
+  out <- capture.output(print(diversity_table(snps, haps)))
+  expect_true(any(out == "Caption:"))
+  expect_false(any(grepl("^ *1 ", out)))                          # no row numbers
+  ## without the individual SEs, the caption says loci only
+  off <- attr(diversity_table(div_run("sim.allsnps.vcf.gz", se_individuals = FALSE)), "caption")
+  expect_match(off, "SEs for Ho and He count variation among RAD loci only")
+  expect_false(grepl("per-site", off))
+})
+
+test_that("diversity_table() writes to CSV like a plain data frame", {
+  table1 <- diversity_table(div_run("sim.allsnps.vcf.gz"), div_run("sim.haps.vcf.gz"))
+  a <- tempfile(fileext = ".csv"); b <- tempfile(fileext = ".csv")
+  on.exit(unlink(c(a, b)), add = TRUE)
+  utils::write.csv(table1, a, row.names = FALSE)
+  plain <- table1; class(plain) <- "data.frame"; attr(plain, "caption") <- NULL
+  utils::write.csv(plain, b, row.names = FALSE)
+  expect_identical(readLines(a), readLines(b))
 })

@@ -6,7 +6,8 @@
 #  vignettes: large enough to show realistic output, small enough to ship.
 #
 #    example.snps.vcf.gz          one record per SNP (FORMAT GT:DP:AD)
-#    example.haps.vcf.gz          one record per RAD locus (FORMAT GT)
+#    example.haps.vcf.gz          one record per RAD locus (FORMAT GT; ID "."
+#                                 and POS 0, as in a Stacks de novo run)
 #    example.allsites.vcf.gz      every sequenced site, variable or not (GT)
 #    example.sumstats_summary.tsv the populations.sumstats_summary.tsv layout
 #    example_popmap.tsv           sample <TAB> population
@@ -127,8 +128,10 @@ for (t in seq_len(n_tags)) {
     code2 <- match(hap_string[h2], alleles) - 1L
     cell <- paste0(pmin(code1, code2), "/", pmax(code1, code2))
     cell[missing] <- "./."
+    ## As Stacks 2 writes a de novo haplotype VCF: CHROM is the locus, POS 0,
+    ## ID "." (export_formats.cc, VcfHapsExport::write_batch()).
     hap_rows[[length(hap_rows) + 1L]] <- paste(
-      t, 1L, t, alleles[1], if (length(alleles) > 1L) paste(alleles[-1], collapse = ",") else ".",
+      t, 0L, ".", alleles[1], if (length(alleles) > 1L) paste(alleles[-1], collapse = ",") else ".",
       ".", "PASS", ".", "GT", paste(cell, collapse = "\t"), sep = "\t")
   }
 

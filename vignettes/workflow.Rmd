@@ -17,7 +17,7 @@ options(width = 90)
 
 This vignette walks through one analysis from start to finish. Each step
 says **what** it does, **why** it is done that way, and **how to read**
-the output. The longer rationale behind the choices are in
+the output. The longer rationale behind the choices is in
 `vignette("rationale", package = "RADdiversity")`.
 
 ## The example data
@@ -56,8 +56,8 @@ readLines(popmap, n = 3)
 - **Gene copies.** A diploid individual carries two copies of each
   locus, so 10 individuals are 20 gene copies. Rarefaction sizes (`g`)
   are in gene copies.
-- **Record versus RAD locus.** Stacks writes two VCFs if multiple SNPs
-  per locus are allowed by *populations* filters. In
+- **Record versus RAD locus.** With `--vcf`, *populations* writes two
+  VCFs (with `--write-single-snp`, only the SNP VCF). In
   `populations.snps.vcf` each record (line) is one SNP, and several SNPs
   can sit on the same short RAD locus. In `populations.haps.vcf` each
   record is one RAD locus, and its alleles are haplotypes (the SNPs of
@@ -67,10 +67,12 @@ readLines(popmap, n = 3)
   gene diversity) is the chance that two gene copies drawn from the
   population differ. FIS = 1 − Ho/He measures the heterozygote deficit:
   0 under random mating, positive with inbreeding.
-- **Allelic richness.** The number of alleles seen depends on how many
-  individuals you sampled, so richness is *rarefied*: the expected
-  number of alleles in the same number of gene copies (`g`) for every
-  population.
+- **Allelic richness and rarefied private alleles.** The number of
+  alleles seen depends on how many individuals you sampled, so both are
+  *rarefied*: counted in the same number of gene copies (`g`) for every
+  population. Allelic richness (Ar) is the number of alleles per locus.
+  Rarefied private alleles are the expected number of alleles found in
+  only one population, added up over loci.
 - **Jackknife and bootstrap.** Both measure uncertainty by recomputing a
   statistic on altered versions of the data: the jackknife leaves out
   one unit at a time, the bootstrap resamples units with replacement.
@@ -122,7 +124,7 @@ knowing what each filter changes and reporting it:
 
 | filter applied before this package | what it changes | what to do |
 |------------------------|------------------------|------------------------|
-| minor allele count or frequency (`populations --min-mac`, `--min-maf`; `vcftools --mac/--maf`) | removes rare alleles: lowers He per sequenced site, % polymorphic, Ar and especially privAr, by more in smaller samples; slightly raises FIS | report the threshold; compare these values only with datasets filtered the same way |
+| minor allele count or frequency (`populations --min-mac`, `--min-maf`; `vcftools --mac/--maf`) | removes rare alleles: lowers He per sequenced site, % polymorphic, Ar and especially rarefied private alleles, by more in smaller samples; slightly raises FIS | report the threshold; compare these values only with datasets filtered the same way |
 | pooled missing-data filter (`-R`, `vcftools --max-missing`) | can leave one population with more missing data than another | check `fis_by_call_rate` (section 5) and the missingness check in `het_between_pops()` (section 7); or re-filter per population with `filter_call_rate(..., popmap = )` |
 | Hardy-Weinberg filter | removes loci with heterozygote deficits, pulling FIS toward 0 | report it; if possible, re-run without it for FIS |
 | maximum heterozygosity (`--max-obs-het`) | removes loci with many heterozygotes (often paralogs) | usually fine; report it |
@@ -194,15 +196,15 @@ more often would bias Ho and FIS). `filter_call_rate(..., popmap = )`
 applies the missing-data threshold within each population, as `-r` does.
 
 **Filters that change diversity statistics.** `filter_low_conf_alt()`
-masks only calls that carry an ALT allele, which removes heterozygotes
-preferentially. This filter allows you to remove alleles that were
-calculated on a small number of reads, which may be a result of
-sequencing error. This will change heterozygosity calculations, but it
-may be warranted if there are concerns about genotyping errors.
-`filter_maf()` and `filter_mac()` are standard, but they remove rare
-alleles, which lowers per-site He, allelic richness and private allelic
-richness (see the table above). If you use any of these filters, report
-the threshold.
+masks genotype calls whose ALT allele is backed by only a few reads,
+which may be sequencing errors. It needs the SNP VCF, which has read
+depths. Because only calls that carry an ALT allele can be masked, it
+removes heterozygotes more often than homozygotes and so lowers Ho. Use
+it only if you are worried about genotyping errors. `filter_maf()` and
+`filter_mac()` are standard, but they remove rare alleles, which lowers
+per-site He, allelic richness and rarefied private alleles (see the table
+above).
+If you use any of these filters, report the threshold.
 
 ## 4. Look for close relatives
 
@@ -241,36 +243,35 @@ per-SNP He means the same thing in every study).
 ### Choosing g
 
 **What.** `g` is the number of gene copies every population is rarefied
-to. It can be at most twice the size of the smallest population, but a
-record only counts for a population with at least `g` gene copies there,
-and for private alleles *every* population needs `g`. Missing data
-therefore make a large `g` expensive. Compare two values:
+to. A locus counts for a population only where it has at least `g` gene
+copies typed, and for rarefied private alleles *every* population needs
+`g`. So a large `g` loses loci that have missing data.
+
+**The rule.** Use *g* = 2 × *r* × *n*, rounded down. Here *n* is the
+number of individuals in your **smallest** population, and *r* is the
+`-r` value you gave *populations* (the share of a population's
+individuals a locus must be typed in). The 2 is there because each
+diploid carries two gene copies. With `-r 0.8` and a smallest population
+of 10, *g* = 2 × 0.8 × 10 = 16, the value used below. If your data were
+filtered with `-R` or not filtered for missing data, start from
+2 × *n* × (the lowest call rate you will accept). `g` must be at least 2,
+and it has no default, because it depends on your data.
+
+**Check it.** A few loci still end up below *r* × *n* typed individuals,
+so compare `privAr_n`, the loci the rarefied private alleles rest on,
+for two values of `g`:
 
 ```{r}
 for (g in c(10, 20)) {
   res <- diversity_stats(haps, pops, g = g, nboot = 0, verbose = FALSE)
-  print(res$richness[, c("population", "Ar", "Ar_n", "privAr", "privAr_n")])
+  print(res$richness[, c("population", "Ar", "Ar_n", "priv_total", "privAr_n")])
 }
 ```
 
-**Reading the output.** `Ar_n` and `privAr_n` count the loci each value
-rests on. At `g = 20` private richness rests on far fewer loci than at
+At `g = 20`, rarefied private alleles rest on far fewer loci than at
 `g = 10`, because only loci with at least 10 typed individuals in *both*
-populations count. Pick the largest `g` that keeps most loci (here 16,
-eight individuals' worth), and report it.
-
-**Recommendation.** Use *g* = 2 × *r* × *n*, where *n* is the number of
-individuals in your **smallest** population and *r* is the fraction of a
-population's individuals a locus must be genotyped in to pass filters
-(the `-r` value passed to *populations*; 0.8 above, with `-p` set to the
-number of populations). The product is multiplied by 2 because
-individuals are assumed to be diploid. With `-r 0.8` and a smallest
-population of 10 individuals that gives 2 × 0.8 × 10 = 16, the value
-used below. Because of the order of filtering done by *populations*, a
-small number of loci will still be genotyped in fewer than *r* × *n*
-individuals, which is why automatic *g* calculations by functions in
-other packages can be problematic. This is also why `g` has no default
-value. `g` must be at least 2.
+populations count. If `privAr_n` drops far below the number of loci,
+use a smaller `g`. Report the `g` you used.
 
 ### The haplotype run
 
@@ -288,16 +289,19 @@ div_haps
   individuals were sampled, and is the one to report for `Fis` (section 6).
   (Use `nboot = 10000`, the default, for real analyses; 200 keeps this
   vignette fast.)
-- `Ar` and `privAr` are per locus. North, the larger and
-  non-bottlenecked population, has more alleles and more private
-  alleles.
+- `Ar` is per locus. `priv_total` is the rarefied private alleles: the
+  expected number of private alleles in `g` gene copies, added up over
+  the `privAr_n` loci. It is an expected value, so it need not be a whole
+  number. North, the larger and non-bottlenecked population, has more
+  alleles and more private alleles. (`privAr` is the same per locus.)
 - The printed line at the bottom says which numbers to take from this
   file.
 - These intervals describe one population's estimate. They are **not** a
   test of whether the populations differ; that is section 7.
 
-`summary(div_haps)` is short: each estimate as `estimate (SE)` with the
-recommended standard error, what to take from this run, and a list of checks.
+`summary(div_haps)` is short: Fis, Ar and rarefied private alleles as
+`estimate (SE)` with the recommended standard error, what to take from
+this run, and a list of checks.
 `summary(div_haps, details = TRUE)` is the full report, with every
 uncertainty column (and `Ar_n`, `privAr_n`) and a note under each table. One
 table there checks for potential null alleles:
@@ -351,7 +355,8 @@ does.
 `r sprintf("%.0f%%", 100 * (1 - div_snps$autosomal$He_autosomal[2] / div_snps$autosomal$He_autosomal[1]))`
 lower per-site He than north. `pct_poly` (percentage of SNPs polymorphic
 within the population) is lower in south too: after a bottleneck, many
-variants are lost altogether.
+variants are lost altogether. `pct_poly` is not in the short summary or
+the manuscript table; it stays in `div_snps$per_population`.
 
 ## 6. Which standard errors to report
 
@@ -382,9 +387,9 @@ individuals differ in inbreeding; here that holds for
 individuals (each one left out in turn), and `_se_combined`, which puts both
 sources together, by default. (`se_individuals = FALSE` skips them and saves
 about 30% of the run time.) For Ho, He and FIS, report `_se_combined`. For Ar
-and privAr, report the locus-based `_se`, which already covered the truth well
-in simulation. A short `summary()` shows only these recommended standard
-errors.
+and rarefied private alleles, report the locus-based `_se`, which already
+covered the truth well in simulation. A short `summary()` shows only these recommended
+standard errors.
 
 ```{r}
 div_ind <- diversity_stats(haps, pops, g = 16, nboot = 0, verbose = FALSE)
@@ -401,9 +406,10 @@ behind this rule, are in `vignette("rationale")`, section 4.
 
 ## 7. Do the populations differ?
 
-***This test has not been tested as thoroughly as I'd like. Use with
-caution and consider if 1) this test is necessary for your study and 2)
-if the approach is sound. –N. Whelan (September 18, 2026)***
+***Note: this test's false-positive rate has been checked by simulation
+(3–7.5% at a nominal 5%; `vignette("rationale")`, section 5). Its power
+has not been studied, and it has not yet been peer reviewed. Consider
+whether your study needs it. –N. Whelan (September 18, 2026)***
 
 **Why individuals and loci.** The usual approaches (a bootstrap over
 loci, or a paired test on per-locus values) treat thousands of loci as
@@ -459,7 +465,10 @@ het$g2
   they do (`g2_lo` above 0), an inbred individual is homozygous at many
   loci at once, so loci are not independent replicates and a locus-based
   comparison would find differences too often. That is why this test
-  uses individuals.
+  uses individuals. This g2 comes from the SNP VCF and the one in
+  section 6 from the haplotype VCF. Both leave out pairs of SNPs on the
+  same RAD locus, so they estimate the same thing and should agree up to
+  chance.
 
 ## 8. Differentiation between populations
 
@@ -496,6 +505,61 @@ and a Stacks run with `-p` below their number, the global D can rest on
 a small share of the records; report pairwise D as well. FST uses every
 record typed in at least two populations (`?differentiation_stats`).
 
+### Isolation by distance
+
+Do populations farther apart differ more? The main example has only two
+populations, and this test needs several. So the package ships a second
+simulated dataset: six sites along one river, 8 individuals each, with
+isolation by distance built in (`inst/sims/make_ibd_example_data.R`).
+The distances are river km, in a CSV file with only the upper half
+filled in.
+
+```{r}
+ibd_vcf    <- system.file("extdata", "ibd_example.snps.vcf.gz", package = "RADdiversity")
+ibd_popmap <- system.file("extdata", "ibd_example_popmap.tsv", package = "RADdiversity")
+river_km   <- system.file("extdata", "ibd_example_distances.csv", package = "RADdiversity")
+readLines(river_km)
+read_distances(river_km)          # check the file was read as you meant
+```
+
+```{r, fig.width = 6, fig.height = 4.5}
+dif_river <- differentiation_stats(ibd_vcf, ibd_popmap, nboot = 200, beta = FALSE,
+                                   verbose = FALSE)
+ibd <- isolation_by_distance(dif_river, river_km, habitat = "1D")
+summary(ibd)
+plot(ibd, xlab = "River km")
+```
+
+**What.** Each pair's FST is turned into FST/(1 − FST) and compared with
+the distance between the two sites (Rousset 1997). `habitat = "1D"` is
+for sites along a line (a river, a coastline); for sites spread over an
+area, use `habitat = "2D"`, which compares with the log of the distance.
+You must choose: there is no default.
+
+**Reading the output.** The Mantel r of `r round(ibd$result$mantel_r, 2)`
+says FST/(1 − FST) rises closely with river km. With six sites there are
+720 ways to order them, and the test tried every one. Only the real
+ordering gave an r this large, so p = 1/720 = 0.0014, the smallest p
+six sites can give. The slope is a point estimate with no standard error.
+With FST, 1/slope estimates 4 × density × σ² (see
+`vignette("rationale")`, "Isolation by distance").
+
+**Your own distances.** Use a square matrix like this one (either half
+may be blank) or a list with one row per pair (`pop1,pop2,distance`); the
+README shows both. Names must match the popmap; order does not matter.
+Use the distance the organisms travel (along the river here, not a
+straight line).
+
+**D, and leaving a site out.** `stat = "D"` uses Jost's D as it is (no
+D/(1 − D); the rationale vignette explains why). `exclude` shows how
+much one site drives the result:
+
+```{r}
+isolation_by_distance(dif_river, river_km, habitat = "1D", stat = "D", verbose = FALSE)$result
+isolation_by_distance(dif_river, river_km, habitat = "1D", exclude = "site6",
+                      verbose = FALSE)$result
+```
+
 ## 9. Nucleotide diversity from an all-sites VCF
 
 **Why.** Section 5 turned He per SNP into a per-site value by dividing
@@ -528,12 +592,15 @@ subtracts `pi_nc` instead, so it is not pushed up by inbreeding.
 
 ```{r}
 hw <- hwe_test(haps, pops, n_draws = 1000, verbose = FALSE)
-table(hw$population, significant = hw$p_value < 0.05)
+table(hw$population, departs = hw$p_value_BH < 0.05)
 ```
 
 **What.** An exact test of Hardy-Weinberg proportions for every locus in
 each population, with `F` giving the direction of any departure
-(positive: heterozygote deficit; negative: excess).
+(positive: heterozygote deficit; negative: excess). With hundreds of
+loci, about 5% reach p < 0.05 by chance alone, so use `p_value_BH`,
+which is adjusted for the number of loci tested (Benjamini-Hochberg,
+within each population).
 
 **Why it is not used to remove loci.** A heterozygote deficit is what
 inbreeding produces, so removing deficit loci removes the signal FIS
@@ -551,12 +618,17 @@ write_plink(H_f, "filtered", popmap = pops)       # PLINK: add --allow-extra-chr
 write_structure(H_f, "filtered.str", popmap = pops)
 write_genepop(H_f, "filtered.gen", popmap = pops)
 write_fstat(H_f, "filtered.dat", popmap = pops)
-write_radpainter(read_stacks_vcf(haps, verbose = FALSE), "filtered.radpainter")
+H_haps <- read_stacks_vcf(haps, verbose = FALSE)
+write_radpainter(H_haps, "haps.radpainter")
+
+gl <- as_genlight(H_f, popmap = pops)             # for adegenet or dartR (SNPs)
+gi <- as_genind(H_haps, popmap = pops)            # for adegenet (any marker)
 ```
 
-`write_plink()` stops on records with more than two alleles unless
-`drop_multiallelic = TRUE`. For STRUCTURE, set `MARKERNAMES=1`,
-`LABEL=1` and `POPDATA=1` in `mainparams`.
+`write_plink()` and `as_genlight()` stop on records with more than two
+alleles unless `drop_multiallelic = TRUE`; use `as_genind()` for
+haplotype loci. For STRUCTURE, set `MARKERNAMES=1`, `LABEL=1` and
+`POPDATA=1` in `mainparams`.
 
 ## 12. Large datasets
 
@@ -570,55 +642,35 @@ object to every function, rather than the path each time.
 
 **What.** Put in the table exactly what the short `summary()` of each result
 reports, and nothing more. For each statistic it shows the one standard error
-that was most accurate in the package's simulations (section 6), so the table
-holds what you were told to report. `summary(x)$tables` gives those tables as
-data frames, with the same `estimate (SE)` text the summary prints and one row
-for every population or pair.
+that was most accurate in the package's simulations (section 6).
+`diversity_table()` joins the SNP and haplotype runs by population and adds a
+caption:
 
 ```{r}
-snp <- summary(div_snps)$tables   # results: Ho, He, pct_poly.  per_site: Ho, He per site
-hap <- summary(div_haps)$tables   # results: Fis, Ar, privAr
-
-## Ho and He come from the SNP VCF, Fis, Ar and privAr from the haplotype VCF.
-## `n` is in both tables, so keep one copy. Join by population name, never by row order.
-parts  <- list(snp$results, snp$per_site, hap$results[names(hap$results) != "n"])
-table1 <- Reduce(function(a, b) merge(a, b, by = "population", sort = FALSE),
-                 Filter(Negate(is.null), parts))       # per_site is NULL without `sites`
-table1 <- table1[match(snp$results$population, table1$population), ]   # popmap order
-knitr::kable(table1, row.names = FALSE)
+table1 <- diversity_table(div_snps, div_haps)
+table1
 ```
 
-```{r}
-table2 <- summary(dif)$tables$results   # FST (SE), D (SE) and beta for each pair
-knitr::kable(table2, row.names = FALSE)
-```
+`write.csv(table1, "table1_diversity.csv", row.names = FALSE)` writes it for
+Excel or Word, and `knitr::kable(table1)` prints it in R Markdown. Add the
+filters and thresholds you used to the caption.
 
-`write.csv(table1, "table1_diversity.csv", row.names = FALSE)` writes the table
-for Excel or Word. The other functions work the same way:
-`summary(het)$tables` holds `heterozygosity` and `inbreeding` (the difference
-with its SE, 95% interval, p and Hedges' g for each pair) and `populations`;
-`summary(pi_res)$tables` holds `results` (`pi_nc`, `pi`), `between` (`dxy`,
-`da_nc`) and `individual_het`.
+The other analyses keep their tables in `summary(x)$tables`: FST (SE), D (SE)
+and beta for each pair in `summary(dif)$tables$results`; the combined test for
+each pair in `summary(het)$tables$heterozygosity` and `$inbreeding`; `pi_nc`,
+`pi`, `dxy` and `da_nc` in `summary(pi_res)$tables`.
 
 ```{r}
+knitr::kable(summary(dif)$tables$results, row.names = FALSE)
 knitr::kable(summary(het)$tables$heterozygosity, row.names = FALSE)
 ```
 
-**Why only these columns.** Each column the summary leaves out is left out for a
-reason. The other uncertainty columns (`_se`, `_se_ind`, `_lo`, `_hi`) are less
-accurate than the SE shown, and two uncertainty measures side by side invite
-readers to pick the narrower one; they belong in a supplementary table (the
-`outdir` files). Counts such as `Ar_n`, `privAr_n`, `priv_total` and
-`sites_used` are checks for you, so state them in the methods ("Ar was averaged
-over 739 loci"). Ho and He from the haplotype VCF are not comparable with other
-studies, so they stay out. Add something only when a check said `look` and
-readers need the number to judge the table: for example, footnote the `Ar_n`
-counts if Ar rests on different loci in different populations.
-
-**What goes in the caption and methods.** The rarefaction size `g`, which VCF
-each column came from, which standard error each column is (the legend under the
-summary's table says), and the filters and thresholds you used. Section "A
-reporting checklist" below lists them.
+**Why only these columns.** Two uncertainty measures side by side invite
+readers to pick the narrower one, so the other SEs and intervals go in a
+supplement (the `outdir` files). Counts such as `Ar_n` and `privAr_n` are
+checks for you: state them in the methods ("Ar was averaged over 739 loci").
+Add a column only when a check said `look` and readers need the number to
+judge the table.
 
 ## A reporting checklist
 
@@ -627,13 +679,17 @@ reporting checklist" below lists them.
 - Which VCF each statistic came from (haplotype or SNP).
 - The He estimator (Nei & Chesser 1983) and that FIS is a ratio of sums
   over loci.
-- `g` for allelic richness, and `Ar_n`/`privAr_n` (in the methods or a table
-  footnote, not as table columns).
+- `g` for allelic richness and rarefied private alleles, and
+  `Ar_n`/`privAr_n` (in the methods or a table footnote, not as table
+  columns).
 - The `sites` value(s) behind per-site heterozygosity.
 - Whether relatives were removed, the g2 result, and which standard
   errors are reported (over loci or individuals).
 - For population comparisons: the test on individuals, its confidence
   interval and effect size, and the missingness check.
+- For isolation by distance: the habitat (1-D or 2-D), the statistic
+  (FST/(1 − FST) or D), the Mantel r, its one-sided p-value and the
+  number of orderings, and the slope (a point estimate).
 
 ## References
 
@@ -647,6 +703,9 @@ differentiation. *Molecular Ecology* 17:4015–4026.
 Korunes, K.L. & Samuk, K. (2021) pixy: unbiased estimation of nucleotide
 diversity and divergence in the presence of missing data. *Molecular
 Ecology Resources* 21:1359–1368.
+
+Mantel, N. (1967) The detection of disease clustering and a generalized
+regression approach. *Cancer Research* 27:209–220.
 
 McMaster, E.S. et al. (2025) Evaluating kinship estimation methods for
 reduced-representation SNP data in non-model species. *Molecular Ecology
@@ -663,6 +722,9 @@ inferences using RADseq data. *Molecular Ecology Resources*
 Rochette, N.C., Rivera-Colón, A.G. & Catchen, J.M. (2019) Stacks 2:
 analytical methods for paired-end sequencing improve RADseq-based
 population genomics. *Molecular Ecology* 28:4737–4754.
+
+Rousset, F. (1997) Genetic differentiation and estimation of gene flow
+from F-statistics under isolation by distance. *Genetics* 145:1219–1228.
 
 Schmidt, T.L., Jasper, M.-E., Weeks, A.R. & Hoffmann, A.A. (2021)
 Unbiased population heterozygosity estimates from genome-wide sequence

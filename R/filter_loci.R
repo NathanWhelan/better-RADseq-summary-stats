@@ -11,8 +11,9 @@
 #    H <- filter_maf(H, min_maf = 0.05)
 #    H <- filter_low_conf_alt(H, min_alt_reads = 2)
 #
-#  (or, with R's pipe, H |> filter_call_rate(0.8) |> filter_maf(0.05)), and
-#  the result goes straight into any analysis function in place of a path.
+#  (or, with R's pipe in R 4.1 and later, H |> filter_call_rate(0.8) |>
+#  filter_maf(0.05)), and the result goes straight into any analysis
+#  function in place of a path.
 #  Each filter also adds a line to H$filter_log, so print(H) lists what was
 #  done to the data (see "The filter log" below).
 #
@@ -374,8 +375,8 @@ locus_allele_stats <- function(H) {
 #'
 #' **What it changes.** MAF and MAC filters are routine for RAD-seq data, but
 #' rare variants are also real diversity. Removing them lowers He per
-#' sequenced site, pct_poly, allelic richness and especially private allelic
-#' richness, by an amount that depends on sample size. The threshold also
+#' sequenced site, pct_poly, allelic richness and especially rarefied private
+#' alleles, by an amount that depends on sample size. The threshold also
 #' affects inferences of population structure (Linck & Battey 2019). Report
 #' the threshold used, and compare diversity values only between datasets
 #' filtered the same way. `summary(details = TRUE)` of a [diversity_stats()]
@@ -782,14 +783,19 @@ filter_genotype_depth <- function(H, min_dp, max_dp = Inf, verbose = TRUE) {
 ##                    trailing FORMAT fields to be dropped, so a call can have
 ##                    no AD; such a call is never flagged.
 .parse_alt_ad <- function(H) {
-  ## A VCF with no AD field (such as a Stacks haplotype VCF) has no allele
-  ## depths to read: every call is then "not usable" and nothing is flagged.
-  ## Only an H built by hand, without read_stacks_vcf()'s columns, is an error.
-  if ((is.null(H$ad_ref) || is.null(H$ad_alt)) && is.null(H$fields))
-    stop("This needs the AD (allele depth) values that read_stacks_vcf() stores in ",
-         "H$ad_ref and H$ad_alt, but this H has neither those nor H$fields -- for ",
-         "example because it was built by hand. Read the data with read_stacks_vcf().",
-         call. = FALSE)
+  ## Without AD (allele depths) no call can be judged by its ALT reads. A
+  ## Stacks haplotype VCF has genotypes only, so say so, rather than reporting
+  ## "0 calls flagged" as if the data had been checked.
+  if (is.null(H$ad_ref) || is.null(H$ad_alt)) {
+    if (is.null(H$fields))
+      stop("This needs the AD (allele depth) values that read_stacks_vcf() stores in ",
+           "H$ad_ref and H$ad_alt, but this H has neither those nor H$fields -- for ",
+           "example because it was built by hand. Read the data with read_stacks_vcf().",
+           call. = FALSE)
+    stop("This VCF has no AD (allele depth) field, so no genotype call can be judged by ",
+         "the reads behind its ALT allele (H$ad_ref is empty). A Stacks haplotype VCF has ",
+         "genotypes only: use populations.snps.vcf.", call. = FALSE)
+  }
   A1 <- H$A1
   A2 <- H$A2
   n_rec <- nrow(A1)
@@ -860,8 +866,9 @@ filter_genotype_depth <- function(H, min_dp, max_dp = Inf, verbose = TRUE) {
 #'
 #' @param H The object returned by [read_stacks_vcf()] (optionally filtered).
 #'   The allele depths come from `H$ad_ref` and `H$ad_alt`, which
-#'   [read_stacks_vcf()] fills from each call's `AD` (allele depth) field; they
-#'   are `NULL` for a VCF without `AD`, in which case nothing is flagged.
+#'   [read_stacks_vcf()] fills from each call's `AD` (allele depth) field. A
+#'   VCF without `AD`, such as a Stacks haplotype VCF, stops the function with
+#'   a message. A call whose own `AD` is missing is never flagged.
 #' @param min_alt_reads A call with this many or fewer reads supporting its
 #'   ALT allele(s) is flagged. Default `2`.
 #' @param mode `"mask"` (default): set only the flagged calls to missing.
@@ -903,7 +910,10 @@ filter_low_conf_alt <- function(H, min_alt_reads = 2, mode = "mask", drop_frac =
   .inform(verbose, sprintf(
     "Low-confidence ALT filter (AD_alt <= %g): %s of %s ALT-containing calls flagged, ",
     min_alt_reads, .big(sum(flags$flagged)), .big(nrow(calls))),
-    sprintf("in %s of %s records", .big(sum(flags$per_record$n_flagged > 0L)), .big(n_rec)))
+    sprintf("in %s of %s records", .big(sum(flags$per_record$n_flagged > 0L)), .big(n_rec)),
+    if (any(!calls$usable))
+      sprintf(" (%s of those calls have no AD of their own and cannot be flagged)",
+              .big(sum(!calls$usable))))
 
   if (mode == "mask") {
     ## Masking is one-sided (see @details), so say how unevenly it falls.
@@ -949,9 +959,11 @@ filter_low_conf_alt <- function(H, min_alt_reads = 2, mode = "mask", drop_frac =
 #'       `n_flagged`, `flagged_fraction`.}
 #'   }
 #' @examples
-#' H <- read_stacks_vcf(system.file("extdata", "small.haps.vcf",
+#' # The SNP VCF has allele depths (AD); a Stacks haplotype VCF does not.
+#' H <- read_stacks_vcf(system.file("extdata", "example.snps.vcf.gz",
 #'                                  package = "RADdiversity"), verbose = FALSE)
 #' flagged <- low_conf_alt_calls(H, min_alt_reads = 2)
+#' head(flagged$flagged_calls)
 #' head(flagged$locus_summary)
 #' @export
 low_conf_alt_calls <- function(H, min_alt_reads = 2) {
@@ -980,7 +992,7 @@ low_conf_alt_calls <- function(H, min_alt_reads = 2) {
 #'   `pct_flagged` and `total_usable` (ALT-containing calls whose AD could be
 #'   read).
 #' @examples
-#' H <- read_stacks_vcf(system.file("extdata", "small.haps.vcf",
+#' H <- read_stacks_vcf(system.file("extdata", "example.snps.vcf.gz",
 #'                                  package = "RADdiversity"), verbose = FALSE)
 #' low_conf_alt_sensitivity(H)
 #' @export

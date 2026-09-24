@@ -12,19 +12,26 @@ Summary statistics for RAD-seq data, designed around Stacks 2
 \details{
 \itemize{
 \item \code{\link[=diversity_stats]{diversity_stats()}}: Ho, He (Nei & Chesser 1983), FIS as a ratio of sums,
-rarefied allelic and private allelic richness, per-sequenced-site Ho/He.
-\item \code{\link[=het_between_pops]{het_between_pops()}}: do populations differ in heterozygosity, with the
-individual (not the locus) as the unit of replication.
+rarefied allelic richness and rarefied private alleles, per-sequenced-site
+Ho/He.
+\item \code{\link[=het_between_pops]{het_between_pops()}}: do populations differ in heterozygosity? One value
+per individual, and a test that counts both individuals and RAD loci.
+\item \code{\link[=diversity_table]{diversity_table()}}: the SNP and haplotype results as one table for a
+manuscript, with a caption.
 \item \code{\link[=differentiation_stats]{differentiation_stats()}}: Weir & Cockerham FST, Jost's D and Weir &
 Goudet's beta.
+\item \code{\link[=isolation_by_distance]{isolation_by_distance()}}: do populations farther apart differ more? A
+Mantel test of pairwise FST or D against distance, with distances read by
+\code{\link[=read_distances]{read_distances()}}.
 \item \code{\link[=pi_allsites]{pi_allsites()}}: nucleotide diversity and divergence from an all-sites VCF.
 \item \code{\link[=individual_inbreeding]{individual_inbreeding()}} and \code{\link[=identity_disequilibrium]{identity_disequilibrium()}}: inbreeding of
 each individual, and whether individuals differ in inbreeding.
 \item \code{\link[=kinship_check]{kinship_check()}} and \code{\link[=hwe_test]{hwe_test()}}: a relatedness screen and an exact
 Hardy-Weinberg test (a report, never a filter).
 \item \code{\link[=read_stacks_vcf]{read_stacks_vcf()}}, \code{\link[=read_popmap]{read_popmap()}}, the \verb{filter_*()} functions (with
-\code{\link[=filter_samples]{filter_samples()}} to keep only the popmap's individuals) and the
-\verb{write_*()} functions: read, filter and export.
+\code{\link[=filter_samples]{filter_samples()}} to keep only the popmap's individuals), the
+\verb{write_*()} functions and \code{\link[=as_genind]{as_genind()}} / \code{\link[=as_genlight]{as_genlight()}}: read, filter
+and export.
 }
 
 Every analysis function takes \code{vcf} (a file path or the object from
@@ -52,6 +59,12 @@ and hierarchical sampling designs. \emph{Conservation Genetics} 5:539-543.
 
 Jost, L. (2008) GST and its relatives do not measure differentiation.
 \emph{Molecular Ecology} 17:4015-4026.
+
+Mantel, N. (1967) The detection of disease clustering and a generalized
+regression approach. \emph{Cancer Research} 27:209-220.
+
+Rousset, F. (1997) Genetic differentiation and estimation of gene flow from
+F-statistics under isolation by distance. \emph{Genetics} 145:1219-1228.
 
 Schmidt, T.L., Jasper, M.-E., Weeks, A.R. & Hoffmann, A.A. (2021) Unbiased
 population heterozygosity estimates from genome-wide sequence data.

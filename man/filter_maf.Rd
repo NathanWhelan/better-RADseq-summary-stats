@@ -31,8 +31,8 @@ for SNP data.
 \details{
 \strong{What it changes.} MAF and MAC filters are routine for RAD-seq data, but
 rare variants are also real diversity. Removing them lowers He per
-sequenced site, pct_poly, allelic richness and especially private allelic
-richness, by an amount that depends on sample size. The threshold also
+sequenced site, pct_poly, allelic richness and especially rarefied private
+alleles, by an amount that depends on sample size. The threshold also
 affects inferences of population structure (Linck & Battey 2019). Report
 the threshold used, and compare diversity values only between datasets
 filtered the same way. \code{summary(details = TRUE)} of a \code{\link[=diversity_stats]{diversity_stats()}}

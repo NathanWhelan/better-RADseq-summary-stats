@@ -378,6 +378,9 @@
 #' -- Pearman, W.S., Urban, L. & Alexander, A. (2022) Commonly used
 #' Hardy-Weinberg equilibrium filtering schemes impact population structure
 #' inferences using RADseq data. *Molecular Ecology Resources* 22:2599-2613.
+#' -- Benjamini, Y. & Hochberg, Y. (1995) Controlling the false discovery
+#' rate: a practical and powerful approach to multiple testing. *Journal of
+#' the Royal Statistical Society B* 57:289-300. (`p_value_BH`.)
 #' -- Besag, J. & Clifford, P. (1991) Sequential Monte Carlo p-values.
 #' *Biometrika* 78:301-304. -- Phipson, B. & Smyth, G.K. (2010) Permutation
 #' p-values should never be zero. *Statistical Applications in Genetics and
@@ -407,8 +410,10 @@
 #'   `n_called` (typed individuals in that group), `F` (`1 - Ho/He`, with
 #'   Nei & Chesser's He: positive for a heterozygote deficit, negative for an
 #'   excess -- the test itself is two-sided, so `F` says which way a small
-#'   p-value points), `statistic`, `df`,
-#'   `p_value`, `p_value_se` and `n_draws_used` (only defined for
+#'   p-value points), `statistic`, `df`, `p_value`, `p_value_BH` (the p-value
+#'   adjusted for testing many loci: Benjamini-Hochberg, within each
+#'   population; use it to say which loci depart), `p_value_se` and
+#'   `n_draws_used` (only defined for
 #'   `"exact-mc"` rows), and `pct_low_expected` (only defined for `"chisq"`
 #'   rows). A locus/group with fewer than 2 observed alleles (monomorphic
 #'   there) or fewer than 2 typed individuals gets `NA` throughout except
@@ -501,15 +506,27 @@ hwe_test <- function(vcf, popmap = NULL, method = "exact", n_draws = 10000L,
     method = rep(method, n_out), submethod = submethod,
     n_alleles = rep(as.integer(H$n_alleles), length(groups)),
     n_observed_alleles = n_observed, n_called = n_called, F = F_locus,
-    statistic = statistic, df = df, p_value = p_value, p_value_se = p_value_se,
-    n_draws_used = n_used, pct_low_expected = pct_low,
+    statistic = statistic, df = df, p_value = p_value, p_value_BH = NA_real_,
+    p_value_se = p_value_se, n_draws_used = n_used, pct_low_expected = pct_low,
     stringsAsFactors = FALSE)
+  ## Thousands of loci are tested, so about 5% reach p < 0.05 by chance alone.
+  ## p_value_BH controls the false discovery rate (Benjamini & Hochberg 1995)
+  ## over the loci tested in each population (NA p-values are left out).
+  for (g in names(groups)) {
+    rows <- out$population == g
+    out$p_value_BH[rows] <- stats::p.adjust(out$p_value[rows], method = "BH")
+  }
 
   if (verbose) {
     n_bad <- sum(is.na(out$p_value))
     message(sprintf(
       "hwe_test() [method = \"%s\"]: %s (locus, population) combinations, %s skipped (monomorphic or < 2 typed individuals there)",
       method, format(nrow(out), big.mark = ","), format(n_bad, big.mark = ",")))
+    message(sprintf(
+      "  p < 0.05: %s of %s tested (about 5%% are expected by chance); p_value_BH < 0.05: %s",
+      format(sum(out$p_value < 0.05, na.rm = TRUE), big.mark = ","),
+      format(sum(!is.na(out$p_value)), big.mark = ","),
+      format(sum(out$p_value_BH < 0.05, na.rm = TRUE), big.mark = ",")))
     if (method == "exact") {
       n_enum <- sum(out$submethod == "exact-enum", na.rm = TRUE)
       n_mc   <- sum(out$submethod == "exact-mc", na.rm = TRUE)

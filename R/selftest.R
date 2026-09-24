@@ -248,7 +248,7 @@ diversity_core_selftest <- function(verbose = TRUE) {
 #'   is 0.05). Your own random-number state is left as it was.
 #' @examples
 #' \donttest{
-#' het_between_pops_selftest()   # a few seconds of simulation
+#' het_between_pops_selftest()   # about half a minute of simulation
 #' }
 #' @export
 het_between_pops_selftest <- function(verbose = TRUE) {

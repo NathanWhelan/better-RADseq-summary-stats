@@ -38,8 +38,8 @@ random-number stream as it was.}
 }
 \value{
 A data frame, one row per population: \code{population}, \code{n_ind},
-\code{n_loci}, \code{g2}, \code{g2_se} (bootstrap SD), \code{g2_lo}, \code{g2_hi} (95\% bootstrap
-interval) and \code{p_value} (one-sided, g2 > 0).
+\code{n_loci} (RAD loci used), \code{g2}, \code{g2_se} (bootstrap SD), \code{g2_lo},
+\code{g2_hi} (95\% bootstrap interval) and \code{p_value} (one-sided, g2 > 0).
 }
 \description{
 Estimates g2 (David et al. 2007) in each population: how much more often an
@@ -61,15 +61,30 @@ calculated" there) and compare populations with
 \code{\link[=het_between_pops]{het_between_pops()}}. Relatives in a sample also raise g2; screen for them
 with \code{\link[=kinship_check]{kinship_check()}}.
 
-\strong{Estimator.} From the definition, using every pair of distinct loci
-typed in the same individual (numerator) and in two different individuals
+\strong{Estimator.} From the definition, using every pair of loci typed in the
+same individual (numerator) and in two different individuals
 (denominator); with no missing data this is the closed form of Hoffman et
 al. (2014). The confidence interval is a bootstrap over individuals; the
-p-value comes from permutations that shuffle heterozygosity among each
-locus's typed individuals (\code{(exceedances + 1) / (nperm + 1)}). Any marker
-type works -- SNPs or multi-allelic RAD haplotypes. Pooling structured
-populations inflates g2 (Wahlund effect), hence one estimate per
-population.
+p-value comes from permutations that shuffle heterozygosity among
+individuals, one RAD locus at a time (\code{(exceedances + 1) / (nperm + 1)}).
+Pooling structured populations inflates g2 (Wahlund effect), hence one
+estimate per population.
+
+\strong{Test g2 > 0 with \code{p_value}.} With few individuals the bootstrap interval
+is too narrow. In simulations with no inbreeding (true g2 = 0), the 95\%
+interval missed 0 in 17-19\% of data sets with 8 individuals, 10-15\% with
+15 and 7\% with 30, almost always by lying below 0, while the permutation
+test rejected in 2-5\% (\code{inst/sims/g2_ci_small_n.R}). inbreedR uses the same
+bootstrap. So with fewer than about 30 individuals, read the interval as a
+rough guide to size and use \code{p_value} to decide whether g2 is above 0.
+
+\strong{SNP or haplotype VCF.} Both work. SNPs on one RAD locus are inherited
+together, so an individual is often heterozygous at several of them at
+once even when nobody is inbred. Pairs of records on the same RAD locus
+(\code{locus_raw}, see \code{\link[=read_stacks_vcf]{read_stacks_vcf()}}) are therefore left out, and the
+permutations move a RAD locus's records together. Counting those pairs
+made the test reject a true g2 of 0 in more than half of simulated data
+sets; without them, 2-4\% (\code{inst/sims/g2_linked_snps.R}).
 
 \strong{Failed individuals.} An individual that looks like a failed library
 (genotyped at fewer than 50 records when the rest of its population has

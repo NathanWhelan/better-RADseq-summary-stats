@@ -83,8 +83,9 @@ Wahlund effect) does not do this, because relatives share a subpopulation.
 \strong{Relatives are looked for within populations.} Goudet's beta measures
 how much more alike two individuals are than the average pair it is
 given. Computed on several differentiated populations at once, unrelated
-members of the same population look related (in a simulation at FST =
-0.1, about 70\% of unrelated same-population pairs were flagged). With
+members of the same population look related (in simulations at FST =
+0.1, 80\% of unrelated same-population pairs were flagged;
+\code{inst/sims/kinship_checks.R}). With
 \code{popmap}, beta is computed within each population, each population being
 its own reference, and pairs from different populations are \code{NA}. In a
 small population, or one with many relatives, that reference itself
@@ -96,9 +97,13 @@ sample mix-up.
 \strong{Which KING formula.} This is Manichaikul et al.'s (2010) estimator
 with the SUM of the two individuals' heterozygote counts in the
 denominator. PLINK 2 (\code{--make-king}) uses their between-family version,
-with the SMALLER count, so values can differ when two individuals differ
-in heterozygosity. The sum form is less affected by heterozygotes that
-were called homozygous in a low-coverage library (see \code{R/kinship.R}).
+\verb{1/2 - (4 N20 + N10 + N01) / (4 min(N1_i, N1_j))}, built on the SMALLER
+heterozygote count, so values can differ when two individuals differ in
+heterozygosity. The sum form is less affected by heterozygotes that were
+called homozygous in a low-coverage library: with 20\% of one individual's
+heterozygotes called homozygous, a parent-offspring pair (true 0.25) reads
+0.167 with the sum form and 0.125 with PLINK 2's
+(\code{inst/sims/kinship_checks.R}).
 
 \strong{KING cutpoints}, for choosing \code{threshold}: ~0.354 (duplicate/identical
 twin), ~0.177 (first degree: parent-offspring or full sibling), ~0.0884

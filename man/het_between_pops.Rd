@@ -94,7 +94,11 @@ means, the difference \code{diff} with \code{se_combined}, its 95\% interval
 Details); \code{p_welch} and \code{p_wilcox} for comparison; Hedges' g; and
 Benjamini-Hochberg adjusted p-values (\verb{_BH}).}
 \item{pairwise_F_tests}{The same tests on \code{F}.}
-\item{g2}{Identity disequilibrium per population, with bootstrap CI.}
+\item{g2}{Identity disequilibrium per population, with bootstrap CI.
+The summary flags g2 only when the whole interval is above 0. With
+fewer than about 30 individuals the interval is too narrow but errs
+below 0, so the flag rarely fires by mistake; for a test of g2 > 0,
+use the permutation p-value of \code{\link[=identity_disequilibrium]{identity_disequilibrium()}}.}
 \item{missingness_confound}{Correlation between an individual's call
 rate and its heterozygosity, overall (\code{overall}) and within each
 population (\code{within}).}

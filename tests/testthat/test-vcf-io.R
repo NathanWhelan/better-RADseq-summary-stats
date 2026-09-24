@@ -269,3 +269,14 @@ test_that("popmap samples missing from the VCF are named; no match at all shows 
                                             verbose = FALSE),
                "VCF samples: +popA_1.*popmap samples: x1, x2, y1")
 })
+
+test_that("a sample named twice in the VCF header stops reading, with its name", {
+  f <- tempfile(fileext = ".vcf")
+  on.exit(unlink(f), add = TRUE)
+  writeLines(c("##fileformat=VCFv4.2",
+               "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\ts1\ts1\ts2",
+               "1\t1\tL1:1\tA\tC\t.\tPASS\t.\tGT\t0/0\t1/1\t0/1"), f)
+  expect_error(read_stacks_vcf(f, verbose = FALSE), "more than once: s1")
+  expect_error(pi_allsites(f, list(p = c("s1", "s2")), nboot = 0, verbose = FALSE),
+               "more than once: s1")
+})

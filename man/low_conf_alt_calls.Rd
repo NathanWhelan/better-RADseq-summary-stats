@@ -9,8 +9,9 @@ low_conf_alt_calls(H, min_alt_reads = 2)
 \arguments{
 \item{H}{The object returned by \code{\link[=read_stacks_vcf]{read_stacks_vcf()}} (optionally filtered).
 The allele depths come from \code{H$ad_ref} and \code{H$ad_alt}, which
-\code{\link[=read_stacks_vcf]{read_stacks_vcf()}} fills from each call's \code{AD} (allele depth) field; they
-are \code{NULL} for a VCF without \code{AD}, in which case nothing is flagged.}
+\code{\link[=read_stacks_vcf]{read_stacks_vcf()}} fills from each call's \code{AD} (allele depth) field. A
+VCF without \code{AD}, such as a Stacks haplotype VCF, stops the function with
+a message. A call whose own \code{AD} is missing is never flagged.}
 
 \item{min_alt_reads}{A call with this many or fewer reads supporting its
 ALT allele(s) is flagged. Default \code{2}.}
@@ -29,8 +30,10 @@ The calls \code{\link[=filter_low_conf_alt]{filter_low_conf_alt()}} would flag, 
 they can be inspected before (or instead of) filtering.
 }
 \examples{
-H <- read_stacks_vcf(system.file("extdata", "small.haps.vcf",
+# The SNP VCF has allele depths (AD); a Stacks haplotype VCF does not.
+H <- read_stacks_vcf(system.file("extdata", "example.snps.vcf.gz",
                                  package = "RADdiversity"), verbose = FALSE)
 flagged <- low_conf_alt_calls(H, min_alt_reads = 2)
+head(flagged$flagged_calls)
 head(flagged$locus_summary)
 }

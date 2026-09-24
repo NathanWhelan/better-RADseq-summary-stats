@@ -229,3 +229,64 @@ test_that("writers stop on sample names their format cannot hold", {
   ## PLINK: white space, in sample or population names.
   expect_error(write_plink(H_space, tempfile(), verbose = FALSE), "white space")
 })
+
+## ---------------------------------------------------------------------------
+## Reading the files back with the readers people actually use
+## ---------------------------------------------------------------------------
+
+ex <- function(f) system.file("extdata", f, package = "RADdiversity")
+
+## A genotype as sorted allele numbers ("3/1" and "03/01" both become "1/3"),
+## NA when missing, so files that pad or order alleles differently compare.
+sorted_genotype <- function(x) {
+  vapply(strsplit(as.character(x), "/", fixed = TRUE), function(a)
+    if (anyNA(a) || !length(a)) NA_character_ else paste(sort(as.integer(a)), collapse = "/"),
+    character(1))
+}
+## H's genotypes in the same form, individuals in rows (as adegenet has them).
+H_genotypes <- function(H, ids) {
+  g <- ifelse(is.na(H$A1[, ids, drop = FALSE]), NA_character_,
+              paste(pmin(H$A1[, ids], H$A2[, ids]), pmax(H$A1[, ids], H$A2[, ids]), sep = "/"))
+  t(matrix(g, nrow(H$A1)))
+}
+
+test_that("adegenet reads write_genepop() and write_structure() files, including SNP VCFs", {
+  skip_if_not_installed("adegenet")
+  for (f in c("example.snps.vcf.gz", "example.haps.vcf.gz")) {
+    H <- read_stacks_vcf(ex(f), verbose = FALSE)
+    pm <- read_popmap(ex("example_popmap.tsv"), verbose = FALSE)
+    ids <- unlist(pm, use.names = FALSE)
+    if (f == "example.snps.vcf.gz") expect_true(any(grepl(".", H$locus, fixed = TRUE)))
+
+    gen <- tempfile(fileext = ".gen")
+    write_genepop(H, gen, pm, verbose = FALSE)
+    gi <- adegenet::read.genepop(gen, quiet = TRUE)
+    expect_equal(adegenet::locNames(gi), unname(RADdiversity:::.names_without_dots(H$locus)),
+                 info = f)
+    expect_identical(adegenet::indNames(gi), ids)
+    got <- apply(as.matrix(adegenet::genind2df(gi, usepop = FALSE, sep = "/")), 2, sorted_genotype)
+    expect_equal(unname(got), unname(H_genotypes(H, ids)), info = f)
+
+    stru <- tempfile(fileext = ".stru")
+    write_structure(H, stru, pm, verbose = FALSE)
+    gs <- adegenet::read.structure(stru, n.ind = length(H$samples), n.loc = nrow(H$A1),
+                                   onerowperind = FALSE, col.lab = 1, col.pop = 2,
+                                   row.marknames = 1, NA.char = "-9", ask = FALSE, quiet = TRUE)
+    expect_equal(adegenet::nLoc(gs), nrow(H$A1), info = f)
+    got <- apply(as.matrix(adegenet::genind2df(gs, usepop = FALSE, sep = "/")), 2, sorted_genotype)
+    expect_equal(unname(got), unname(H_genotypes(H, H$samples)), info = f)
+  }
+})
+
+test_that("hierfstat reads write_fstat() files with the same genotypes", {
+  skip_if_not_installed("hierfstat")
+  H <- read_stacks_vcf(ex("example.snps.vcf.gz"), verbose = FALSE)
+  pm <- read_popmap(ex("example_popmap.tsv"), verbose = FALSE)
+  dat_file <- tempfile(fileext = ".dat")
+  write_fstat(H, dat_file, pm, verbose = FALSE)
+  ## read.fstat() prints "Read N items" (from scan()); keep the test log clean.
+  invisible(utils::capture.output(dat <- hierfstat::read.fstat(dat_file), type = "message"))
+  expect_equal(dim(dat), c(length(H$samples), nrow(H$A1) + 1L))
+  want <- t(pmin(H$A1, H$A2) * 100L + pmax(H$A1, H$A2))       # FSTAT codes, 2 digits
+  expect_equal(unname(as.matrix(dat[, -1])), unname(want))
+})

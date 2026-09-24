@@ -369,3 +369,17 @@ test_that("the F column gives the direction of a departure", {
   expect_equal(res$F, c(-1, 1))
   suppressMessages(expect_message(hwe_test(sim_H(A1, A2)), "Wahlund"))
 })
+
+test_that("hwe_test() adds Benjamini-Hochberg p-values within each population", {
+  vcf <- system.file("extdata", "small.haps.vcf", package = "RADdiversity")
+  pm <- system.file("extdata", "small_popmap.tsv", package = "RADdiversity")
+  hw <- hwe_test(vcf, pm, n_draws = 200, seed = 1, verbose = FALSE)
+  expect_true("p_value_BH" %in% names(hw))
+  expect_identical(which(names(hw) == "p_value_BH"), which(names(hw) == "p_value") + 1L)
+  for (g in unique(hw$population)) {
+    rows <- hw$population == g
+    expect_equal(hw$p_value_BH[rows], stats::p.adjust(hw$p_value[rows], method = "BH"))
+  }
+  expect_true(all(hw$p_value_BH >= hw$p_value, na.rm = TRUE))
+  expect_identical(is.na(hw$p_value_BH), is.na(hw$p_value))
+})

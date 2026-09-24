@@ -12,6 +12,7 @@ Biallelic
 Bioinformatics
 Biometrics
 Biometrika
+Blanchet
 Bomblies
 CHROM
 CI's
@@ -63,6 +64,7 @@ Gharbi
 GigaScience
 Goudet
 Goudet's
+Guillot
 Guo
 HDplot
 HIERFSTAT
@@ -75,6 +77,7 @@ Hs
 Hurlbert
 IBD
 Jakobsson
+Jombart
 Jost
 Jost's
 KING's
@@ -103,6 +106,7 @@ Mychaleckyj
 Neale
 Neff
 Nei
+Oksanen
 PLINK
 PLINK's
 PLoS
@@ -120,9 +124,11 @@ RADdiversity's
 RADpainter
 RADseq
 README
+RStudio
 Rijks
 Rochette
 Rousset
+Rousset's
 Roychoudhury
 SEs
 STRUCTURE's
@@ -156,6 +162,7 @@ Welch's
 Welford's
 Wigginton
 ZW
+adegenet
 al
 allozyme
 argan
@@ -184,6 +191,9 @@ et
 fineRADstructure
 fineRADstructure's
 freebayes
+genepop
+genind
+genlight
 genotyper
 gzip
 haps
@@ -201,6 +211,7 @@ indel
 indels
 ipyrad
 kb
+knitr
 mmod
 mmod's
 monomorphic
@@ -210,21 +221,26 @@ nd
 ninefold
 nonconcept
 novo
+nperm
 nucleotides
 numberOfPopulations
 outgroup
+pandoc
 paralog
 pixy
+pixy's
 polymorphisms
 polyploid
 popmap
 popmap's
+poppr
 pre
 priv
 privA
 privAr
 pseudoreplication
 reweighting
+rmarkdown
 runnable
 selfing
 snpR
@@ -242,3 +258,4 @@ xy
 Σp
 Σp̂
 π
+σ

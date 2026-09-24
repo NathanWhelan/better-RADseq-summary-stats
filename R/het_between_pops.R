@@ -162,7 +162,11 @@
 #'       Details); `p_welch` and `p_wilcox` for comparison; Hedges' g; and
 #'       Benjamini-Hochberg adjusted p-values (`_BH`).}
 #'     \item{pairwise_F_tests}{The same tests on `F`.}
-#'     \item{g2}{Identity disequilibrium per population, with bootstrap CI.}
+#'     \item{g2}{Identity disequilibrium per population, with bootstrap CI.
+#'       The summary flags g2 only when the whole interval is above 0. With
+#'       fewer than about 30 individuals the interval is too narrow but errs
+#'       below 0, so the flag rarely fires by mistake; for a test of g2 > 0,
+#'       use the permutation p-value of [identity_disequilibrium()].}
 #'     \item{missingness_confound}{Correlation between an individual's call
 #'       rate and its heterozygosity, overall (`overall`) and within each
 #'       population (`within`).}
@@ -478,6 +482,16 @@ het_between_pops <- function(vcf, popmap, min_call = 0.9, min_loci = 50L, nboot_
   list(no_variation = FALSE, too_few = FALSE, overall = overall, within = within)
 }
 
+## Not exported. Which way call rate and heterozygosity go together, if they
+## do at p < 0.05: "positive" (more missing data, fewer heterozygotes: allele
+## dropout), "negative" (more missing data, more heterozygotes: a contaminated
+## or mixed sample, for example) or "none".
+.confound_direction <- function(cf) {
+  o <- cf$overall
+  if (is.null(o) || !is.finite(o$p_value) || o$p_value >= 0.05 || !is.finite(o$r)) return("none")
+  if (o$r > 0) "positive" else if (o$r < 0) "negative" else "none"
+}
+
 ## Not exported. Identity disequilibrium g2 in each population, on its own
 ## locus set (.g2_summary(), R/identity_disequilibrium.R): the same excess
 ## variation in individual heterozygosity, in its standard, citable form.
@@ -485,7 +499,8 @@ het_between_pops <- function(vcf, popmap, min_call = 0.9, min_loci = 50L, nboot_
   do.call(rbind, lapply(names(pops), function(p) {
     loci <- locus_sets[, p]
     g2 <- .g2_summary(H$A1[loci, pops[[p]], drop = FALSE],
-                      H$A2[loci, pops[[p]], drop = FALSE], nboot = nboot, nperm = 0L)
+                      H$A2[loci, pops[[p]], drop = FALSE], nboot = nboot, nperm = 0L,
+                      block = H$locus_raw[loci])
     data.frame(population = p, n = g2$n_ind, g2 = g2$g2, g2_lo = g2$g2_lo, g2_hi = g2$g2_hi)
   }))
 }
@@ -856,9 +871,10 @@ print.raddiv_het <- function(x, ...) {
                           length(flagged), paste(utils::head(flagged, 5), collapse = ", "),
                           if (length(flagged) > 5) ", ..." else ""))
   cf <- x$missingness_confound
-  if (!is.null(cf$overall) && is.finite(cf$overall$p_value) && cf$overall$p_value < 0.05 &&
-      cf$overall$r > 0)
+  if (.confound_direction(cf) == "positive")
     out <- c(out, "call rate is positively correlated with heterozygosity (possible allele dropout).")
+  if (.confound_direction(cf) == "negative")
+    out <- c(out, "individuals with more missing data look MORE heterozygous (look for a contaminated or mixed sample).")
   if (!is.null(cf$overall) && cf$overall$call_rate_gap > 0.02)
     out <- c(out, "mean call rate differs between populations by more than 2 percentage points.")
   if (any(x$g2$g2_lo > 0, na.rm = TRUE))
@@ -963,8 +979,11 @@ print.summary.raddiv_het <- function(x, ...) {
   } else if (isTRUE(cf$no_variation)) {
     add("ok", "call rate does not vary among the individuals checked, so it cannot confound the test")
   } else if (!is.null(cf$overall)) {
-    if (is.finite(cf$overall$p_value) && cf$overall$p_value < 0.05 && cf$overall$r > 0)
+    direction <- .confound_direction(cf)
+    if (direction == "positive")
       add("look", "individuals with more missing data look LESS heterozygous (the allele-dropout signature); re-run with min_call = 1.0 before quoting the test")
+    else if (direction == "negative")
+      add("look", "individuals with more missing data look MORE heterozygous. That is not allele dropout; look at x$individual_heterozygosity for outliers, such as a contaminated or mixed sample")
     else
       add("ok", sprintf("heterozygosity does not track call rate (r = %+.2f, p = %.2g)",
                         cf$overall$r, cf$overall$p_value))
@@ -1109,10 +1128,10 @@ print.summary.raddiv_het <- function(x, ...) {
     for (k in seq_len(NROW(cf$within)))
       cat(sprintf("    within %-12s r = %+.3f   call rate %.3f-%.3f\n", cf$within$population[k],
                   cf$within$r[k], cf$within$min_call_rate[k], cf$within$max_call_rate[k]))
-    if (is.finite(cf$overall$p_value) && cf$overall$p_value < 0.05 && cf$overall$r > 0)
-      note(.report_text$het_confound_positive)
-    else
-      note("No positive association, so heterozygosity is not tracking coverage.")
+    direction <- .confound_direction(cf)
+    if (direction == "positive") note(.report_text$het_confound_positive)
+    else if (direction == "negative") note(.report_text$het_confound_negative)
+    else note("No significant association, so heterozygosity is not tracking coverage.")
     if (cf$overall$call_rate_gap > 0.02)
       note(.report_text$het_call_rate_gap)
   }

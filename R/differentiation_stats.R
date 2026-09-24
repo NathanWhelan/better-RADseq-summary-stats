@@ -648,12 +648,15 @@ differentiation_stats <- function(vcf, popmap, nboot = 10000L, beta = TRUE,
 }
 
 ## Not exported. The sentence that tells the user which records the global D
-## rests on, used in the progress messages, print() and summary().
+## rests on, used in the progress messages, print() and summary(). With two
+## populations the global D is the pairwise D, so one short sentence says it.
 .d_records_sentence <- function(d_records, n_records, n_pops) {
-  sprintf(paste("global D uses only the %s of %s records typed in %s;",
+  if (n_pops == 2)
+    return(sprintf("D uses the %s of %s records typed in both populations",
+                   .big(d_records), .big(n_records)))
+  sprintf(paste("global D uses only the %s of %s records typed in all %d populations;",
                 "pairwise D uses the records typed in both populations of the pair"),
-          .big(d_records), .big(n_records),
-          if (n_pops == 2) "both populations" else sprintf("all %d populations", n_pops))
+          .big(d_records), .big(n_records), n_pops)
 }
 
 ## Not exported. Why a result has no pairwise_beta, as one sentence (NULL
@@ -670,9 +673,11 @@ differentiation_stats <- function(vcf, popmap, nboot = 10000L, beta = TRUE,
     failed = "beta not computed: hierfstat::pairwise.betas() failed on this dataset.")
 }
 
-## Not exported. TRUE when the global D rests on fewer than half the records.
+## Not exported. TRUE when, with 3 or more populations, the global D rests on
+## fewer than half the records (with 2, the global D is the pairwise D).
 .d_records_few <- function(st) {
-  !is.null(st$d_records_global) && st$d_records_global < 0.5 * st$n_records
+  !is.null(st$d_records_global) && isTRUE(st$n_pops > 2) &&
+    st$d_records_global < 0.5 * st$n_records
 }
 
 #' @rdname differentiation_stats
@@ -861,7 +866,7 @@ print.summary.raddiv_differentiation <- function(x, ...) {
   if (!is.null(st$d_records_global)) {
     note(strwrap(paste0(.d_records_sentence(st$d_records_global, st$n_records, st$n_pops), "."),
                  width = 76),
-         .report_text$differentiation_d_global_records)
+         if (st$n_pops > 2) .report_text$differentiation_d_global_records)
     if (.d_records_few(st))
       note("NOTE: global D rests on fewer than half the records here; report pairwise D as well.")
   }

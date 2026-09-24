@@ -62,6 +62,17 @@
   invisible(NULL)
 }
 
+## Not exported. Record names with no ".", for formats whose usual readers
+## split a column name at "." (adegenet builds its genind column names as
+## LOCUS.ALLELE, so read.genepop() and read.structure() stop on a locus name
+## with a dot). The SNPs of one RAD locus are named "6", "6.1", "6.2", ..., so
+## every "." becomes "_" ("6_1"), and a name that then repeats another gets
+## "_1", "_2", ... so all stay unique. Used by write_genepop(),
+## write_structure() and as_genind().
+.names_without_dots <- function(locus) {
+  make.unique(gsub(".", "_", locus, fixed = TRUE), sep = "_")
+}
+
 ## Not exported. Genepop and FSTAT write each allele as a zero-padded number
 ## of one FIXED width for the whole file: 2 digits when no record has more
 ## than 99 alleles, otherwise 3 (Genepop manual; FSTAT format description in
@@ -263,6 +274,10 @@ write_plink <- function(H, path_prefix, popmap = NULL, drop_multiallelic = FALSE
 #'   population column is a placeholder `1` for everyone. STRUCTURE separates
 #'   columns by white space, so a sample name containing a space stops the
 #'   function.
+#'
+#'   In the locus-name row every `.` becomes `_`: the SNPs of one RAD locus
+#'   are named `6`, `6.1`, `6.2`, ..., and `adegenet::read.structure()` cannot
+#'   read a locus name with a dot. So `6.1` is written as `6_1`.
 #' @references
 #' Pritchard, J.K., Stephens, M. & Donnelly, P. (2000) Inference of population
 #' structure using multilocus genotype data. *Genetics* 155:945-959.
@@ -305,7 +320,7 @@ write_structure <- function(H, path, popmap = NULL, verbose = TRUE) {
     lines[2L * i - 1L] <- paste(c(H$samples[i], pop_id[i], A1[, i]), collapse = "\t")
     lines[2L * i] <- paste(c(H$samples[i], pop_id[i], A2[, i]), collapse = "\t")
   }
-  writeLines(c(paste(H$locus, collapse = "\t"), lines), path)
+  writeLines(c(paste(.names_without_dots(H$locus), collapse = "\t"), lines), path)
   .inform(verbose, sprintf("Wrote %s (%s records, %d individuals, 2 rows each)",
                            path, .big(nrow(H$A1)), n_samp))
   invisible(path)
@@ -318,6 +333,10 @@ write_structure <- function(H, path, popmap = NULL, verbose = TRUE) {
 #' individual (`name ,` then its genotypes). Missing genotypes are all zeros
 #' (e.g. `0000`), as in the Genepop manual. Genepop ends a name at the first
 #' comma, so a sample name containing a comma stops the function.
+#'
+#' In locus names every `.` becomes `_`: the SNPs of one RAD locus are named
+#' `6`, `6.1`, `6.2`, ..., and `adegenet::read.genepop()` cannot read a locus
+#' name with a dot. So `6.1` is written as `6_1`.
 #'
 #' @references
 #' Rousset, F. (2008) GENEPOP'007: a complete re-implementation of the GENEPOP
@@ -356,7 +375,7 @@ write_genepop <- function(H, path, popmap = NULL, title = "RADdiversity export",
     c("POP", paste0(pops[[p]], " ,\t",
                     apply(codes[, pops[[p]], drop = FALSE], 2L, paste, collapse = "\t")))
   })
-  writeLines(c(title, H$locus, unlist(individual_lines)), path)
+  writeLines(c(title, .names_without_dots(H$locus), unlist(individual_lines)), path)
   .inform(verbose, sprintf("Wrote %s (%s records, %d populations, %d individuals, %d-digit allele codes)",
                            path, .big(nrow(H$A1)), length(pops), ncol(H$A1), width))
   invisible(path)

@@ -47,8 +47,10 @@ A data frame, one row per (locus, population) combination:
 \code{n_called} (typed individuals in that group), \code{F} (\code{1 - Ho/He}, with
 Nei & Chesser's He: positive for a heterozygote deficit, negative for an
 excess -- the test itself is two-sided, so \code{F} says which way a small
-p-value points), \code{statistic}, \code{df},
-\code{p_value}, \code{p_value_se} and \code{n_draws_used} (only defined for
+p-value points), \code{statistic}, \code{df}, \code{p_value}, \code{p_value_BH} (the p-value
+adjusted for testing many loci: Benjamini-Hochberg, within each
+population; use it to say which loci depart), \code{p_value_se} and
+\code{n_draws_used} (only defined for
 \code{"exact-mc"} rows), and \code{pct_low_expected} (only defined for \code{"chisq"}
 rows). A locus/group with fewer than 2 observed alleles (monomorphic
 there) or fewer than 2 typed individuals gets \code{NA} throughout except
@@ -111,6 +113,9 @@ Genetics} 76:887-893. \doi{10.1086/429864}
 -- Pearman, W.S., Urban, L. & Alexander, A. (2022) Commonly used
 Hardy-Weinberg equilibrium filtering schemes impact population structure
 inferences using RADseq data. \emph{Molecular Ecology Resources} 22:2599-2613.
+-- Benjamini, Y. & Hochberg, Y. (1995) Controlling the false discovery
+rate: a practical and powerful approach to multiple testing. \emph{Journal of
+the Royal Statistical Society B} 57:289-300. (\code{p_value_BH}.)
 -- Besag, J. & Clifford, P. (1991) Sequential Monte Carlo p-values.
 \emph{Biometrika} 78:301-304. -- Phipson, B. & Smyth, G.K. (2010) Permutation
 p-values should never be zero. \emph{Statistical Applications in Genetics and

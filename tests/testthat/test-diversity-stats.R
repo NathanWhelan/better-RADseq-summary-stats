@@ -509,16 +509,21 @@ test_that("print() and summary() note when Ar rests on uneven records between po
   A1 <- g$A1; A2 <- g$A2
   dimnames(A1) <- dimnames(A2) <- list(NULL, samp)
   pops <- list(popA = samp[1:8], popB = samp[9:16])
-  even <- diversity_stats(sim_H(A1, A2), pops, g = 12, nboot = 0, verbose = FALSE)
+  ## print() shows the Ar notes for haplotype data only (Ar is not taken from a
+  ## SNP VCF), so the records get multi-base alleles here.
+  as_haps <- function(H) { H$alleles <- rep(list(c("AT", "CG")), nrow(H$A1)); H }
+  even <- diversity_stats(as_haps(sim_H(A1, A2)), pops, g = 12, nboot = 0, verbose = FALSE)
   expect_false(any(grepl("Ar rests on under 90%", capture.output(print(even)))))
 
   ## popB loses 3 of its 8 individuals at a quarter of the records: 10 gene
   ## copies there, below g = 12, so its Ar rests on ~75% of popA's records.
   gone <- which(stats::runif(L) < 0.25)
   A1[gone, samp[9:11]] <- NA; A2[gone, samp[9:11]] <- NA
-  uneven <- diversity_stats(sim_H(A1, A2), pops, g = 12, nboot = 0, verbose = FALSE)
+  uneven <- diversity_stats(as_haps(sim_H(A1, A2)), pops, g = 12, nboot = 0, verbose = FALSE)
   expect_lt(uneven$richness$Ar_n[2], 0.9 * uneven$richness$Ar_n[1])
   expect_true(any(grepl("Ar rests on under 90%", capture.output(print(uneven)))))
+  snp_run <- diversity_stats(sim_H(A1, A2), pops, g = 12, nboot = 0, verbose = FALSE)
+  expect_false(any(grepl("Ar rests on under 90%", capture.output(print(snp_run)))))
   expect_true(any(grepl("Ar_n differs by more than 10%",
                         capture.output(print(summary(uneven, details = TRUE))))))
 
@@ -629,4 +634,19 @@ test_that("het_between_pops() runs on the SNP and haplotype VCFs into one outdir
   expect_true(all(file.exists(file.path(outdir, c(
     "individual_heterozygosity.snps.tsv", "individual_heterozygosity.haps.tsv",
     "het_between_pops_tests.snps.tsv", "het_between_pops_tests.haps.tsv")))))
+})
+
+test_that("the rarefied private alleles' SE and interval are privAr's times privAr_n", {
+  ## priv_total is privAr added up over the privAr_n loci, the same loci for
+  ## every population, so its uncertainty is privAr's scaled by that count
+  ## (the SE the simulations checked), not the resampled sum's.
+  ex <- function(f) system.file("extdata", f, package = "RADdiversity")
+  res <- diversity_stats(ex("example.haps.vcf.gz"), ex("example_popmap.tsv"), g = 20,
+                         nboot = 100, seed = 1, verbose = FALSE)
+  r <- res$richness
+  expect_lt(max(r$privAr_n), res$settings$n_records_used)   # some loci fall below g
+  expect_equal(r$priv_total, r$privAr * r$privAr_n)
+  expect_equal(r$priv_total_se, r$privAr_se * r$privAr_n)
+  expect_equal(r$priv_total_lo, r$privAr_lo * r$privAr_n)
+  expect_equal(r$priv_total_hi, r$privAr_hi * r$privAr_n)
 })

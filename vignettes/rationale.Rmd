@@ -56,10 +56,16 @@ R. The missing-data rate rises, but a visible gap is better than a
 hidden error. Both treat heterozygous and homozygous calls alike, which
 matters: a filter that removed heterozygotes more readily than
 homozygotes (as `filter_low_conf_alt()` does) would itself bias Ho down
-and FIS up. NOTE: The above table doesn't really consider the way the
-STACKS models calls alleles, so a read supported by only 5 reads may
-have a lower chance of incorrect homozygosity calls than inferred while
-developing the R package.
+and FIS up.
+
+Note that the table is about the reads, not about the genotype caller.
+Stacks' `gstacks` calls a genotype only when the best genotype beats the
+next one in a likelihood-ratio test (`--gt-alpha`, default 0.05), and
+otherwise leaves it missing (`models.cc`, Stacks 2.68). Its default
+model also weighs the population's genotype frequencies. So at the
+lowest depths, many heterozygotes that show one allele become missing
+rather than false homozygotes, and the table overstates the error
+there. How many depends on the allele frequencies.
 
 ### Missing data: filter within populations
 
@@ -96,11 +102,16 @@ less hold about 4/(*N* − 1) of π:
 | 30                  | 7%                                              |
 
 The share depends on sample size, so a MAC filter lowers per-site
-diversity more in a small study than in a large one. Stacks does not
+diversity more in a small study than in a large one. The same spectrum
+says what share of the SNPs such a filter removes: a site with *i*
+derived copies is found in proportion to 1/*i*, so sites with a minor
+allele count of 2 or less are (1 + 1/2 + 1/(*N* − 2) + 1/(*N* − 1)) /
+(1 + 1/2 + … + 1/(*N* − 1)) of the SNPs, 36.5% at 20 diploids. The
+filter removes many SNPs but little diversity. Stacks does not
 delete a SNP that fails the filter: it turns it into a fixed site
 (`LocusFilter::erase_snp()`, Stacks 2.68), so the site still counts in
 `Sites` and the loss shows up in Stacks' own all-positions `Pi` as well.
-Allelic richness and private allelic richness lose even more, because
+Allelic richness and rarefied private alleles lose even more, because
 rare alleles are what they count. None of this makes filtered data
 unusable; it makes the threshold part of what a reported value means, so
 state it, and compare values only between datasets filtered the same
@@ -306,8 +317,10 @@ Removing SNPs with a minor allele count or frequency filter lowers
 per-site He by the diversity those SNPs carried (section 1). Stacks' own
 `Variant_Sites` is deliberately not used as the SNP count: it also
 counts SNPs removed after Stacks, and multiplying by it would credit
-each removed SNP with the average He of the SNPs kept, which after a MAC
-filter inflated per-site He by 41% in a simulation with 20 diploids.
+each removed SNP with the average He of the SNPs kept. After a MAC
+filter of 3 with 20 diploids, that would inflate per-site He by 41% under
+a neutral site-frequency spectrum: the filter removes 36.5% of the SNPs
+but only 10.3% of the diversity (derivation in section 1).
 `diversity_stats()` warns when records or whole loci were removed after
 reading, or when the VCF's SNP count does not match the Stacks file.
 
@@ -339,11 +352,12 @@ but the within-population denominator reversed the difference:
 The reason: after a bottleneck, B is monomorphic at many sites, and that
 is its reduced diversity. Dropping those sites from B's denominator
 discards the evidence and keeps only the sites where B retained
-variation. The two versions are linked exactly by He(pooled) =
-He(within) × `pct_poly`/100, so reporting the pooled He with `pct_poly`
-beside it lets a reader recover either.
+variation. So `diversity_stats()` reports the pooled He. The two
+versions are linked exactly by He(pooled) = He(within) × `pct_poly`/100,
+and `pct_poly` is in the result's `per_population` table, so either can
+be recovered if a reader asks.
 
-### Rarefied allelic and private allelic richness
+### Rarefied allelic richness and private alleles
 
 The number of alleles found grows with the number of gene copies
 sampled, so populations of different size must be compared at a common
@@ -353,9 +367,17 @@ copies drawn without replacement from a population's *N* copies is
 > A(*g*) = Σ<sub>i</sub> [1 − C(*N* − *N*<sub>i</sub>, *g*)/C(*N*, *g*)]
 
 (Hurlbert 1971; El Mousadik & Petit 1996), where *N*<sub>i</sub> is the
-count of allele *i*. Private allelic richness is the expected number of
-alleles drawn in one population and in none of the others, each sampled
-to *g* copies (Kalinowski 2004; Szpiech et al. 2008).
+count of allele *i*. The expected number of private alleles at a locus is
+the expected number of alleles drawn in one population and in none of
+the others, each sampled to *g* copies (Kalinowski 2004; Szpiech et al.
+2008). The package reports it added up over the loci where every
+population has at least *g* copies (`priv_total`, "rarefied private
+alleles" in the summaries), and keeps the per-locus mean as `privAr`.
+The count is easier to read ("258 rarefied private alleles"); because
+every population is summed over the same loci, the two give the same
+comparison between populations. It is an expected value, so it need not
+be a whole number. For the same reason, its standard error and interval
+are `privAr`'s multiplied by that number of loci.
 
 Both are exact expectations over gene copies, as in HP-RARE and ADZE.
 Resampling *individuals* instead would estimate something different when
@@ -363,26 +385,28 @@ individuals are inbred, because the two copies inside one individual are
 not independent draws.
 
 **Choosing *g*.** A locus counts for a population only where it has at
-least *g* gene copies, and for private richness only where *every*
-population does. A large *g* therefore discards loci with missing data:
+least *g* gene copies, and for rarefied private alleles only where
+*every* population does. A large *g* therefore discards loci with missing data:
 compare `Ar_n` and `privAr_n` for two values of *g*
-(`vignette("workflow")`, section 5) and choose the largest *g* that
-keeps most loci. Private richness depends on how many other populations
-it is compared against, so it cannot be compared between studies with
-different numbers of populations.
+(`vignette("workflow")`, section 5). A good start is *g* = 2 × *r* ×
+*n*, rounded down, for Stacks' `-r` value *r* and the smallest
+population's *n*. Rarefied private alleles depend on how many other
+populations they are compared against, and the count also on how many
+loci there are, so neither can be compared between studies.
 
 ## 3. Which Stacks file for which statistic
 
-Stacks writes one record per SNP (`populations.snps.vcf`) and one record
-per RAD locus with haplotype alleles (`populations.haps.vcf`) when more
-than one SNP per locus is allowed past *populations* filters.
+With `--vcf`, Stacks writes one record per SNP (`populations.snps.vcf`)
+and one record per RAD locus with haplotype alleles
+(`populations.haps.vcf`). With `--write-single-snp` it writes only the
+SNP VCF.
 
 | statistic | file | reason |
 |------------------------|------------------------|------------------------|
 | Ho, He, He per sequenced site | SNP VCF | a per-SNP value means the same in every study |
 | FIS | haplotype VCF | a ratio, so the scale cancels; more information per locus |
 | rarefied allelic richness | haplotype VCF | at a biallelic SNP it can only be 1 or 2; compare only populations analyzed together |
-| rarefied private allelic richness | haplotype VCF | the same, though it is informative on SNPs too |
+| rarefied private alleles | haplotype VCF | the same, though it is informative on SNPs too |
 | tests between populations | either; say which |  |
 
 ### FIS from haplotypes
@@ -428,7 +452,7 @@ way. In the same simulation, haplotype Ar rose by 70% in one population
 and 51% in the other as SNPs per locus increased, while per-SNP Ar
 (which cannot exceed 2) moved by 6%. Unlike He, the ratio between the
 two populations did not stay put: it grew from 1.12 to 1.26. So
-haplotype Ar and private allelic richness:
+haplotype Ar and rarefied private alleles:
 
 - cannot be compared with other studies, unless enzyme, read length, SNP
   calling and filters are all the same;
@@ -543,7 +567,7 @@ table gives the range over those three settings.
 | He        | 95–96%   | 93–95%          | 72–77%        | **98–99%**      |
 | FIS       | 31–94%   | 30–94%          | 92–93%        | **93–98%**      |
 | Ar        | 93–94%   | 92–93%          | 98–100%       | 100%            |
-| privAr    | 92–93%   | 91–93%          | 31–36%        | 92–94%          |
+| private alleles, per locus | 92–93%   | 91–93%          | 31–36%        | 92–94%          |
 
 What the table shows:
 
@@ -557,17 +581,15 @@ What the table shows:
   setting, so no choice has to be made based on g2. It is wider than
   necessary when individuals are alike (1.2 to 1.4 times the true SE)
   and about right when they differ (1.0 to 1.2).
-- **Ar and privAr** are covered by the locus SE alone. Their individual
-  SEs were poor: too wide for Ar (1.4 to 1.5 times the true SE) and far
-  too small for privAr, which depends on the other populations'
-  individuals too. `diversity_stats()` therefore gives them no
-  individual SE.
-
-Earlier versions of this package advised reporting the individual SE
-alone when g2 is above 0. That advice came from a simulation that reused
-the same loci in every repeat, so it never included the uncertainty from
-which loci were typed. Against the genome-wide truth, He intervals built
-that way contain the truth only about three times in four.
+- **Ar and private alleles** are covered by the locus SE alone. Their
+  individual SEs were poor: too wide for Ar (1.4 to 1.5 times the true
+  SE) and far too small for private alleles, which depend on the other
+  populations' individuals too. `diversity_stats()` therefore gives them
+  no individual SE. The simulations checked private alleles per locus
+  (`privAr`). The reported rarefied private alleles (`priv_total`) are
+  that value times the number of loci it is added up over, the same for
+  every population, so their SE is `privAr_se` times that number and
+  covers the truth as often.
 
 The same pattern held under other conditions (part `robust`): many rare
 variants, 8 individuals, 30 individuals at 3,000 loci, 20% missing
@@ -580,7 +602,7 @@ in inbreeding.
 | He        | 96–98%      | 93–97%   | 47–86%        |
 | FIS       | 90–99%      | 30–94%   | 89–94%        |
 | Ar        | 97–100%     | 88–96%   | 73–99%        |
-| privAr    | 89–99%      | 89–95%   | 9–91%         |
+| private alleles, per locus | 89–99%      | 89–95%   | 9–91%         |
 
 ### The rule
 
@@ -589,14 +611,15 @@ in inbreeding.
 > estimate ± 1.96 × `_se_combined`. The per-site Ho and He take the same
 > rule: report `Ho_autosomal_se_combined` and `He_autosomal_se_combined`.
 >
-> **Ar and privAr:** report `_se`. The bootstrap interval `_lo` to `_hi` is
-> also available; in these simulations it held the true value about as often
-> as the SE, or slightly less often (Ar: 92–93% against 93–94%).
+> **Ar and rarefied private alleles:** report `_se`. The bootstrap interval `_lo` to
+> `_hi` is also available; in these simulations it held the true value about
+> as often as the SE, or slightly less often (Ar: 92–93% against 93–94%).
 
 The short `summary()` of `diversity_stats()` shows only these recommended
 standard errors, and says which kind each one is. It quotes the wider ranges
 over all the simulated settings (the second table above): 90–99% for the
-combined SE of Ho, He and FIS, and 88–96% for the locus SE of Ar and privAr.
+combined SE of Ho, He and FIS, and 88–96% for the locus SE of Ar and rarefied
+private alleles.
 For He alone the locus SE was also close (95–96%); the combined SE is used for
 all three so that the choice does not depend on how much individuals differ
 in inbreeding.
@@ -649,7 +672,7 @@ standard deviation over variant sites divided by √(number of sites)
 (`SumStatsSummary::final_calculation()`, Stacks 2.68). That treats every
 SNP as independent, so it is narrower than an interval over RAD loci. In
 Stacks 2.68 the `StdErr` printed for `Fis` is computed from `Num_Indv`'s
-variance (`populations.cc`, line 3108), which is a bug in STACKS 2.68;
+variance (`populations.cc`, line 3108), which is a bug in Stacks 2.68;
 check it against your own Stacks version before relying on that column.
 
 ## 5. Comparing populations
@@ -693,11 +716,11 @@ combined test stayed between 3% and 7.5% in every setting.
 
 ### The test `het_between_pops()` uses
 
-***NOTE: As far as I am aware, this is a novel approach for testing
-differences between populations. However, the test is not statistically
-novel. It probably could use much more testing, and possibly its own
-publication before this test could be considered FULLY robust. Keep this
-in mind when using the package. –N. Whelan (September 8, 2026).***
+***NOTE: each part of this test is standard (Welch's variance over
+individuals, a jackknife over RAD loci). As far as I know, no
+population-genetics software combines them to compare populations, so
+the combination is new and not yet peer reviewed. Keep this in mind when
+using it. –N. Whelan (September 8, 2026).***
 
 `het_between_pops()` gives each individual one number, its
 heterozygosity over the loci both populations of a pair clear `min_call`
@@ -752,19 +775,27 @@ with the pairs' `p_combined_BH`.
   heterozygosity and flags a positive correlation.
 - **g2.** Whether individuals differ in inbreeding (David et al. 2007).
   When they do, heterozygosity is correlated across loci within an
-  individual, and that is exactly when a locus-based test goes wrong. On
-  a SNP VCF, SNPs on the same RAD locus are counted as separate loci,
-  and linkage between them raises g2 a little even without inbreeding.
-  Pairs on the same RAD locus are about one in (number of RAD loci) of
-  all pairs, so with thousands of loci this is negligible; with a few
-  hundred, compute g2 on the haplotype VCF.
+  individual, and that is exactly when a locus-based test goes wrong.
+  g2 assumes the two loci of each pair are inherited independently, and
+  SNPs on one RAD locus are not: an individual with two different
+  haplotypes is heterozygous at several of them at once. So pairs of
+  SNPs on the same RAD locus are left out, and the permutation test
+  moves a RAD locus's SNPs together. Before this was done, in
+  simulations with 20 individuals, no inbreeding and about two SNPs per
+  RAD locus, the test found g2 above 0 in 54–56% of runs, at 500 to 8,000
+  loci; after, in 2–4% (nominal 5%). Real variance in inbreeding was still
+  found every time (`inst/sims/g2_linked_snps.R`). SNP and haplotype VCFs
+  now both work. With few individuals, test g2 > 0 with the permutation
+  p-value, not the bootstrap interval. With no inbreeding, the 95%
+  interval missed 0 in 17–19% of simulated data sets with 8 individuals,
+  10–15% with 15 and 7% with 30, nearly always by lying below 0; the
+  permutation test rejected in 2–5% (`inst/sims/g2_ci_small_n.R`).
 - **Sex-linked loci.** In the sex with one copy of a sex chromosome (XY
   males, ZW females), loci on it look homozygous. They raise FIS and
   lower those individuals' heterozygosity. If the samples differ in sex
   ratio, a difference in heterozygosity can come from that. De novo RAD
   loci cannot be sorted by chromosome; loci heterozygous in only one
-  sex, or genotyped in only one sex, are the usual clue. This is
-  probably not a terribly big issue with RADseq data.
+  sex, or genotyped in only one sex, are the usual clue.
 - **Power.** Power is set by the number of individuals, not loci. With
   15 and 10 individuals and an among-individual SD of F of 0.10, Welch's
   test detected a difference in mean F of 0.05 (0.5 SD) 17% of the time
@@ -862,6 +893,113 @@ record.
 Report D (or beta) alongside FST for haplotype data. Intervals for FST
 and D come from the same bootstrap over RAD loci as everything else.
 
+### Isolation by distance
+
+When individuals mostly mate near where they were born, populations far
+apart share fewer genes than neighbors. Differentiation then grows with
+distance: isolation by distance (Wright 1943). `isolation_by_distance()`
+tests for this with the pairwise FST or D from `differentiation_stats()`
+and a table of distances (`read_distances()`).
+
+**What is compared.** Rousset (1997) showed that FST/(1 − FST) for a
+pair of populations rises in a straight line:
+
+- with the distance itself in a **1-D habitat** (a river, a coastline);
+- with the natural log of the distance in a **2-D habitat** (an area).
+
+The slope measures dispersal. 1/slope estimates 4 × density × σ² in 1-D
+and 4π × density × σ² in 2-D. Here density is individuals per unit of
+length or area, and σ² is the mean squared distance between parent and
+offspring along one axis. This holds best for pairs farther apart than
+σ, in populations near equilibrium. Which habitat is right depends on
+the organism, so `habitat` has no default: you must choose `"1D"` or
+`"2D"`.
+
+**Why D is used as it is, not as D/(1 − D).** Write Q₀ for the chance
+that two genes from the same population are identical, and Q<sub>d</sub>
+for two genes from populations at distance *d*. For a pair of
+populations:
+
+| statistic | in these terms |
+|---|---|
+| FST/(1 − FST) | (Q₀ − Q<sub>d</sub>) / (1 − Q₀) |
+| D | (Q₀ − Q<sub>d</sub>) / Q₀ |
+| D/(1 − D) | (Q₀ − Q<sub>d</sub>) / Q<sub>d</sub> |
+
+Rousset's straight line comes from the top part, Q₀ − Q<sub>d</sub>.
+FST/(1 − FST) and D divide it by numbers that do not change with
+distance, when the populations are about equally diverse. So
+D = FST/(1 − FST) × H<sub>s</sub>/(1 − H<sub>s</sub>): D is a straight
+line whenever FST/(1 − FST) is. D/(1 − D) divides by Q<sub>d</sub>,
+which falls with distance, so its line bends upward, and more so the
+larger D is.
+
+We checked this with exact identity probabilities in stepping-stone
+models, at distances of 2 to 20 steps (`inst/sims/ibd_d_transform.R`;
+no sampling noise). "Bend" is the slope over the far half of the
+distances divided by the slope over the near half; 1 is a straight
+line.
+
+| setting | D | bend of FST/(1 − FST) | bend of D | bend of D/(1 − D) |
+|---|---|---|---|---|
+| 1-D, low mutation | 0.002–0.06 | 0.97–0.99 | the same | 1.01–1.03 |
+| 1-D, higher mutation | 0.02–0.47 | 0.74–0.91 | the same | 1.10–1.35 |
+| 2-D | 0.19–0.90 | 0.78–0.99 | the same | 1.41–4.44 |
+
+In every setting, D ÷ [FST/(1 − FST)] equaled
+H<sub>s</sub>/(1 − H<sub>s</sub>). Where FST/(1 − FST) itself bends
+(higher mutation, as distances approach the limit of Rousset's
+approximation), D/(1 − D) bends the other way by an amount set by the
+size of D, not by dispersal, so it does not correct that.
+
+A Mantel test on D/(1 − D) would still keep its false-positive rate (any
+permutation test does), and with ranks (`method = "spearman"`) it gives
+the same answer as D. But nothing supports it, so it is not offered.
+The slope of D equals the FST slope times H<sub>s</sub>/(1 − H<sub>s</sub>),
+so it depends on diversity as well as dispersal. The package reports it,
+but only the FST slope estimates dispersal.
+
+**The Mantel test.** The pairs share populations (a–b and a–c both
+contain a), so the correlation *r* between genetic and geographic values
+cannot be tested like an ordinary correlation. The Mantel test (Mantel
+1967) shuffles the populations among the places and recomputes *r* each
+time. The p-value is the share of orderings that give an *r* at least
+as large as the data's. It is one-sided, because isolation by distance
+predicts a positive *r*. With 7 or fewer populations every ordering is
+tried, so the p-value is exact and the same on every run. With more,
+9,999 random orderings are used, and p = (b + 1)/(9,999 + 1), where b
+counts those at least as large (Phipson & Smyth 2010). With few
+populations the test has little power:
+
+| populations | 3 | 4 | 5 | 6 | 7 | 8 or more |
+|---|---|---|---|---|---|---|
+| orderings | 6 | 24 | 120 | 720 | 5,040 | 9,999 random |
+| smallest possible p | 0.17 | 0.042 | 0.0083 | 0.0014 | 0.0002 | 0.0001 |
+
+The smallest p is larger when the distances are symmetric. For example,
+evenly spaced sites give the same *r* in reverse order, so 4 evenly
+spaced sites cannot go below 2/24 = 0.083. With 7 or fewer populations,
+the summary's checks give the smallest p for your own distances.
+
+Guillot & Rousset (2013) showed that this simple Mantel test is valid
+for isolation by distance: with no isolation by distance, the genetic
+data could be shuffled among the places without changing their
+distribution, which is what the test assumes. They also showed that
+**partial** Mantel tests (for example, distance plus a barrier or a
+habitat matrix) are not valid for spatially structured data, so the
+package does not offer them. The package tests check that *r* and the
+exact p-value match `vegan::mantel()` (Oksanen et al.).
+
+**The slope has no interval here.** The slope is a least-squares line
+through all pairs. The pairs are not independent, so the usual
+regression standard error would be wrong, and none is given. Genepop
+(Rousset 2008) gives a bootstrap interval over loci for the slope; use
+it if you need one.
+
+**Negative values.** A pairwise FST or D can be estimated slightly below
+0 when two populations barely differ. Such values are kept: setting them
+to 0 would bias the slope.
+
 ## 7. Relatives and Hardy-Weinberg tests
 
 ### Screening for relatives
@@ -882,13 +1020,16 @@ subpopulations (a Wahlund effect) does not do this, because relatives
 share a subpopulation.
 
 Two details. The package uses Manichaikul et al.'s estimator with the
-**sum** of the two individuals' heterozygote counts in the denominator;
-PLINK 2's `--make-king` uses their between-family version (the smaller
-count), which reads lower when one individual's heterozygotes were
-under-called. And beta compares each pair with the average pair it is
-given, so on several differentiated populations pooled, unrelated
-members of the same population look related; with `popmap`, beta is
-computed within each population.
+**sum** of the two individuals' heterozygote counts in the denominator.
+PLINK 2's `--make-king` uses their between-family version, built on the
+smaller count, which reads lower when one individual's heterozygotes
+were under-called. With 20% of one individual's heterozygotes called
+homozygous, a parent-offspring pair (true 0.25) reads 0.167 with the sum
+and 0.125 with PLINK 2's version. And beta compares each pair with the
+average pair it is given, so on several differentiated populations
+pooled, unrelated members of the same population look related (80% of
+them in a simulation at F<sub>ST</sub> = 0.1); with `popmap`, beta is
+computed within each population, and none were.
 
 ### Hardy-Weinberg tests
 
@@ -917,7 +1058,7 @@ allele frequencies *p*<sub>i</sub>, observed heterozygosity
 | FIS at a site | 1 − *H*<sub>o</sub>/(gene diversity) | `Fis`, using `Pi` | not reported per site |
 | FIS over sites | mean of per-site FIS (Stacks); 1 − Σ*H*<sub>o</sub>/Σ*H*<sub>s</sub> (RADdiversity) | `Fis` | `Fis` |
 | per-site diversity | mean over all sequenced sites | `Pi`, All-positions block | `He_autosomal`, `pi_nc` |
-| private alleles | raw count | `Private` | `privAr` (rarefied) |
+| private alleles | raw count | `Private` | `priv_total` (rarefied count; `privAr` per locus) |
 
 Stacks computes `Pi` at a site as the chance that two of the gene copies
 typed there differ, counted pair by pair: `Pi` = 1 − Σ
@@ -945,7 +1086,7 @@ Checked against the named versions; later versions may differ.
 | He estimator | Nei & Chesser | Nei & Chesser (`basic.stats`) | plug-in 1 − Σ*p*<sup>2</sup> | 2*N*-corrected `Pi` |
 | FIS over loci | ratio of sums | ratio of sums (`basic.stats` overall) | not checked | mean of per-site ratios |
 | resampling unit | RAD loci, and individuals for `_se_ind` / `_se_combined` | loci as rows (`boot.ppfis`, `boot.ppfst`, `boot.vc`) | individuals (`divBasic`) | none; SD/√sites |
-| rarefied private richness | yes, with SE | no | no | no |
+| rarefied private alleles | yes, with SE | no | no | no |
 | FST at records typed in one population | skipped | kept (`wc`) | — | skipped |
 | global D at records missing a population | skipped | — | — | — |
 | Hs inside Jost's D | Nei & Chesser | Nei & Chesser (`basic.stats` `Dest`) | not checked | not checked |
@@ -956,7 +1097,8 @@ Checked against the named versions; later versions may differ.
 |------------------------------------|------------------------------------|
 | bias of the 2*N*-corrected He and of FIS built on it; FIS reaches −1 | `diversity_core_selftest()` |
 | FIS unbiased under locus-driven missing data | `diversity_core_selftest()` |
-| share of π at sites with minor allele count ≤ 2 | derivation in section 1 |
+| share of π, and of SNPs, at sites with minor allele count ≤ 2 | derivation in section 1 |
+| per-site He 41% too high if scaled by `Variant_Sites` after a MAC filter | the same derivation (section 1) |
 | records surviving `complete_case` | (1 − *m*)<sup>25</sup> |
 | pooled vs within-population denominator | `inst/sims/vignette_sims.R`, part `denominator` |
 | FIS precision by file | `inst/sims/vignette_sims.R`, part `file_choice` |
@@ -967,6 +1109,11 @@ Checked against the named versions; later versions may differ.
 | power of Welch's test | `inst/sims/vignette_sims.R`, part `power` |
 | how well `fis_by_call_rate` detects dropout | `inst/sims/vignette_sims.R`, part `dropout` |
 | Jost's D with inbred individuals; match with hierfstat's `Dest` | package tests (`test-differentiation-stats.R`) |
+| g2 with several SNPs per RAD locus, before and after leaving out same-locus pairs | `inst/sims/g2_linked_snps.R` |
+| g2's bootstrap interval and permutation test with 8, 15 and 30 individuals | `inst/sims/g2_ci_small_n.R` |
+| KING's two estimators under allele dropout; beta on pooled populations | `inst/sims/kinship_checks.R` |
+| D vs D/(1 − D) under isolation by distance | `inst/sims/ibd_d_transform.R` |
+| Mantel *r* and exact p-value match `vegan::mantel()` | package tests (`test-isolation-by-distance.R`) |
 | Stacks formulas and averaging | Stacks 2.68 source files named in the text; rows of published Stacks output in `diversity_core_selftest()` |
 
 ## References
@@ -999,6 +1146,9 @@ hierarchical F-statistics. *Molecular Ecology Notes* 5:184–186.
 
 Goudet, J., Kay, T. & Weir, B.S. (2018) How to estimate kinship.
 *Molecular Ecology* 27:4121–4135.
+
+Guillot, G. & Rousset, F. (2013) Dismantling the Mantel tests. *Methods
+in Ecology and Evolution* 4:336–344.
 
 Guo, S.-W. & Thompson, E.A. (1992) Performing the exact test of
 Hardy-Weinberg proportion for multiple alleles. *Biometrics* 48:361–372.
@@ -1037,6 +1187,9 @@ Manichaikul, A., Mychaleckyj, J.C., Rich, S.S., Daly, K., Sale, M. &
 Chen, W.-M. (2010) Robust relationship inference in genome-wide
 association studies. *Bioinformatics* 26:2867–2873.
 
+Mantel, N. (1967) The detection of disease clustering and a generalized
+regression approach. *Cancer Research* 27:209–220.
+
 McMaster, E.S. et al. (2025) Evaluating kinship estimation methods for
 reduced-representation SNP data in non-model species. *Molecular Ecology
 Resources*. <doi:10.1111/1755-0998.70038>
@@ -1050,6 +1203,9 @@ diversities. *Annals of Human Genetics* 47:253–259.
 Nei, M. & Roychoudhury, A.K. (1974) Sampling variances of heterozygosity
 and genetic distance. *Genetics* 76:379–390.
 
+Oksanen, J., Simpson, G., Blanchet, F., et al. (2026) vegan: Community
+Ecology Package. R package version 2.7-5.
+
 Owen, A.B. (2007) The pigeonhole bootstrap. *Annals of Applied
 Statistics* 1:386–411.
 
@@ -1061,9 +1217,20 @@ Hardy–Weinberg equilibrium filtering schemes impact population structure
 inferences using RADseq data. *Molecular Ecology Resources*
 22:2599–2613.
 
+Phipson, B. & Smyth, G.K. (2010) Permutation P-values should never be
+zero: calculating exact P-values when permutations are randomly drawn.
+*Statistical Applications in Genetics and Molecular Biology* 9:39.
+
 Rochette, N.C., Rivera-Colón, A.G. & Catchen, J.M. (2019) Stacks 2:
 analytical methods for paired-end sequencing improve RADseq-based
 population genomics. *Molecular Ecology* 28:4737–4754.
+
+Rousset, F. (1997) Genetic differentiation and estimation of gene flow
+from F-statistics under isolation by distance. *Genetics* 145:1219–1228.
+
+Rousset, F. (2008) genepop'007: a complete re-implementation of the
+genepop software for Windows and Linux. *Molecular Ecology Resources*
+8:103–106.
 
 Schmidt, T.L., Jasper, M.-E., Weeks, A.R. & Hoffmann, A.A. (2021)
 Unbiased population heterozygosity estimates from genome-wide sequence
@@ -1093,3 +1260,5 @@ Genetics* 76:887–893.
 
 Winter, D.J. (2012) mmod: an R library for the calculation of population
 differentiation statistics. *Molecular Ecology Resources* 12:1158–1160.
+
+Wright, S. (1943) Isolation by distance. *Genetics* 28:114–138.

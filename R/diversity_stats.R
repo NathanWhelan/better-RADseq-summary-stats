@@ -1,7 +1,7 @@
 ###############################################################################
 #
 #  R/diversity_stats.R -- Ho, He, FIS, rarefied allelic richness and rarefied
-#  private allelic richness from a Stacks VCF, in one run.
+#  private alleles from a Stacks VCF, in one run.
 #
 #  WHY THE NUMBERS DIFFER FROM STACKS, in one line each. The full explanation,
 #  with every Stacks column matched to its counterpart here, is in
@@ -33,8 +33,8 @@
 #' Diversity statistics from a Stacks VCF
 #'
 #' Computes Ho, He, FIS (Nei & Chesser 1983, ratio of sums), rarefied allelic
-#' richness and rarefied private allelic richness from a Stacks 2
-#' `populations` VCF and popmap, with a delete-one-locus jackknife standard
+#' richness and rarefied private alleles from a Stacks 2 `populations` VCF and
+#' popmap, with a delete-one-locus jackknife standard
 #' error and a bootstrap confidence interval over RAD loci. Printing the
 #' result shows the main tables. `summary()` is short: the results as
 #' `estimate (SE)` with the one recommended standard error for each statistic,
@@ -42,14 +42,15 @@
 #' is the full report, with every uncertainty column and notes on
 #' interpretation. `outdir` also writes the tables to TSV files.
 #'
-#' Run it twice: `populations.snps.vcf` gives Ho, He, `pct_poly` and the
-#' per-sequenced-site values; `populations.haps.vcf` gives FIS, Ar and
-#' privAr. Haplotype Ar and privAr depend on how many SNPs each RAD locus
-#' holds, which changes with read length, enzyme and SNP calling. Compare them
-#' only among populations analyzed together (the same run, filters and `g`):
-#' which population is richer is reliable, but the size of the difference
-#' also depends on SNPs per locus. The printed result says which numbers to
-#' take from each file. See `vignette("rationale")`, section 3.
+#' Run it twice: `populations.snps.vcf` gives Ho, He and the
+#' per-sequenced-site values; `populations.haps.vcf` gives FIS, Ar and rarefied
+#' private alleles. [diversity_table()] joins the two runs into one table.
+#' Haplotype Ar and rarefied private alleles depend on how many SNPs each RAD
+#' locus holds, which changes with read length, enzyme and SNP calling. Compare them only among
+#' populations analyzed together (the same run, filters and `g`): which
+#' population is richer is reliable, but the size of the difference also
+#' depends on SNPs per locus. The printed result says which numbers to take
+#' from each file. See `vignette("rationale")`, section 3.
 #'
 #' The SNP-VCF side was designed for biallelic SNPs, as Stacks writes them.
 #' A VCF whose alleles are all single bases is treated as one site per record
@@ -128,8 +129,8 @@
 #'   were sampled, and add two columns each for Ho, He and FIS (and their
 #'   per-site values): `_se_ind` (a jackknife over individuals) and
 #'   `_se_combined` (locus and individual uncertainty together). **Report
-#'   `_se_combined` for Ho, He and FIS.** Ar and privAr keep their locus-based
-#'   `_se`, `_lo` and `_hi`, which already cover both sources. See "How
+#'   `_se_combined` for Ho, He and FIS.** Ar and rarefied private alleles keep
+#'   their locus-based `_se`, `_lo` and `_hi`, which already cover both sources. See "How
 #'   standard errors are calculated" below. Default `TRUE`, because
 #'   `_se_combined` is the recommended standard error and the extra work is
 #'   small: about 30% more run time (300,000 records and 60 individuals: 3.9
@@ -160,8 +161,13 @@
 #'       population, each with its locus jackknife SE (`_se`) and 95% locus
 #'       bootstrap interval (`_lo`, `_hi`). With `se_individuals = TRUE` (the
 #'       default), also `_se_ind` and `_se_combined` for Ho, He and FIS.}
-#'     \item{richness}{Ar, privAr and priv_total per population, with the
-#'       number of records each rests on (`Ar_n`, `privAr_n`).}
+#'     \item{richness}{Per population: `Ar`; `priv_total`, the rarefied
+#'       private alleles (the expected number of private alleles in `g` gene
+#'       copies at each locus, added up over the `privAr_n` loci typed at `g`
+#'       copies in every population; this is the number summaries and tables
+#'       report); and `privAr`, the same per locus. Each has `_se`, `_lo` and
+#'       `_hi`; `priv_total`'s are `privAr`'s times `privAr_n`. `Ar_n` and
+#'       `privAr_n` count the loci each rests on.}
 #'     \item{autosomal}{Per-sequenced-site Ho/He (`Ho_autosomal`,
 #'       `He_autosomal`), with the `sites_used` and `variant_records` each
 #'       population was scaled by, and the same uncertainty columns as Ho and
@@ -214,7 +220,8 @@
 #' locus are inherited together.
 #'
 #' **Which to report.** For **Ho, He and FIS**, report `_se_combined`. For
-#' **Ar and privAr**, report `_se` (or `_lo`, `_hi`). The per-site Ho and He
+#' **Ar and rarefied private alleles** (`priv_total`), report `_se` (or `_lo`,
+#' `_hi`). The per-site Ho and He
 #' (`Ho_autosomal`, `He_autosomal`) follow the same rule for Ho and He: report
 #' `Ho_autosomal_se_combined` and `He_autosomal_se_combined`. The short
 #' `summary()` shows only these recommended standard errors. This rule comes from
@@ -227,8 +234,12 @@
 #' individual SE alone, He intervals contained it 47-86% of the time, because
 #' He depends mostly on which loci were typed. The combined SE contained it
 #' 90-99% of the time for all three, often a little more than 95% because some
-#' noise is counted in both SEs. For Ar and privAr the locus SE alone did well
-#' (88-96%). A bootstrap over individuals is not offered for reporting:
+#' noise is counted in both SEs. For Ar and for private alleles per locus
+#' (`privAr`), the locus SE alone did well (88-96%). The rarefied private
+#' alleles (`priv_total`) are `privAr` times the number of loci it is added up
+#' over, the same for every population, so `priv_total_se` is `privAr_se`
+#' times that number and holds the truth as often. A bootstrap over
+#' individuals is not offered for reporting:
 #' drawing an individual twice makes the sample look less diverse than it is,
 #' and its He intervals contained the truth under 10% of the time. Details are
 #' in `vignette("rationale")`, section 4, and `inst/sims/uncertainty_sources.R`.
@@ -239,30 +250,17 @@
 #'
 #' @section Tables for a paper:
 #' Put in the table exactly what the short `summary()` reports, and nothing
-#' more. `summary(x)$tables` holds those tables as data frames, with the same
-#' `estimate (SE)` text the summary prints: `results` (Ho, He and `pct_poly`
-#' for a SNP VCF; FIS, Ar and privAr for a haplotype VCF) and, for a SNP VCF run
-#' with `sites`, `per_site`. Join the two runs by population name, never by row
-#' order:
+#' more. [diversity_table()] does this: `diversity_table(res_snps, res_haps)`
+#' joins the SNP and haplotype runs by population and prints a caption to go
+#' with the table. `summary(x)$tables` holds the same cells for one run:
+#' `results` (Ho and He for a SNP VCF; FIS, Ar and rarefied private alleles for
+#' a haplotype VCF) and, for a SNP VCF run with `sites`, `per_site`.
 #'
-#' ```
-#' snp <- summary(res_snps)$tables
-#' hap <- summary(res_haps)$tables
-#' parts <- list(snp$results, snp$per_site,
-#'               hap$results[names(hap$results) != "n"])
-#' table1 <- Reduce(function(a, b) merge(a, b, by = "population", sort = FALSE),
-#'                  Filter(Negate(is.null), parts))
-#' table1 <- table1[match(snp$results$population, table1$population), ]
-#' ```
-#'
-#' Leave out the other uncertainty columns (they are in the result tables and
-#' the `outdir` files, for a supplement) and the counts behind a value (`Ar_n`,
-#' `privAr_n`, `priv_total`, `sites_used`); state those in the methods. Say in
-#' the caption which VCF each column came from, the rarefaction size `g`, and
-#' which standard error each column is. Add something to the table only when a
-#' check in the summary said `look` and readers need the number to judge it.
-#' See the README ("Make a table for a manuscript") and the workflow vignette
-#' ("A table for your manuscript").
+#' The other columns (other SEs and intervals, `pct_poly`, `privAr`, the counts
+#' `Ar_n`, `privAr_n` and `sites_used`) are in the result tables and the
+#' `outdir` files, for a supplement or the methods. Add one to the table only
+#' when a check in the summary said `look` and readers need the number to judge
+#' it.
 #'
 #' @references
 #' Nei, M. & Chesser, R.K. (1983) Estimation of fixation indices and gene
@@ -329,7 +327,7 @@
 #' snps   <- system.file("extdata", "small.snps.vcf", package = "RADdiversity")
 #' popmap <- system.file("extdata", "small_popmap.tsv", package = "RADdiversity")
 #'
-#' # Haplotype VCF: FIS, allelic richness, private allelic richness.
+#' # Haplotype VCF: FIS, allelic richness, rarefied private alleles.
 #' # se_individuals = FALSE only because these toy populations have 3 and 4
 #' # individuals, too few for the individual standard errors. Leave it at its
 #' # default (TRUE) for real data.
@@ -562,7 +560,7 @@ print.raddiv_diversity <- function(x, ...) {
   cat(sprintf("Diversity statistics: %d populations, %s records on %s RAD loci (%s VCF)\n",
               st$n_pops, .big(st$n_records_used), .big(st$n_loci),
               if (st$is_haplotype) "haplotype" else "SNP"))
-  cat(sprintf("  He: Nei & Chesser (1983); FIS: 1 - sum(Ho)/sum(He); Ar, privAr: rarefied to g = %d gene copies\n",
+  cat(sprintf("  He: Nei & Chesser (1983); FIS: 1 - sum(Ho)/sum(He); Ar, rarefied private alleles: g = %d gene copies\n",
               st$g))
   cat("  _se: jackknife over RAD loci",
       if (st$nboot > 0) sprintf("; _lo/_hi: 95%% bootstrap interval, %s replicates (boot = \"%s\")",
@@ -574,8 +572,12 @@ print.raddiv_diversity <- function(x, ...) {
   ## population name on every block, so no row of numbers is left unlabelled.
   cat("\n$per_population\n")
   .print_compact(.round_diversity_table(x$per_population, "per_population"))
-  cat("\n$richness\n")
-  .print_compact(.round_diversity_table(x$richness, "richness"))
+  ## Ar and rarefied private alleles are taken from the haplotype VCF only, so
+  ## a SNP run does not print them (they stay in x$richness).
+  if (st$is_haplotype) {
+    cat("\n$richness\n")
+    .print_compact(.round_diversity_table(x$richness, "richness"))
+  }
   if (!is.null(x$autosomal)) {
     cat("\n$autosomal\n")
     .print_compact(.round_diversity_table(x$autosomal, "autosomal"))
@@ -583,11 +585,11 @@ print.raddiv_diversity <- function(x, ...) {
 
   cat("\n")
   if (st$is_haplotype) {
-    cat("Take from this haplotype VCF: Fis, Ar, privAr. (Ho and He: run the SNP VCF.)\n")
-    cat("  Ar and privAr: compare only populations analyzed together; which is richer is reliable, how much richer depends on SNPs per locus.\n")
+    cat("Take from this haplotype VCF: Fis, Ar, rarefied private alleles (priv_total). (Ho and He: run the SNP VCF.)\n")
+    cat("  Ar and rarefied private alleles: compare only populations analyzed together; which is richer is reliable, how much richer depends on SNPs per locus.\n")
   } else {
-    cat("Take from this SNP VCF: Ho, He, pct_poly", if (!is.null(x$autosomal)) ", Ho_autosomal, He_autosomal",
-        ". (Fis, Ar, privAr: run the haplotype VCF.)\n", sep = "")
+    cat("Take from this SNP VCF: Ho, He", if (!is.null(x$autosomal)) ", Ho_autosomal, He_autosomal",
+        ". (Fis, Ar, rarefied private alleles: run the haplotype VCF; x$richness holds the SNP values.)\n", sep = "")
   }
   for (w in .diversity_warnings(x)) cat("NOTE:", w, "\n")
   cat("summary() shows what to take from this run and what to check; summary(x, details = TRUE) explains every number.\n")
@@ -636,23 +638,24 @@ print.raddiv_diversity <- function(x, ...) {
     add("boot_mode", TRUE,
         sprintf("boot = \"%s\" is a comparison mode; its intervals undercover (see ?diversity_stats).", st$boot))
 
-  ## Ar and privAr are only shown for a haplotype VCF.
+  ## Ar and rarefied private alleles are only reported from a haplotype VCF, so
+  ## these checks fire (in print() too) only there.
   hap <- st$is_haplotype
-  privar_low <- min(x$richness$privAr_n) < 0.5 * st$n_records_used
+  privar_low <- hap && min(x$richness$privAr_n) < 0.5 * st$n_records_used
   add("privar_records", privar_low,
-      message = "privAr rests on under half of the records for some population; consider a smaller g.",
-      look = sprintf("privAr rests on under half of the loci for some population (%s of %s in the smallest); consider a smaller g",
+      message = "rarefied private alleles are added up over under half of the loci; consider a smaller g.",
+      look = sprintf("rarefied private alleles are added up over under half of the loci (%s of %s); a smaller g keeps more",
                      .big(min(x$richness$privAr_n)), .big(st$n_records_used)),
-      ok = "privAr rests on at least half of the loci in every population", brief = hap)
+      ok = "rarefied private alleles are added up over at least half of the loci", brief = hap)
   ar_n <- x$richness$Ar_n
-  add("ar_uneven", .ar_records_uneven(x$richness),
+  add("ar_uneven", hap && .ar_records_uneven(x$richness),
       message = "Ar rests on under 90% as many records in some population as in another (see Ar_n); populations are compared over partly different loci.",
       look = if (length(ar_n) > 1L)
         sprintf("Ar is averaged over %s loci in %s but %s in %s, so populations are compared over partly different loci; a smaller g, or Stacks' -p equal to the number of populations, evens this out",
                 .big(max(ar_n)), x$richness$population[which.max(ar_n)],
                 .big(min(ar_n)), x$richness$population[which.min(ar_n)]),
       ok = "Ar is averaged over nearly the same loci in every population", brief = hap)
-  add("ar_undefined", all(is.na(x$richness$Ar)),
+  add("ar_undefined", hap && all(is.na(x$richness$Ar)),
       look = sprintf("Ar is undefined for every population: no locus has any population at g = %d gene copies or more; use a smaller g",
                      st$g),
       brief = hap)
@@ -751,9 +754,11 @@ print.summary.raddiv_diversity <- function(x, ...) {
 ## with the ONE recommended standard error (see .coverage in R/report_text.R):
 ##   Ho, He, Fis   _se_combined (SE over loci AND individuals), or the locus
 ##                 _se when se_individuals = FALSE
-##   Ar, privAr    _se (SE over RAD loci only)
-## A SNP VCF shows Ho, He, pct_poly; a haplotype VCF shows Fis, Ar, privAr,
-## which is what each run says to take.
+##   Ar, rarefied private alleles (priv_total)
+##                 _se (SE over RAD loci only)
+## A SNP VCF shows Ho and He; a haplotype VCF shows Fis, Ar and private
+## alleles, which is what each run says to take. pct_poly and privAr stay in
+## the result's tables.
 .diversity_results <- function(x) {
   st <- x$settings
   pp <- x$per_population
@@ -765,28 +770,37 @@ print.summary.raddiv_diversity <- function(x, ...) {
     rich <- x$richness[match(pp$population, x$richness$population), ]
     tab[["Fis (SE)"]] <- .est_se(pp$Fis, se_of(pp, "Fis"))
     tab[["Ar (SE)"]] <- .est_se(rich$Ar, rich$Ar_se)
-    tab[["privAr (SE)"]] <- .est_se(rich$privAr, rich$privAr_se)
+    tab[["rarefied private alleles (SE)"]] <- .est_se(rich$priv_total, rich$priv_total_se)
   } else {
     tab[["Ho (SE)"]] <- .est_se(pp$Ho, se_of(pp, "Ho"))
     tab[["He (SE)"]] <- .est_se(pp$He, se_of(pp, "He"))
-    tab[["pct_poly (%)"]] <- sprintf("%.1f", pp$pct_poly)
   }
   legend <- if (st$is_haplotype) {
-    c(sub("{g}", st$g, .report_text$diversity_legend_hap, fixed = TRUE),
+    ## The loci the rarefied private alleles are added up over: one number when
+    ## every population has the same (the usual case), else a pointer to the
+    ## counts.
+    private_n <- unique(x$richness$privAr_n)
+    loci <- if (length(private_n) == 1L)
+      sprintf("the %s loci typed at g copies in every population", .big(private_n))
+    else "the loci typed at g copies in every population (x$richness$privAr_n)"
+    legend_hap <- gsub("{g}", st$g, .report_text$diversity_legend_hap, fixed = TRUE)
+    legend_hap <- stats::setNames(gsub("{loci}", loci, legend_hap, fixed = TRUE),
+                                  names(legend_hap))
+    c(.legend_entries(legend_hap),
       if (combined) c("Fis SE counts variation among RAD loci and among individuals.",
                       sprintf("In simulations its 95%% intervals held the truth %s of the time.",
                               .coverage$combined))
       else "Fis SE counts variation among RAD loci only.",
-      "Ar and privAr SE count variation among RAD loci only.",
-      sprintf("In simulations their 95%% intervals held the truth %s of the time.",
-              .coverage$loci))
+      "SEs of Ar and rarefied private alleles count variation among RAD loci only.",
+      sprintf("In simulations (per locus) their 95%% intervals held the truth %s of",
+              .coverage$loci),
+      "the time.")
   } else {
-    c(.report_text$diversity_legend_snp[1L],
+    c(.report_text$diversity_legend_snp,
       if (combined) c("          SE counts variation among RAD loci and among individuals.",
                       sprintf("          In simulations its 95%% intervals held the truth %s of the time.",
                               .coverage$combined))
-      else "          SE counts variation among RAD loci only.",
-      .report_text$diversity_legend_snp[2L])
+      else "          SE counts variation among RAD loci only.")
   }
   list(table = tab, legend = legend, combined = combined)
 }
@@ -835,8 +849,8 @@ print.summary.raddiv_diversity <- function(x, ...) {
   }
 
   .section("TAKE FROM THIS RUN:  ",
-           if (st$is_haplotype) "Fis, Ar, privAr."
-           else paste0("Ho, He, pct_poly", if (!is.null(x$autosomal)) ", Ho_autosomal, He_autosomal", "."))
+           if (st$is_haplotype) "Fis, Ar, rarefied private alleles."
+           else paste0("Ho, He", if (!is.null(x$autosomal)) ", Ho_autosomal, He_autosomal", "."))
   .legend(if (st$is_haplotype) .report_text$diversity_take_haplotype_short
           else .report_text$diversity_take_snp_short)
 
@@ -924,22 +938,29 @@ print.summary.raddiv_diversity <- function(x, ...) {
        else .report_text$diversity_se_loci_only)
   cat("\n")
 
-  .print_blocks(.stat_blocks(.round_diversity_table(x$richness, "richness"),
-                             c("Ar", "privAr", "priv_total")),
-                list(Ar = bnote("Ar"), privAr = bnote("privAr"),
-                     priv_total = "priv_total is privAr added up over loci."))
+  ## Rarefied private alleles are reported as the count priv_total; privAr
+  ## (the same per locus) stays in x$richness only. privAr_n, the loci the count adds up
+  ## over, goes into the priv_total block.
+  rich_blocks <- .stat_blocks(.round_diversity_table(x$richness, "richness"),
+                              c("Ar", "priv_total"))
+  if (!is.null(rich_blocks$priv_total))
+    rich_blocks$priv_total <- cbind(rich_blocks$priv_total[1L],
+                                    privAr_n = x$richness$privAr_n,
+                                    rich_blocks$priv_total[-1L])
+  .print_blocks(rich_blocks, list(Ar = bnote("Ar"), priv_total = bnote("priv_total")))
   note(sprintf(.report_text$diversity_ar_n_columns, .big(n_used)))
   if (min(x$richness$privAr_n) < 0.5 * n_used)
-    note(sprintf("WARNING: privAr_n is below 50%% of loci for at least one population --"),
-         "its rarefied private richness rests on a minority of loci. Consider a",
-         sprintf("smaller g (rarefaction target), currently %d gene copies.", st$g))
+    note("WARNING: rarefied private alleles are added up over under 50% of the loci",
+         "(privAr_n). Consider a smaller g (rarefaction target), currently",
+         sprintf("%d gene copies.", st$g))
   if (.ar_records_uneven(x$richness))
     note("NOTE: Ar_n differs by more than 10% between populations. Each population's Ar is",
          "averaged over the records where it has >= g gene copies, so populations are",
          "compared over partly different loci. A smaller g, or Stacks' -p equal to the",
          "number of populations, evens this out.")
-  note("Ar and privAr are PER LOCUS (the HP-RARE / ADZE convention).",
-       "priv_total is the sum over the privAr_n loci. Private means absent from",
+  note("Ar is PER LOCUS (the HP-RARE / ADZE convention). priv_total, the rarefied",
+       "private alleles, is the per-locus value (privAr) added up over the privAr_n",
+       "loci, so it depends on how many loci there are. Private means absent from",
        if (st$n_pops == 2L) "the other population, so it is not comparable to a dataset with a"
        else sprintf("all %d other populations, so it is not comparable to a dataset with a",
                     st$n_pops - 1L),
@@ -1143,8 +1164,9 @@ print.summary.raddiv_diversity <- function(x, ...) {
 ## WHY NOT STACKS' Variant_Sites. It also counts SNPs removed after Stacks.
 ## Multiplying by it treats every removed SNP as if it had the average He of
 ## the ones kept. After a MAC or MAF filter the removed SNPs had much lower He,
-## so that inflated per-site He (+41% after filter_mac(3) in a simulation with
-## 20 diploids). Using the data's own count, removed SNPs simply add nothing,
+## so that inflates per-site He: +41% after filter_mac(3) with 20 diploids
+## under a neutral site-frequency spectrum, where the filter removes 36.5% of
+## the SNPs but only 10.3% of the diversity (vignette("rationale"), section 1). Using the data's own count, removed SNPs simply add nothing,
 ## which is the same loss Stacks' own --min-mac causes.
 ##
 ## The notes (warnings) cover the cases where `sites` may no longer match the

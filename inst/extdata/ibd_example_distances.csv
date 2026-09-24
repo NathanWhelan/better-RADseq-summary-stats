@@ -1,0 +1,7 @@
+,site1,site2,site3,site4,site5,site6
+site1,0,15,27,48,60,85
+site2,,0,12,33,45,70
+site3,,,0,21,33,58
+site4,,,,0,12,37
+site5,,,,,0,25
+site6,,,,,,0

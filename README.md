@@ -20,7 +20,7 @@ Routine RAD-seq summaries often get three things wrong:
    Nei & Chesser's (1983) estimator, which is unbiased at any F<sub>IS</sub>,
    and F<sub>IS</sub> = 1 − ΣH<sub>o</sub>/ΣH<sub>e</sub> over loci (a ratio of
    sums).
-2. **One package to generate useful statistics with clear methods.** Population genetics has a history of the same, or similar, terms being conflated (e.g., F<sub>IS</sub> is calculated differently by STACKS than other approaches). Sometimes, it can be unclear what method or formula is being used to calculate a metric. This package prioritizes calculating the most robust metrics for making conclusions from RADseq data. This package includes methods that have previously not previously been available in a single package.
+2. **One package to generate useful statistics with clear methods.** Population genetics has a history of the same, or similar, terms being conflated (e.g., F<sub>IS</sub> is calculated differently by STACKS than other approaches). Sometimes, it can be unclear what method or formula is being used to calculate a metric. This package prioritizes calculating the most robust metrics for making conclusions from RADseq data. This package includes methods that have previously not been available in a single package.
 
 4. **Uncertainty.** SNPs on one RAD tag are linked, so every standard error
    resamples whole RAD loci, never single SNPs. The standard errors the

@@ -7,12 +7,21 @@ repository.
 ## What the package does
 
 * `diversity_stats()`: Ho, He (Nei & Chesser 1983), FIS as a ratio of sums,
-  rarefied allelic richness and rarefied private alleles, and Ho and He per
-  sequenced site. Standard errors over RAD loci and, by default, over individuals
-  (`_se_combined`, the one to report for Ho, He and FIS).
+  rarefied allelic richness, private alleles (haplotype VCF) and private SNPs
+  (SNP VCF), and Ho and He per sequenced site. Standard errors over RAD loci
+  and, by default, over individuals (`_se_combined`, the one to report for Ho,
+  He and FIS). Private alleles come as two counts: rarefied (`priv_total`,
+  with SE; Kalinowski 2004) and absolute (`priv_absolute`, Stacks' rule, so
+  on a SNP VCF it matches Stacks' `Private` column). `summary(x, PA_count =)`
+  shows `"rarefied"` (the default), `"absolute"` or `"both"`. The rarefied
+  count is often higher than Stacks': an allele carried by a copy or two in
+  another population is often missing from `g` copies there, so it counts as
+  partly private (see `?diversity_stats`).
 * `diversity_table()`: the SNP and haplotype results as one table for a
   manuscript, with a caption that says where each column came from and which
-  standard error it holds.
+  standard error it holds. `private = "snps"`, `"alleles"` or `"both"` and
+  `PA_count = "rarefied"`, `"absolute"` or `"both"` choose the private-allele
+  columns.
 * `het_between_pops()`: do populations differ in heterozygosity or in
   inbreeding? One value per individual, and a test that counts both
   individuals and RAD loci (3–7.5% false positives in simulation, where

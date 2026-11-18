@@ -51,8 +51,8 @@ popmap   <- system.file("extdata", "example_popmap.tsv", package = "RADdiversity
 sumstats <- system.file("extdata", "example.sumstats_summary.tsv", package = "RADdiversity")
 
 set.seed(2024)                                                       # reproducible intervals
-div_haps <- diversity_stats(haps, popmap, g = 16)                    # Fis, Ar, rarefied private alleles
-div_snps <- diversity_stats(snps, popmap, g = 16, sites = sumstats)  # Ho, He, per-site values
+div_haps <- diversity_stats(haps, popmap, g = 16)                    # Fis, Ar, private alleles
+div_snps <- diversity_stats(snps, popmap, g = 16, sites = sumstats)  # Ho, He, per-site values, private SNPs
 summary(div_haps)                     # each estimate (SE), what to take, checks
 diversity_table(div_snps, div_haps)   # one table for your paper, with a caption
 
@@ -126,6 +126,16 @@ Two names that may not be obvious:
   (`priv_total` in the results; `privAr` is the same per locus). It is an
   expected value, so it need not be a whole number. It grows with the number
   of loci, so compare it only between populations analyzed together.
+  The haplotype VCF gives private alleles (haplotypes); the SNP VCF gives
+  private SNPs.
+* **absolute private alleles**: the alleles no individual of another
+  population carries, counting every individual (`priv_absolute`). This is
+  Stacks' rule, so on the SNP VCF it should match Stacks' `Private` column.
+  It grows with sample size, so compare populations with the rarefied count.
+  The rarefied count is often higher than Stacks': an allele carried by a copy
+  or two in another population is often missing from `g` copies there, so it
+  counts as partly private. A MAF filter makes the gap bigger. Show either
+  count, or both, with `summary(x, PA_count = "both")`.
 
 **From the shell.** Scripts installed with the package run the same analyses:
 
@@ -147,8 +157,12 @@ table2 <- summary(dif)$tables$results             # FST (SE), D (SE) and beta fo
 ```
 
 `table1` has one row per population: `n`, `Ho (SE)`, `He (SE)`, the per-site
-values (if you gave `sites`), `Fis (SE)`, `Ar (SE)` and
-`rarefied private alleles (SE)`.
+values (if you gave `sites`), `rarefied private SNPs (SE)`, `Fis (SE)`,
+`Ar (SE)` and `rarefied private alleles (SE)`. Two flags choose the private
+columns: `private = "snps"`, `"alleles"` or `"both"` (the default), and
+`PA_count = "rarefied"` (the default), `"absolute"` or `"both"`. For example,
+`diversity_table(div_snps, div_haps, private = "alleles", PA_count = "both")`
+shows only private alleles, rarefied and absolute side by side.
 It takes each column from the right VCF, and shows the one standard error the
 package's simulations found most accurate. Printing it also gives a caption:
 which VCF each column came from, the value of `g`, and which standard error
@@ -269,8 +283,9 @@ With `--vcf`, Stacks' `populations` writes two VCFs: one record per SNP
 | statistic | file | why |
 |---|---|---|
 | H<sub>o</sub>, H<sub>e</sub>, per-site values | `.snps` | a per-SNP value means the same in every study |
+| private SNPs (rarefied and absolute) | `.snps` | SNP alleles, the unit of Stacks' `Private` column |
 | F<sub>IS</sub> | `.haps` | a ratio, so the scale cancels; multi-allelic loci are more precise |
-| allelic richness, rarefied private alleles | `.haps` | on a SNP, richness can only be 1 or 2 |
+| allelic richness, private alleles (rarefied and absolute) | `.haps` | on a SNP, richness can only be 1 or 2 |
 | tests between populations | either; say which | |
 
 Haplotype allelic richness and rarefied private alleles depend on how many SNPs
@@ -290,7 +305,7 @@ genome's RAD loci, and you caught some of the population's individuals.
 * `_se_combined` puts both together: `sqrt(_se^2 + _se_ind^2)`.
 
 **Report `_se_combined` for H<sub>o</sub>, H<sub>e</sub>, F<sub>IS</sub> and
-the per-site values, and `_se` for A<sub>r</sub> and rarefied private alleles.** The
+the per-site values, and `_se` for A<sub>r</sub> and rarefied private alleles and SNPs.** The
 short `summary()` and `diversity_table()` show exactly these. In simulations
 with a known truth (2 × 15 individuals, 1,000 loci, new loci and individuals
 in every repeat), 95% intervals held the true value this often (95% is

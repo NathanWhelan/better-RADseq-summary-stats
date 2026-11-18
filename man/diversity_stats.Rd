@@ -25,7 +25,7 @@ diversity_stats(
 
 \method{print}{raddiv_diversity}(x, ...)
 
-\method{summary}{raddiv_diversity}(object, details = FALSE, ...)
+\method{summary}{raddiv_diversity}(object, details = FALSE, PA_count = "rarefied", ...)
 }
 \arguments{
 \item{vcf}{Path to \code{populations.snps.vcf} or \code{populations.haps.vcf}
@@ -154,6 +154,14 @@ checks. \code{TRUE} prints the full report: every uncertainty column, the
 estimators, the filters and every explanation. Either way, the object
 returned holds the tables the short view prints, in \verb{$tables} (see "Tables
 for a paper").}
+
+\item{PA_count}{For \code{summary()}: which count of private alleles (on a SNP
+VCF, private SNPs) the results table shows. \code{"rarefied"} (the default)
+shows \code{priv_total} with its SE, the expected number in \code{g} gene copies:
+the fair way to compare populations, because the absolute count grows
+with sample size. \code{"absolute"} shows \code{priv_absolute}, the count Stacks
+reports (no SE). \code{"both"} shows the two side by side. See "Private alleles
+and Stacks' \code{Private} column".}
 }
 \value{
 An object of class \code{raddiv_diversity}, a list of:
@@ -166,9 +174,14 @@ default), also \verb{_se_ind} and \verb{_se_combined} for Ho, He and FIS.}
 private alleles (the expected number of private alleles in \code{g} gene
 copies at each locus, added up over the \code{privAr_n} loci typed at \code{g}
 copies in every population; this is the number summaries and tables
-report); and \code{privAr}, the same per locus. Each has \verb{_se}, \verb{_lo} and
-\verb{_hi}; \code{priv_total}'s are \code{privAr}'s times \code{privAr_n}. \code{Ar_n} and
-\code{privAr_n} count the loci each rests on.}
+report by default); and \code{privAr}, the same per locus. Each has \verb{_se},
+\verb{_lo} and \verb{_hi}; \code{priv_total}'s are \code{privAr}'s times \code{privAr_n}.
+\code{Ar_n} and \code{privAr_n} count the loci each rests on. \code{priv_absolute}
+is the absolute count: alleles no individual of another population
+carries, counting every individual (Stacks' rule; no SE). On a SNP VCF
+these are private SNPs, and \code{priv_absolute} should equal the \code{Private}
+column of Stacks' \code{populations.sumstats_summary.tsv}. It counts
+every record in the VCF, whatever \code{min_n} and \code{complete_case} are.}
 \item{autosomal}{Per-sequenced-site Ho/He (\code{Ho_autosomal},
 \code{He_autosomal}), with the \code{sites_used} and \code{variant_records} each
 population was scaled by, and the same uncertainty columns as Ho and
@@ -254,8 +267,8 @@ Whole RAD loci, not single SNPs, are resampled, because SNPs on one RAD
 locus are inherited together.
 
 \strong{Which to report.} For \strong{Ho, He and FIS}, report \verb{_se_combined}. For
-\strong{Ar and rarefied private alleles} (\code{priv_total}), report \verb{_se} (or \verb{_lo},
-\verb{_hi}). The per-site Ho and He
+\strong{Ar and rarefied private alleles or SNPs} (\code{priv_total}), report \verb{_se} (or \verb{_lo},
+\verb{_hi}). The absolute count (\code{priv_absolute}) has no SE. The per-site Ho and He
 (\code{Ho_autosomal}, \code{He_autosomal}) follow the same rule for Ho and He: report
 \code{Ho_autosomal_se_combined} and \code{He_autosomal_se_combined}. The short
 \code{summary()} shows only these recommended standard errors. This rule comes from
@@ -283,14 +296,50 @@ themselves; screen with \code{\link[=kinship_check]{kinship_check()}}), filterin
 dropout, and linkage between separate RAD loci.
 }
 
+\section{Private alleles and Stacks' \code{Private} column}{
+
+A SNP VCF gives \strong{private SNPs} (SNP alleles found in only one
+population); a haplotype VCF gives \strong{private alleles} (haplotypes found
+in only one population). Each comes as two counts:
+\itemize{
+\item \strong{rarefied} (\code{priv_total}, with an SE): every population is cut to \code{g}
+gene copies at each locus, and the count is the expected number of alleles
+found in only one of them (Kalinowski 2004; Szpiech et al. 2008). This is
+the fair way to compare populations, and the default in summaries and
+tables.
+\item \strong{absolute} (\code{priv_absolute}, no SE): alleles no individual of another
+population carries, counting every individual. This is Stacks' rule
+(Rochette et al. 2019): on a SNP VCF it should equal Stacks' \code{Private}
+column. It counts every record in the VCF, whatever \code{min_n} and
+\code{complete_case} are, just as Stacks does. It grows with sample size, so
+it favours the populations with more individuals typed.
+}
+
+\strong{Why the rarefied count is often higher.} Say population A carries an
+allele, and population B carries it in 1 of its 36 gene copies. Stacks sees
+B's copy, so the allele is not private: it counts 0. Rarefaction to g = 20
+copies leaves B's one copy out 44\% of the time, and then the allele is
+private to A: it counts up to 0.44. Added up over thousands of loci, these
+partial counts can exceed the absolute count, most of all for small
+populations and small \code{g}. A MAF or MAC filter makes the gap bigger: it
+removes most truly private alleles (in one population of many, a private
+allele is rare overall) but keeps the nearly private ones. On the example
+data (\code{inst/extdata}, 15 and 10 individuals) the absolute private SNPs are
+244 and 43; rarefied to g = 16 they are 217 and 70.
+
+Choose which to show with \code{summary(x, PA_count = "rarefied")}
+(\code{"absolute"}, \code{"both"}) and \code{diversity_table(snps, haps, private = , PA_count = )}.
+}
+
 \section{Tables for a paper}{
 
 Put in the table exactly what the short \code{summary()} reports, and nothing
 more. \code{\link[=diversity_table]{diversity_table()}} does this: \code{diversity_table(res_snps, res_haps)}
 joins the SNP and haplotype runs by population and prints a caption to go
 with the table. \code{summary(x)$tables} holds the same cells for one run:
-\code{results} (Ho and He for a SNP VCF; FIS, Ar and rarefied private alleles for
-a haplotype VCF) and, for a SNP VCF run with \code{sites}, \code{per_site}.
+\code{results} (Ho, He and private SNPs for a SNP VCF; FIS, Ar and private
+alleles for a haplotype VCF) and, for a SNP VCF run with \code{sites},
+\code{per_site}.
 
 The other columns (other SEs and intervals, \code{pct_poly}, \code{privAr}, the counts
 \code{Ar_n}, \code{privAr_n} and \code{sites_used}) are in the result tables and the
@@ -327,6 +376,9 @@ res_snps$autosomal
 # this run, and the checks.
 summary(res_snps)
 
+# Private SNPs: the rarefied and the absolute (Stacks) count side by side.
+summary(res_snps, PA_count = "both")
+
 # The full report, with every uncertainty column and notes on each number:
 summary(res_snps, details = TRUE)
 
@@ -356,6 +408,11 @@ and hierarchical sampling designs. \emph{Conservation Genetics} 5:539-543.
 Szpiech, Z.A., Jakobsson, M. & Rosenberg, N.A. (2008) ADZE: a rarefaction
 approach for counting alleles private to combinations of populations.
 \emph{Bioinformatics} 24:2498-2504.
+
+Rochette, N.C., Rivera-Colon, A.G. & Catchen, J.M. (2019) Stacks 2:
+analytical methods for paired-end sequencing improve RADseq-based
+population genomics. \emph{Molecular Ecology} 28:4737-4754.
+\doi{10.1111/mec.15253} (\code{priv_absolute}: Stacks' rule for private alleles.)
 
 Schmidt, T.L., Jasper, M.-E., Weeks, A.R. & Hoffmann, A.A. (2021) Unbiased
 population heterozygosity estimates from genome-wide sequence data.

@@ -28,27 +28,48 @@
 
   ## ---- summary() short views, diversity_stats() -------------------------------
 
-  ## What each column of the short RESULTS table is. {g} is the rarefaction
-  ## size and {loci} says which loci the rarefied private alleles are added up
-  ## over.
+  ## What each column of the short RESULTS table is. One entry per column,
+  ## printed by .legend_entries() (key, then wrapped text). {g} is the
+  ## rarefaction size and {loci} says which loci (or SNPs) the rarefied
+  ## private alleles are added up over.
   diversity_legend_snp = c(
-    "Ho, He    observed and expected heterozygosity, averaged over SNPs."),
-  ## One entry per column, printed by .legend_entries() (key, then wrapped text).
+    "Ho, He" = "mean observed and expected heterozygosity over SNPs."),
   diversity_legend_hap = c(
     Fis = "inbreeding: 0 = random mating; above 0 = fewer heterozygotes than expected.",
-    Ar = "allelic richness: alleles per locus, counted in g = {g} gene copies and averaged over loci.",
+    Ar = "allelic richness: alleles per locus, counted in g = {g} gene copies and averaged over loci."),
+  ## The private-allele columns, chosen with summary(x, PA_count = ...). A SNP
+  ## VCF gives private SNPs, a haplotype VCF private alleles.
+  diversity_legend_private = c(
     "rarefied private alleles" = paste(
       "the expected number of alleles found only in this population, when every",
       "population is cut to g = {g} gene copies at each locus, added up over {loci}.",
-      "It is an expected value, so it need not be a whole number.")),
+      "It is an expected value, so it need not be a whole number."),
+    "absolute private alleles" = paste(
+      "alleles found only in this population, counting every individual (Stacks'",
+      "rule). Bigger samples find more, so compare populations with the rarefied",
+      "value."),
+    "rarefied private SNPs" = paste(
+      "the expected number of SNP alleles found only in this population, when every",
+      "population is cut to g = {g} gene copies at each SNP, added up over {loci}.",
+      "It is an expected value, so it need not be a whole number."),
+    "absolute private SNPs" = paste(
+      "SNP alleles found only in this population, counting every individual",
+      "(Stacks' rule: its Private column). Bigger samples find more, so compare",
+      "populations with the rarefied value.")),
+  ## Under the table when both counts are shown.
+  diversity_legend_private_both = c(
+    "The rarefied value is often higher: an allele carried by a copy or two",
+    "elsewhere is often missing from g copies there, so it counts as partly",
+    "private."),
 
   diversity_take_snp_short = c(
-    "Get Fis, Ar and rarefied private alleles from the haplotype VCF: on SNPs,",
-    "Ar cannot pass 2. Never compare Ho or He between the SNP VCF and the",
-    "haplotype VCF."),
+    "Get Fis, Ar and private alleles from the haplotype VCF: on SNPs, Ar cannot",
+    "pass 2. Never compare Ho or He between the SNP VCF and the haplotype VCF.",
+    "Private SNPs and private alleles count different things: report each under",
+    "its own name."),
   diversity_take_haplotype_short = c(
-    "Get Ho and He from the SNP VCF; haplotype Ho and He are not comparable.",
-    "Compare Ar and rarefied private alleles only among populations analyzed",
+    "Get Ho, He and private SNPs from the SNP VCF; haplotype Ho and He are not",
+    "comparable. Compare Ar and private alleles only among populations analyzed",
     "together (same run, filters and g)."),
 
   ## ---- diversity_stats() ----------------------------------------------------
@@ -109,8 +130,8 @@
             "30-94%. Fis_se_ind: 92-93%."),
     Ar = c("Report Ar_se (loci only): 93-94%. Ar_lo to Ar_hi: 92-93%. No individual SE is",
            "computed for Ar: it was too wide (1.4 to 1.5 times the true SE)."),
-    priv_total = c("priv_total is the rarefied private alleles of the results table: private",
-                   "alleles per locus (privAr, in x$richness) added up over the privAr_n loci.",
+    priv_total = c("priv_total is the rarefied count of the results table: private alleles",
+                   "per locus (privAr, in x$richness) added up over the privAr_n loci.",
                    "Report priv_total_se (loci only): the per-locus SE times privAr_n. In",
                    "simulations the per-locus SE held the truth 92-93% of the time; an individual",
                    "SE was far too small (31-36%)."),
@@ -125,6 +146,17 @@
     Ar = c("Report Ar_se (loci only): 93-94%. Ar_lo to Ar_hi: 92-93%."),
     priv_total = c("Report priv_total_se (loci only): the per-locus SE times privAr_n. In",
                    "simulations the per-locus SE held the truth 92-93% of the time.")),
+
+  ## Under the richness blocks of the full report.
+  diversity_private_absolute = c(
+    "priv_absolute is the absolute count: alleles that no individual of another",
+    "population carries, counting every individual. This is Stacks' rule, so on a",
+    "SNP VCF it should match the Private column of populations.sumstats_summary.tsv",
+    "(same popmap, nothing filtered after Stacks). priv_total is often higher, most",
+    "of all in small samples and after a MAF filter: an allele carried by a copy or",
+    "two in another population is often missing from g copies there, so it counts",
+    "as partly private. Compare populations with priv_total: priv_absolute grows",
+    "with sample size."),
 
   diversity_ar_capped = c(
     "NOTE: Ar is capped at 2 because these are biallelic SNPs, so rarefaction",
@@ -147,7 +179,21 @@
     "filtered by minor allele count (a common RAD-seq step). State the threshold in",
     "your methods. Removing rare alleles lowers He per sequenced site, pct_poly, Ar",
     "and rarefied private alleles, and lowers them more in smaller samples. So",
-    "compare values only between datasets filtered the same way."),
+    "compare values only between datasets filtered the same way. It removes most",
+    "truly private alleles (in one population of many, a private allele is rare",
+    "overall)."),
+
+  ## The advice that follows diversity_looks_mac_filtered, in the full report
+  ## and the short summary's check (.mac_filter_advice() picks one). `in_r`
+  ## when H$filter_log shows filter_mac() or filter_maf(); %s is that step,
+  ## e.g. "filter_mac(min_mac = 3)". `elsewhere` when the log shows neither,
+  ## so the filter was applied before the VCF was read.
+  diversity_mac_advice = list(
+    in_r = paste("For private alleles and private SNPs, run diversity_stats() on the data",
+                 "before %s. If Stacks also used --min-maf or --min-mac, re-run it without them."),
+    elsewhere = paste("For private alleles and private SNPs, remove the filter where it was",
+                      "applied (Stacks populations --min-maf or --min-mac, vcftools, or another",
+                      "tool) and run again.")),
 
   diversity_prior_filters = c(
     "These describe the popmap's individuals as given; samples in the VCF but not",
@@ -201,13 +247,13 @@
     "populations.sumstats_summary.tsv) to get the autosomal value."),
 
   diversity_take_haplotype = c(
-    "TAKE FROM THIS RUN:  Fis, Ar, rarefied private alleles.",
+    "TAKE FROM THIS RUN:  Fis, Ar, private alleles.",
     "NOT Ho or He. A haplotype locus's gene diversity has a ceiling that rises",
     "with the number of SNPs in the tag, so it changes with read length, enzyme",
     "and SNP calling and cannot be compared across studies. Run",
     "populations.snps.vcf for those. Fis is a ratio, so the scale cancels: that",
     "is why it belongs here.",
-    "Ar and rarefied private alleles depend on the number of SNPs per locus too",
+    "Ar and private alleles depend on the number of SNPs per locus too",
     "(more SNPs, more possible haplotypes). Compare them only among populations",
     "analyzed together (same run, filters and g), never with other studies. Which",
     "population is richer is reliable; how much richer also depends on SNPs per",
@@ -215,10 +261,11 @@
     "dropping populations from the Stacks run changes them."),
 
   diversity_take_snp = c(
-    "TAKE FROM THIS RUN:  Ho, He, Ho_autosomal, He_autosomal.",
-    "Run populations.haps.vcf for Fis, Ar and rarefied private alleles: on",
-    "biallelic SNPs, rarefied richness cannot pass 2, and Fis is more precise from",
-    "multi-allelic loci."),
+    "TAKE FROM THIS RUN:  Ho, He, Ho_autosomal, He_autosomal, private SNPs.",
+    "Run populations.haps.vcf for Fis, Ar and private alleles: on biallelic SNPs,",
+    "rarefied richness cannot pass 2, and Fis is more precise from multi-allelic",
+    "loci. Private SNPs and private alleles count different things: report each",
+    "under its own name."),
 
   diversity_take_common = c(
     "Fis is comparable between the two files. Ho and He are NOT: haplotype Ho",

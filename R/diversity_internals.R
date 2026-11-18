@@ -173,6 +173,34 @@
   Reduce(`*`, lapply(p_drawn[-p], function(P) 1 - P))
 }
 
+## Not exported. ABSOLUTE private alleles per population, by Stacks' rule: at a
+## record where at least two populations have a genotyped individual, an
+## allele carried by exactly one population is private to it. Every genotyped
+## individual counts and nothing is rarefied, so on a SNP VCF this is the
+## `Private` column of Stacks' populations.sumstats_summary.tsv (same popmap,
+## nothing filtered after Stacks). The rule was confirmed by reading Stacks
+## 2.68 (src/PopSum.cc, LocPopSum::tally_metapop()); no code was taken from it
+## (Stacks is GPL-3).
+##
+## Why it differs from the rarefied count (priv_total): an allele carried by a
+## copy or two in another population is never private here, but is often
+## missing from that population's g copies, so the rarefied count gives it
+## part of a private allele.
+##   counts  named list, one records x alleles count matrix per population
+##           (.pop_counts()), all with the same allele columns
+## Returns a named integer vector, one count per population.
+.private_absolute <- function(counts) {
+  carried <- lapply(counts, function(m) m > 0L)                 # records x alleles
+  n_carrying <- Reduce(`+`, carried)                            # populations carrying each allele
+  n_with_data <- Reduce(`+`, lapply(counts, function(m) rowSums(m) > 0L))
+  shared <- n_with_data >= 2L                                   # records with 2+ populations typed
+  ## One mask for all populations: alleles carried by exactly one population,
+  ## at records where 2+ populations are typed. (Built once, not once per
+  ## population: a SNP VCF can have millions of records.)
+  private_here <- n_carrying == 1L & shared                     # `shared` recycles down columns
+  vapply(carried, function(m) sum(m & private_here), integer(1))
+}
+
 ## Not exported. .one_pop_record_stats() for every population, returned as
 ## records x populations matrices (Ho, Hs, Hp, Ar, Pr, n_present).
 ## `zero_low_n_counts = TRUE` sets a population's counts to zero wherever it
@@ -518,12 +546,14 @@
 ##   ci              statistics x 2 matrix (bootstrap interval; NA if none)
 ##   se_ind          individual-jackknife SEs of Ho, He and FIS, or NULL
 ##   ar_n, pr_n      records with a defined Ar / privAr, per population
+##   private_absolute  absolute private alleles per population
+##                   (.private_absolute()), named by population
 ##   sites, variant_records, ok_sites
 ##                   per population: sequenced sites, variant records with data
 ##                   there, and whether the sites value is usable
 .diversity_tables <- function(pop_names, pop_sizes, point, se_loci, ci, se_ind,
-                              ar_n, pr_n, sites, ok_sites, variant_records, is_haplotype,
-                              boot_matrix) {
+                              ar_n, pr_n, private_absolute, sites, ok_sites,
+                              variant_records, is_haplotype, boot_matrix) {
   value <- function(prefix) unname(point[paste0(prefix, pop_names)])
   se    <- function(prefix) unname(se_loci[paste0(prefix, pop_names)])
   lo    <- function(prefix) unname(ci[paste0(prefix, pop_names), 1])
@@ -541,6 +571,8 @@
   ## SE and interval are privAr's times privAr_n: the SE the simulations
   ## checked. (The resampled sum would also count how many loci pass g,
   ## which every population shares, and so be too wide for comparisons.)
+  ## priv_absolute, the absolute count (Stacks' rule), is a plain count of
+  ## the full sample and has no SE.
   richness <- data.frame(
     population = pop_names,
     Ar = value("Ar_"), Ar_se = se("Ar_"), Ar_n = as.integer(ar_n),
@@ -549,6 +581,7 @@
     privAr_lo = lo("Pr_"), privAr_hi = hi("Pr_"),
     priv_total = value("PrTot_"), priv_total_se = se("Pr_") * unname(pr_n),
     priv_total_lo = lo("Pr_") * unname(pr_n), priv_total_hi = hi("Pr_") * unname(pr_n),
+    priv_absolute = as.integer(unname(private_absolute[pop_names])),
     row.names = NULL)
 
   ## Individual-jackknife SEs, and the combined SE to report, go right after

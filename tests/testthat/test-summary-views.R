@@ -123,6 +123,7 @@ test_that(".print_compact() repeats the row label on every block when it has to 
 ## ---- diversity_stats() ------------------------------------------------------
 
 test_that("the short diversity summary is short, fits 80 columns and labels every estimate (SE)", {
+  est_se <- RADdiversity:::.est_se
   snps <- div_run("sim.allsnps.vcf.gz", sites = 1e6)
   haps <- div_run("sim.haps.vcf.gz")
   for (res in list(snps, haps)) {
@@ -136,15 +137,17 @@ test_that("the short diversity summary is short, fits 80 columns and labels ever
     expect_false(any(grepl("_lo|_hi|_se_ind|Ar_n|priv_total", out)))
   }
 
-  ## SNP VCF: Ho and He (and per-site values), each with the combined SE.
-  ## pct_poly is not in the primary table.
+  ## SNP VCF: Ho and He (and per-site values), each with the combined SE, and
+  ## the rarefied private SNPs with the locus SE. pct_poly is not in the
+  ## primary table.
   out <- lines_of(snps)
   header <- grep("^ *population +n ", out, value = TRUE)
-  expect_match(header, "Ho \\(SE\\) +He \\(SE\\)$")
-  expect_false(grepl("Fis|Ar|private|pct_poly", header))
+  expect_match(header, "Ho \\(SE\\) +He \\(SE\\) +rarefied private SNPs \\(SE\\)$")
+  expect_false(grepl("Fis|Ar|alleles|absolute|pct_poly", header))
+  expect_true(any(grepl(est_se(snps$richness$priv_total, snps$richness$priv_total_se)[1], out,
+                        fixed = TRUE)))
   expect_false(any(grepl("pct_poly", out)))
   pp <- snps$per_population
-  est_se <- RADdiversity:::.est_se
   expect_true(all(vapply(est_se(pp$Ho, pp$Ho_se_combined), function(cell) any(grepl(cell, out, fixed = TRUE)),
                          logical(1))))
   expect_true(all(vapply(est_se(pp$He, pp$He_se_combined), function(cell) any(grepl(cell, out, fixed = TRUE)),
@@ -224,8 +227,10 @@ test_that("print() keeps the population name on every block of a wide table", {
   res <- div_run("sim.allsnps.vcf.gz", sites = 1e6)
   old <- options(width = 80); on.exit(options(old), add = TRUE)
   out <- capture.output(print(res))
-  ## A SNP run does not print Ar and private alleles; the haplotype run does.
-  expect_false(any(grepl("^\\$richness", out)))
+  ## A SNP run prints only its private-SNP columns of $richness, never Ar;
+  ## the haplotype run prints all of it.
+  expect_true(any(grepl("^\\$richness \\(private SNP columns", out)))
+  expect_false(any(grepl("^ *population +Ar ", out)))
   hap_out <- capture.output(print(div_run("sim.haps.vcf.gz")))
   snp_out <- out
   for (tab in c("per_population", "richness", "autosomal")) {
@@ -576,7 +581,7 @@ test_that("summary(x)$tables holds what the short view prints, for all four func
   expect_named(summary(snps)$tables, c("results", "per_site"))
   expect_named(summary(haps)$tables, "results")
   expect_identical(names(summary(snps)$tables$results),
-                   c("population", "n", "Ho (SE)", "He (SE)"))
+                   c("population", "n", "Ho (SE)", "He (SE)", "rarefied private SNPs (SE)"))
   expect_identical(names(summary(snps)$tables$per_site),
                    c("population", "Ho_autosomal (SE)", "He_autosomal (SE)"))
   expect_identical(names(summary(haps)$tables$results),
@@ -646,14 +651,16 @@ test_that("diversity_table() holds exactly the columns the two default summaries
   expect_s3_class(table1, c("raddiv_table", "data.frame"))
   expect_identical(names(table1),
                    c("population", "n", "Ho (SE)", "He (SE)", "Ho_autosomal (SE)",
-                     "He_autosomal (SE)", "Fis (SE)", "Ar (SE)", "rarefied private alleles (SE)"))
+                     "He_autosomal (SE)", "rarefied private SNPs (SE)", "Fis (SE)", "Ar (SE)",
+                     "rarefied private alleles (SE)"))
   ## the same cells as the old recipe, in popmap order
   reference <- manuscript_table1(snps, haps)
   expect_equal(plain_df(table1)[names(reference)], reference, ignore_attr = TRUE)
   expect_identical(table1$population, snps$per_population$population)
   ## every cell is printed by the summary of the run it came from
   snp_out <- lines_of(snps); hap_out <- lines_of(haps)
-  for (col in c("Ho (SE)", "He (SE)", "Ho_autosomal (SE)", "He_autosomal (SE)"))
+  for (col in c("Ho (SE)", "He (SE)", "Ho_autosomal (SE)", "He_autosomal (SE)",
+                "rarefied private SNPs (SE)"))
     for (cell in table1[[col]]) expect_true(any(grepl(cell, snp_out, fixed = TRUE)), info = col)
   for (col in c("Fis (SE)", "Ar (SE)", "rarefied private alleles (SE)"))
     for (cell in table1[[col]]) expect_true(any(grepl(cell, hap_out, fixed = TRUE)), info = col)
@@ -662,11 +669,12 @@ test_that("diversity_table() holds exactly the columns the two default summaries
 
   ## without `sites` there are no per-site columns
   expect_identical(names(diversity_table(div_run("sim.allsnps.vcf.gz"), haps)),
-                   c("population", "n", "Ho (SE)", "He (SE)", "Fis (SE)", "Ar (SE)",
-                     "rarefied private alleles (SE)"))
+                   c("population", "n", "Ho (SE)", "He (SE)", "rarefied private SNPs (SE)",
+                     "Fis (SE)", "Ar (SE)", "rarefied private alleles (SE)"))
   ## one run alone works
   expect_identical(names(diversity_table(snps = snps)),
-                   c("population", "n", "Ho (SE)", "He (SE)", "Ho_autosomal (SE)", "He_autosomal (SE)"))
+                   c("population", "n", "Ho (SE)", "He (SE)", "Ho_autosomal (SE)", "He_autosomal (SE)",
+                     "rarefied private SNPs (SE)"))
   expect_identical(names(diversity_table(haps = haps)),
                    c("population", "n", "Fis (SE)", "Ar (SE)", "rarefied private alleles (SE)"))
 
@@ -698,18 +706,20 @@ test_that("diversity_table()'s caption says where each column came from and whic
   snps <- div_run("sim.allsnps.vcf.gz", sites = 1e6)
   haps <- div_run("sim.haps.vcf.gz")
   cap <- attr(diversity_table(snps, haps), "caption")
-  expect_match(cap, "per-site Ho and He are from the SNP VCF")
-  expect_match(cap, "Fis, Ar and rarefied private alleles are from the haplotype VCF")
+  expect_match(cap, "Ho, He, the per-site Ho and He, and private SNPs are from the SNP VCF")
+  expect_match(cap, "Fis, Ar and private alleles are from the haplotype VCF")
   expect_match(cap, sprintf("g = %d gene copies", haps$settings$g))
+  expect_match(cap, "Rarefied private SNPs are the expected number")
   expect_match(cap, "among RAD loci and among individuals")
-  expect_match(cap, "SEs for Ar and rarefied private alleles count variation among RAD loci only")
+  expect_match(cap, "SEs for rarefied private SNPs, Ar and rarefied private alleles count variation among RAD loci only")
+  expect_false(grepl("Absolute", cap))                            # the default is rarefied only
   ## the printed table ends with the caption
   out <- capture.output(print(diversity_table(snps, haps)))
   expect_true(any(out == "Caption:"))
   expect_false(any(grepl("^ *1 ", out)))                          # no row numbers
   ## without the individual SEs, the caption says loci only
   off <- attr(diversity_table(div_run("sim.allsnps.vcf.gz", se_individuals = FALSE)), "caption")
-  expect_match(off, "SEs for Ho and He count variation among RAD loci only")
+  expect_match(off, "SEs for Ho, He and rarefied private SNPs count variation among RAD loci only")
   expect_false(grepl("per-site", off))
 })
 

@@ -5,7 +5,12 @@
 \alias{print.raddiv_table}
 \title{A diversity table for a manuscript}
 \usage{
-diversity_table(snps = NULL, haps = NULL)
+diversity_table(
+  snps = NULL,
+  haps = NULL,
+  private = NULL,
+  PA_count = "rarefied"
+)
 
 \method{print}{raddiv_table}(x, ...)
 }
@@ -15,6 +20,13 @@ diversity_table(snps = NULL, haps = NULL)
 
 \item{haps}{The result of \code{\link[=diversity_stats]{diversity_stats()}} on the haplotype VCF
 (\code{populations.haps.vcf}). Optional.}
+
+\item{private}{Which private alleles to show: \code{"snps"} (private SNPs, from
+\code{snps}), \code{"alleles"} (private alleles, from \code{haps}) or \code{"both"}. Default:
+every kind the runs given hold, so \code{"both"} when both runs are given.}
+
+\item{PA_count}{Which count of each: \code{"rarefied"} (the default, with its
+SE), \code{"absolute"} (no SE) or \code{"both"}.}
 
 \item{x}{A \code{raddiv_table}, as returned by \code{diversity_table()}.}
 
@@ -37,13 +49,25 @@ exactly what the short \code{summary()} of each run shows: each statistic as
    column \tab from \tab SE \cr
    \code{Ho (SE)}, \code{He (SE)} \tab SNP VCF \tab RAD loci and individuals \cr
    \code{Ho_autosomal (SE)}, \code{He_autosomal (SE)} (per sequenced site; only with \code{sites}) \tab SNP VCF \tab RAD loci and individuals \cr
+   \verb{rarefied private SNPs (SE)} \tab SNP VCF \tab RAD loci only \cr
+   \verb{absolute private SNPs (no SE)} (only with \code{PA_count = "absolute"} or \code{"both"}) \tab SNP VCF \tab none: a count \cr
    \code{Fis (SE)} \tab haplotype VCF \tab RAD loci and individuals \cr
    \code{Ar (SE)}, \verb{rarefied private alleles (SE)} \tab haplotype VCF \tab RAD loci only \cr
+   \verb{absolute private alleles (no SE)} (only with \code{PA_count = "absolute"} or \code{"both"}) \tab haplotype VCF \tab none: a count \cr
 }
 
 
 With \code{se_individuals = FALSE} in \code{\link[=diversity_stats]{diversity_stats()}}, the SEs count RAD
 loci only, and the caption says so.
+
+\strong{Private SNPs and private alleles.} A private SNP allele (from the SNP
+VCF) and a private allele (a haplotype, from the haplotype VCF) count
+different things, so the table names each one. \code{private} picks which kinds
+are shown and \code{PA_count} which count: the rarefied count (the expected
+number in \code{g} gene copies, the fair comparison between populations), the
+absolute count (Stacks' rule: what Stacks' \code{Private} column reports), or
+both. The rarefied count is often higher than the absolute one; see
+"Private alleles and Stacks' \code{Private} column" in \code{\link[=diversity_stats]{diversity_stats()}}.
 
 Other columns (the other SEs and intervals, \code{pct_poly}, \code{privAr}, and the
 counts behind each value) stay in the results and the \code{outdir} files, for a
@@ -64,6 +88,8 @@ res_haps <- diversity_stats(haps, popmap, g = 4, nboot = 0, se_individuals = FAL
 table1 <- diversity_table(res_snps, res_haps)
 table1                        # the table, then its caption
 attr(table1, "caption")       # the caption on its own
+# Private alleles only, rarefied and absolute side by side:
+diversity_table(res_snps, res_haps, private = "alleles", PA_count = "both")
 out <- tempfile(fileext = ".csv")
 write.csv(table1, out, row.names = FALSE)
 }

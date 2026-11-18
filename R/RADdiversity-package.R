@@ -4,8 +4,8 @@
 #' `populations` output:
 #'
 #' * [diversity_stats()]: Ho, He (Nei & Chesser 1983), FIS as a ratio of sums,
-#'   rarefied allelic richness and rarefied private alleles, per-sequenced-site
-#'   Ho/He.
+#'   rarefied allelic richness, private alleles and private SNPs (rarefied,
+#'   and absolute as Stacks counts them), per-sequenced-site Ho/He.
 #' * [het_between_pops()]: do populations differ in heterozygosity? One value
 #'   per individual, and a test that counts both individuals and RAD loci.
 #' * [diversity_table()]: the SNP and haplotype results as one table for a

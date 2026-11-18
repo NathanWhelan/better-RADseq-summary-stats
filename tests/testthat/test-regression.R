@@ -42,7 +42,8 @@ expect_golden <- function(actual_file, golden_name) {
                          stringsAsFactors = FALSE)
   ## Columns added since the golden files were made are allowed (after the
   ## golden ones); every golden column must still be there, in order.
-  added_since <- c("F")
+  ## priv_absolute: the absolute private-allele count (Stacks' rule).
+  added_since <- c("F", "priv_absolute")
   expect_identical(intersect(names(a), names(g)), names(g), info = golden_name)
   expect_true(all(setdiff(names(a), names(g)) %in% added_since), info = golden_name)
   expect_identical(nrow(a), nrow(g), info = golden_name)

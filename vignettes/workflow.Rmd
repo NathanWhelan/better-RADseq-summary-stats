@@ -72,7 +72,10 @@ readLines(popmap, n = 3)
   *rarefied*: counted in the same number of gene copies (`g`) for every
   population. Allelic richness (Ar) is the number of alleles per locus.
   Rarefied private alleles are the expected number of alleles found in
-  only one population, added up over loci.
+  only one population, added up over loci. The haplotype VCF gives
+  private alleles (haplotypes), the SNP VCF private SNPs. Each also comes
+  as an *absolute* count, which uses every individual: Stacks' `Private`
+  column counts this way.
 - **Jackknife and bootstrap.** Both measure uncertainty by recomputing a
   statistic on altered versions of the data: the jackknife leaves out
   one unit at a time, the bootstrap resamples units with replacement.
@@ -124,7 +127,7 @@ knowing what each filter changes and reporting it:
 
 | filter applied before this package | what it changes | what to do |
 |------------------------|------------------------|------------------------|
-| minor allele count or frequency (`populations --min-mac`, `--min-maf`; `vcftools --mac/--maf`) | removes rare alleles: lowers He per sequenced site, % polymorphic, Ar and especially rarefied private alleles, by more in smaller samples; slightly raises FIS | report the threshold; compare these values only with datasets filtered the same way |
+| minor allele count or frequency (`populations --min-mac`, `--min-maf`; `vcftools --mac/--maf`) | removes rare alleles: lowers He per sequenced site, % polymorphic, Ar and especially rarefied private alleles, by more in smaller samples; slightly raises FIS | report the threshold; compare these values only with datasets filtered the same way; for private alleles and private SNPs, run `populations` again without `--min-maf`/`--min-mac` (a private allele in one population of many is rare overall, so the filter removes most of them) |
 | pooled missing-data filter (`-R`, `vcftools --max-missing`) | can leave one population with more missing data than another | check `fis_by_call_rate` (section 5) and the missingness check in `het_between_pops()` (section 7); or re-filter per population with `filter_call_rate(..., popmap = )` |
 | Hardy-Weinberg filter | removes loci with heterozygote deficits, pulling FIS toward 0 | report it; if possible, re-run without it for FIS |
 | maximum heterozygosity (`--max-obs-het`) | removes loci with many heterozygotes (often paralogs) | usually fine; report it |
@@ -301,7 +304,8 @@ div_haps
 
 `summary(div_haps)` is short: Fis, Ar and rarefied private alleles as
 `estimate (SE)` with the recommended standard error, what to take from
-this run, and a list of checks.
+this run, and a list of checks. `summary(div_haps, PA_count = "both")`
+adds the absolute count of private alleles (see the next section).
 `summary(div_haps, details = TRUE)` is the full report, with every
 uncertainty column (and `Ar_n`, `privAr_n`) and a note under each table. One
 table there checks for potential null alleles:
@@ -357,6 +361,41 @@ lower per-site He than north. `pct_poly` (percentage of SNPs polymorphic
 within the population) is lower in south too: after a bottleneck, many
 variants are lost altogether. `pct_poly` is not in the short summary or
 the manuscript table; it stays in `div_snps$per_population`.
+
+### Private SNPs, and Stacks' `Private` column
+
+The SNP run also gives private SNPs, in two counts:
+
+```{r}
+div_snps$richness[, c("population", "priv_total", "priv_total_se", "priv_absolute")]
+read_sumstats_summary(sumstats)$variant_positions[, c("population", "private")]
+```
+
+`priv_absolute` is the **absolute** count: SNP alleles that no individual
+of the other population carries, counting every individual. Stacks counts
+private alleles the same way, so on your own data it should match the
+`Private` column of Stacks' summary file. (The example summary file was
+written by the package's simulation script in Stacks' format.)
+`priv_total` is the **rarefied** count: both populations are cut to `g` =
+16 gene copies at each SNP. It is the one to compare populations with,
+because the absolute count grows with sample size.
+
+The two can differ a lot. Here the rarefied count is lower for north
+(`r round(div_snps$richness$priv_total[1])` vs
+`r div_snps$richness$priv_absolute[1]`) and higher for south
+(`r round(div_snps$richness$priv_total[2])` vs
+`r div_snps$richness$priv_absolute[2]`). Why:
+
+- North has 15 individuals (up to 30 gene copies), cut to 16. Some of
+  its rare private alleles are missing from the 16, so they count less
+  than 1.
+- A SNP allele that north carries in one or two copies is not private to
+  south in Stacks' count. But north's 16 copies often miss it, so in the
+  rarefied count it is partly private to south.
+
+A MAF filter makes the gap bigger, because it removes most truly private
+alleles but keeps the nearly private ones.
+`summary(div_snps, PA_count = "both")` shows the two counts side by side.
 
 ## 6. Which standard errors to report
 
@@ -654,6 +693,15 @@ table1
 `write.csv(table1, "table1_diversity.csv", row.names = FALSE)` writes it for
 Excel or Word, and `knitr::kable(table1)` prints it in R Markdown. Add the
 filters and thresholds you used to the caption.
+
+Two flags choose the private-allele columns. `private` picks the kind:
+`"snps"`, `"alleles"` or `"both"` (the default). `PA_count` picks the count:
+`"rarefied"` (the default), `"absolute"` or `"both"`. For example, private
+alleles only, rarefied and absolute side by side:
+
+```{r}
+diversity_table(div_snps, div_haps, private = "alleles", PA_count = "both")
+```
 
 The other analyses keep their tables in `summary(x)$tables`: FST (SE), D (SE)
 and beta for each pair in `summary(dif)$tables$results`; the combined test for

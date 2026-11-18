@@ -385,6 +385,46 @@ Resampling *individuals* instead would estimate something different when
 individuals are inbred, because the two copies inside one individual are
 not independent draws.
 
+**Why rarefied private alleles differ from Stacks' `Private`.** Stacks
+counts an allele as private only if no individual of another population
+carries it, using every individual (Stacks 2.68, `src/PopSum.cc`,
+`LocPopSum::tally_metapop()`). The package reports that count too, as
+`priv_absolute`, and calls it the *absolute* count. The rarefied count
+asks a different question: if every population were sampled at the same
+*g* gene copies, how many alleles would be found in only one of them?
+
+Take an allele that is common in population A and that population B
+carries in 1 of its 36 gene copies (no other population has it). Stacks
+sees B's copy, so the allele is not private: it counts 0. In 20 copies
+drawn from B's 36, that one copy is missing 16 times in 36 (44%), and
+then the allele is private to A. So in the rarefied count it is worth up
+to 0.44. The reverse also happens: a
+population's own rare private alleles can be missing from its *g* copies,
+and then they count less than 1. Added up over thousands of loci, the
+rarefied count can be well above or below the absolute one. It tends to
+be higher for small populations and for small *g*.
+
+Stacks' count is not the "true" number either: it also depends on how
+many individuals were sampled. With fewer individuals per population,
+fewer of the rare copies in other populations would be seen, and Stacks
+would report more private alleles. Only the rarefied count holds the
+sample size equal, so it is the one to compare populations with.
+
+A minor-allele-frequency (MAF) or count (MAC) filter widens the gap. In
+one population of many, a private allele is rare overall, so the filter
+removes most truly private alleles. It keeps the nearly private ones
+(common in one population, a copy or two elsewhere), which Stacks counts
+as 0 and rarefaction counts in part. For private alleles, use data with no
+MAF or MAC filter: no `--min-maf` or `--min-mac` in Stacks, and no
+`filter_maf()` or `filter_mac()` in R.
+
+On the example data (`inst/extdata`, 15 and 10 individuals), the absolute
+private SNPs are 244 (north) and 43 (south). Rarefied to *g* = 16 they are
+217 and 70: the larger population goes down and the smaller one goes up.
+`summary(x, PA_count = "both")` and
+`diversity_table(snps, haps, PA_count = "both")` show the two counts side
+by side.
+
 **Choosing *g*.** A locus counts for a population only where it has at
 least *g* gene copies, and for rarefied private alleles only where
 *every* population does. A large *g* therefore discards loci with
@@ -407,7 +447,8 @@ SNP VCF.
 | Ho, He, He per sequenced site | SNP VCF | a per-SNP value means the same in every study |
 | FIS | haplotype VCF | a ratio, so the scale cancels; more information per locus |
 | rarefied allelic richness | haplotype VCF | at a biallelic SNP it can only be 1 or 2; compare only populations analyzed together |
-| rarefied private alleles | haplotype VCF | the same, though it is informative on SNPs too |
+| private alleles (rarefied and absolute) | haplotype VCF | private haplotypes; compare only populations analyzed together |
+| private SNPs (rarefied and absolute) | SNP VCF | private SNP alleles, the unit of Stacks' `Private` column |
 | tests between populations | either; say which |  |
 
 ### FIS from haplotypes
@@ -1060,7 +1101,7 @@ allele frequencies *p*<sub>i</sub>, observed heterozygosity
 | FIS at a site | 1 − *H*<sub>o</sub>/(gene diversity) | `Fis`, using `Pi` | not reported per site |
 | FIS over sites | mean of per-site FIS (Stacks); 1 − Σ*H*<sub>o</sub>/Σ*H*<sub>s</sub> (RADdiversity) | `Fis` | `Fis` |
 | per-site diversity | mean over all sequenced sites | `Pi`, All-positions block | `He_autosomal`, `pi_nc` |
-| private alleles | raw count | `Private` | `priv_total` (rarefied count; `privAr` per locus) |
+| private alleles | absolute count: alleles no individual of another population carries | `Private` (SNPs) | `priv_absolute` (the same rule); `priv_total` (rarefied count; `privAr` per locus) |
 
 Stacks computes `Pi` at a site as the chance that two of the gene copies
 typed there differ, counted pair by pair: `Pi` = 1 − Σ
@@ -1089,6 +1130,7 @@ Checked against the named versions; later versions may differ.
 | FIS over loci | ratio of sums | ratio of sums (`basic.stats` overall) | not checked | mean of per-site ratios |
 | resampling unit | RAD loci, and individuals for `_se_ind` / `_se_combined` | loci as rows (`boot.ppfis`, `boot.ppfst`, `boot.vc`) | individuals (`divBasic`) | none; SD/√sites |
 | rarefied private alleles | yes, with SE | no | no | no |
+| absolute private alleles | yes (`priv_absolute`) | no | no | yes (`Private`, SNPs only) |
 | FST at records typed in one population | skipped | kept (`wc`) | — | skipped |
 | global D at records missing a population | skipped | — | — | — |
 | Hs inside Jost's D | Nei & Chesser | Nei & Chesser (`basic.stats` `Dest`) | not checked | not checked |
@@ -1117,6 +1159,7 @@ Checked against the named versions; later versions may differ.
 | D vs D/(1 − D) under isolation by distance | `inst/sims/ibd_d_transform.R` |
 | Mantel *r* and exact p-value match `vegan::mantel()` | package tests (`test-isolation-by-distance.R`) |
 | Stacks formulas and averaging | Stacks 2.68 source files named in the text; rows of published Stacks output in `diversity_core_selftest()` |
+| absolute private alleles follow Stacks' rule; rarefied equals absolute at complete data and *g* = all copies; the example-data counts 244 / 43 and 217 / 70 | package tests (`test-diversity-stats.R`) |
 
 ## References
 

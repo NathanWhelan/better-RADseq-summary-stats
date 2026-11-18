@@ -581,6 +581,23 @@ test_that("diversity_stats() notices data that were filtered by minor allele cou
   expect_equal(pf$min_allele_count, 3L)
   ## Described in summary() as information, not raised as a warning.
   expect_true(any(grepl("filtered by minor allele count", capture.output(summary(res)))))
+  ## The advice names where the filter was applied. Here filter_mac() did it
+  ## in R, so re-running Stacks alone would change nothing.
+  flat <- function(...) gsub("\\s+", " ", paste(capture.output(print(summary(...))), collapse = " "))
+  for (view in list(flat(res), flat(res, details = TRUE))) {
+    expect_match(view, "on the data before filter_mac(min_mac=1) and filter_mac(min_mac=3)",
+                 fixed = TRUE)
+    expect_false(grepl("remove the filter where it was applied", view))
+  }
+  ## With no filter_mac()/filter_maf() in the log, the filter came before the
+  ## VCF was read (Stacks, vcftools, ...).
+  no_log <- res
+  no_log$settings$filter_log <- NULL
+  expect_match(flat(no_log), "remove the filter where it was applied (Stacks populations",
+               fixed = TRUE)
+  expect_false(grepl("on the data before filter_ma", flat(no_log, details = TRUE)))
+  for (x in list(res, no_log))
+    expect_lte(max(nchar(capture.output(print(summary(x, details = TRUE))))), 80)
 
   ## A VCF sample outside the popmap (an outgroup) carrying singletons at
   ## every record does not hide the filter: the check uses popmap samples.
@@ -649,4 +666,157 @@ test_that("the rarefied private alleles' SE and interval are privAr's times priv
   expect_equal(r$priv_total_se, r$privAr_se * r$privAr_n)
   expect_equal(r$priv_total_lo, r$privAr_lo * r$privAr_n)
   expect_equal(r$priv_total_hi, r$privAr_hi * r$privAr_n)
+})
+
+## ---- Absolute private alleles (Stacks' rule) and PA_count ------------------
+
+test_that("the absolute private count follows Stacks' rule, record by record", {
+  ## Three populations, four records, two alleles each (gene-copy counts).
+  ##   1: only popA has data           -> nothing is private (one population typed)
+  ##   2: popA and popB fixed for different alleles, popC untyped -> one each
+  ##   3: allele 2 in popA, and 1 copy of it in popB -> not private
+  ##   4: allele 2 only in popC         -> private to popC
+  counts <- list(popA = rbind(c(2, 2), c(4, 0), c(1, 3), c(6, 0)),
+                 popB = rbind(c(0, 0), c(0, 4), c(5, 1), c(6, 0)),
+                 popC = rbind(c(0, 0), c(0, 0), c(6, 0), c(3, 3)))
+  expect_identical(RADdiversity:::.private_absolute(counts), c(popA = 1L, popB = 1L, popC = 1L))
+  ## Record 3 counts 0 here but more than 0 rarefied: popB's one copy is often
+  ## missing from 4 of its 6 copies (2 times in 6).
+  rarefied <- rare_private_all(rbind(c(1, 3), c(5, 1), c(6, 0)), g = 4)
+  expect_gt(rarefied[1], 0.3)
+})
+
+test_that("rarefied equals absolute with complete data, equal samples and g = all copies", {
+  ## With no copy left out, rarefaction draws each population's whole sample:
+  ## an allele is drawn for sure where present and never where absent.
+  set.seed(1)
+  draw <- function() t(replicate(60, tabulate(sample.int(3L, 8L, replace = TRUE,
+                                                         prob = c(0.7, 0.2, 0.1)), 3L)))
+  counts <- list(a = draw(), b = draw(), c = draw())
+  p_drawn <- lapply(counts, RADdiversity:::.p_sampled_mat, g = 8)
+  rarefied <- vapply(seq_along(p_drawn), function(p)
+    sum(p_drawn[[p]] * RADdiversity:::.absent_elsewhere(p_drawn, p)), numeric(1))
+  absolute <- RADdiversity:::.private_absolute(counts)
+  expect_gt(sum(absolute), 0)
+  expect_equal(rarefied, as.numeric(unname(absolute)))
+})
+
+test_that("on the example SNP VCF, priv_absolute is the Private column, and the docs' numbers hold", {
+  ## example.sumstats_summary.tsv was written by inst/sims/make_example_data.R
+  ## in the layout of Stacks' populations.sumstats_summary.tsv, so this checks
+  ## that the two counts agree; it is not a run of Stacks itself.
+  ex <- function(f) system.file("extdata", f, package = "RADdiversity")
+  snps <- diversity_stats(ex("example.snps.vcf.gz"), ex("example_popmap.tsv"), g = 16,
+                          nboot = 0, verbose = FALSE)
+  stacks <- read_sumstats_summary(ex("example.sumstats_summary.tsv"))$variant_positions
+  r <- snps$richness
+  expect_identical(r$priv_absolute, as.integer(stacks$private[match(r$population, stacks$population)]))
+  expect_identical(r$priv_absolute, c(244L, 43L))
+  ## Stacks' Private column does not depend on which records min_n or
+  ## complete_case keep, so priv_absolute must not either (here they keep
+  ## fewer records, and the count stays the same).
+  for (args in list(list(complete_case = TRUE), list(min_n = 10))) {
+    other <- do.call(diversity_stats, c(list(ex("example.snps.vcf.gz"), ex("example_popmap.tsv"),
+                                             g = 16, nboot = 0, se_individuals = FALSE,
+                                             verbose = FALSE), args))
+    expect_lt(other$settings$n_records_used, other$settings$n_records)
+    expect_identical(other$richness$priv_absolute, c(244L, 43L), label = names(args))
+  }
+  ## The numbers ?diversity_stats and vignette("rationale") quote: rarefied to
+  ## g = 16, the larger population goes down and the smaller one goes up.
+  expect_equal(round(r$priv_total), c(217, 70))
+  ## priv_absolute is written to the richness file, with no SE columns
+  expect_false(any(grepl("^priv_absolute_", names(r))))
+})
+
+test_that("summary(PA_count = ) picks the private-allele columns of the short view", {
+  ex <- function(f) system.file("extdata", f, package = "RADdiversity")
+  pm <- ex("example_popmap.tsv")
+  snps <- diversity_stats(ex("example.snps.vcf.gz"), pm, g = 16, nboot = 0, verbose = FALSE)
+  haps <- diversity_stats(ex("example.haps.vcf.gz"), pm, g = 16, nboot = 0, verbose = FALSE)
+  cols <- function(x, ...) names(summary(x, ...)$tables$results)
+  expect_identical(cols(snps), c("population", "n", "Ho (SE)", "He (SE)", "rarefied private SNPs (SE)"))
+  expect_identical(cols(snps, PA_count = "absolute"),
+                   c("population", "n", "Ho (SE)", "He (SE)", "absolute private SNPs (no SE)"))
+  expect_identical(cols(haps, PA_count = "both"),
+                   c("population", "n", "Fis (SE)", "Ar (SE)", "rarefied private alleles (SE)",
+                     "absolute private alleles (no SE)"))
+  expect_identical(summary(haps, PA_count = "absolute")$tables$results[["absolute private alleles (no SE)"]],
+                   haps$richness$priv_absolute)
+  expect_error(summary(snps, PA_count = "raw"), "`PA_count` must be one of")
+  expect_error(summary(snps, PA_count = "rare"), "`PA_count` must be one of")   # no abbreviations
+  ## every view fits 80 columns, names what it shows, and explains the gap when both are shown
+  for (x in list(snps, haps)) for (pa in c("rarefied", "absolute", "both")) {
+    out <- capture.output(print(summary(x, PA_count = pa)))
+    expect_lte(max(nchar(out)), 80, label = pa)
+    joined <- gsub("\\s+", " ", paste(out, collapse = " "))
+    expect_equal(grepl("The rarefied value is often higher", joined), pa == "both", info = pa)
+    expect_equal(grepl("Stacks' rule", joined), pa != "rarefied", info = pa)
+    ## the pointer to "both" names the count it would add
+    expect_equal(grepl("adds the absolute private count", joined), pa == "rarefied", info = pa)
+    expect_equal(grepl("adds the rarefied private count", joined), pa == "absolute", info = pa)
+  }
+  ## the full report shows the two counts side by side and says why they differ
+  full <- gsub("\\s+", " ", paste(capture.output(print(summary(snps, details = TRUE))), collapse = " "))
+  expect_match(full, "priv_absolute")
+  expect_match(full, "priv_absolute is the absolute count")
+  ## and, like the short views, fits 80 columns
+  for (x in list(snps, haps))
+    expect_lte(max(nchar(capture.output(print(summary(x, details = TRUE))))), 80)
+})
+
+test_that("diversity_table(private = , PA_count = ) picks the kinds and the counts", {
+  ex <- function(f) system.file("extdata", f, package = "RADdiversity")
+  pm <- ex("example_popmap.tsv")
+  snps <- diversity_stats(ex("example.snps.vcf.gz"), pm, g = 16, nboot = 0, verbose = FALSE)
+  haps <- diversity_stats(ex("example.haps.vcf.gz"), pm, g = 16, nboot = 0, verbose = FALSE)
+  private_cols <- function(...) grep("private", names(diversity_table(...)), value = TRUE)
+  expect_identical(private_cols(snps, haps),
+                   c("rarefied private SNPs (SE)", "rarefied private alleles (SE)"))
+  expect_identical(private_cols(snps, haps, private = "alleles", PA_count = "both"),
+                   c("rarefied private alleles (SE)", "absolute private alleles (no SE)"))
+  expect_identical(private_cols(snps, haps, private = "snps", PA_count = "absolute"),
+                   "absolute private SNPs (no SE)")
+  expect_identical(private_cols(snps, haps, private = "both", PA_count = "both"),
+                   c("rarefied private SNPs (SE)", "absolute private SNPs (no SE)",
+                     "rarefied private alleles (SE)", "absolute private alleles (no SE)"))
+  ## the defaults follow the runs given
+  expect_identical(private_cols(snps), "rarefied private SNPs (SE)")
+  expect_identical(private_cols(haps = haps), "rarefied private alleles (SE)")
+  ## the other columns do not change
+  expect_identical(setdiff(names(diversity_table(snps, haps, private = "snps")), "rarefied private SNPs (SE)"),
+                   setdiff(names(diversity_table(snps, haps, private = "alleles")), "rarefied private alleles (SE)"))
+  ## a kind whose run is missing, or a bad value, stops with a clear message
+  expect_error(diversity_table(snps, private = "alleles"), "Private alleles come from the haplotype VCF")
+  expect_error(diversity_table(haps = haps, private = "both"), "Private SNPs come from the SNP VCF")
+  expect_error(diversity_table(snps, haps, private = "haplotypes"), "`private` must be one of")
+  expect_error(diversity_table(snps, haps, PA_count = "raw"), "`PA_count` must be one of")
+  ## the caption names what is shown
+  cap <- attr(diversity_table(snps, haps, private = "alleles", PA_count = "both"), "caption")
+  expect_match(cap, "Absolute private alleles count the alleles found in only one population")
+  expect_false(grepl("private SNPs", cap))
+  expect_match(cap, "Ho and He are from the SNP VCF")
+  ## the caption and the short summary say what the rarefied counts are added
+  ## up over in the same words
+  cap <- gsub("\\s+", " ", attr(diversity_table(snps, haps), "caption"))
+  for (x in list(snps, haps)) {
+    over <- RADdiversity:::.private_over(x)
+    expect_match(over, "^the [0-9,]+ (SNPs|loci) typed at g copies in every population$")
+    expect_match(cap, over, fixed = TRUE)
+    expect_match(gsub("\\s+", " ", paste(capture.output(print(summary(x))), collapse = " ")),
+                 over, fixed = TRUE)
+  }
+  ## A result saved by an older version has no priv_absolute. It still works
+  ## as the run whose private columns are left out; it stops only when its
+  ## absolute count would be shown.
+  old_snps <- snps
+  old_snps$richness$priv_absolute <- NULL
+  expect_identical(private_cols(old_snps, haps, private = "alleles", PA_count = "both"),
+                   c("rarefied private alleles (SE)", "absolute private alleles (no SE)"))
+  expect_error(diversity_table(old_snps, haps, private = "snps", PA_count = "both"),
+               "older version")
+  old_haps <- haps
+  old_haps$richness$priv_absolute <- NULL
+  expect_identical(private_cols(snps, old_haps, private = "snps", PA_count = "absolute"),
+                   "absolute private SNPs (no SE)")
 })

@@ -12,8 +12,8 @@ Summary statistics for RAD-seq data, designed around Stacks 2
 \details{
 \itemize{
 \item \code{\link[=diversity_stats]{diversity_stats()}}: Ho, He (Nei & Chesser 1983), FIS as a ratio of sums,
-rarefied allelic richness and rarefied private alleles, per-sequenced-site
-Ho/He.
+rarefied allelic richness, private alleles and private SNPs (rarefied,
+and absolute as Stacks counts them), per-sequenced-site Ho/He.
 \item \code{\link[=het_between_pops]{het_between_pops()}}: do populations differ in heterozygosity? One value
 per individual, and a test that counts both individuals and RAD loci.
 \item \code{\link[=diversity_table]{diversity_table()}}: the SNP and haplotype results as one table for a

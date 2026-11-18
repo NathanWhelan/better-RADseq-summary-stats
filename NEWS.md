@@ -48,6 +48,8 @@ repository.
   STRUCTURE files write a `.` in a locus name as `_` (`6.1` becomes `6_1`),
   so `read.genepop()` and `read.structure()` in adegenet can read them; the
   tests read every exported format back with adegenet or hierfstat.
+  `write_vcf()` writes INFO `NS` and `AF` counted from the genotypes it
+  writes, so they stay correct after filtering.
 * Every result prints its main tables; `summary()` is a short view (each
   estimate with its recommended SE, what to take from the run, and checks
   marked `ok`, `info` or `look`); `summary(details = TRUE)` is the full report.

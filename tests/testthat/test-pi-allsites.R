@@ -138,3 +138,27 @@ test_that("complete_sites uses only sites typed in every individual of the popul
   expect_equal(res$pi$sites, c(1L, 2L))           # popA loses site 1
   expect_equal(res$pi$pi[1], 3 / 6)                # site 2 only: copies 3 A, 1 C
 })
+
+test_that("locus_from = \"auto\" uses the window rule when only the first records have IDs", {
+  ## The first chunk (the records read with the header, up to 1000 lines)
+  ## all have IDs; records 1201-1500 have none. "auto" must then mean
+  ## "window" for the whole file, as it does in read_stacks_vcf().
+  d <- sim_allsites(1500, 4)
+  parts <- strsplit(d$lines[-(1:2)], "\t", fixed = TRUE)
+  body <- vapply(seq_along(parts), function(i) {
+    rec <- parts[[i]]
+    rec[3] <- if (i <= 1200) paste0("id", i) else "."
+    paste(rec, collapse = "\t")
+  }, "")
+  vcf <- write_tmp(c(d$lines[1:2], body))
+  msgs <- capture_messages(auto <- pi_allsites(vcf, d$popmap, nboot = 0, chunk_lines = 200))
+  expect_true(any(grepl("Reading the file again", msgs)))
+  window <- suppressMessages(pi_allsites(vcf, d$popmap, locus_from = "window", nboot = 0,
+                                         chunk_lines = 200))
+  expect_equal(auto$pi, window$pi)
+  expect_equal(auto$dxy, window$dxy)
+  expect_equal(auto$individual, window$individual)
+  ## An explicit locus_from = "ID" still stops.
+  expect_error(suppressMessages(pi_allsites(vcf, d$popmap, locus_from = "ID", nboot = 0,
+                                            chunk_lines = 200)), "some records have no ID")
+})

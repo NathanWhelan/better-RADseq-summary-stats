@@ -44,6 +44,58 @@ test_that("write_vcf() supports gzip output", {
   expect_equal(back$A1, H$A1)
 })
 
+## One INFO key's value ("" if absent).
+info_value <- function(info, key) {
+  kv <- strsplit(info, ";", fixed = TRUE)[[1]]
+  sub(paste0("^", key, "="), "", grep(paste0("^", key, "="), kv, value = TRUE))
+}
+## Recounts NS and AF from the GT column of a written VCF and checks INFO
+## against them. Returns the file's lines.
+check_info <- function(path) {
+  lines <- readLines(path)
+  for (rec in strsplit(lines[!startsWith(lines, "#")], "\t", fixed = TRUE)) {
+    gts <- rec[-(1:9)]
+    copies <- unlist(strsplit(gts, "/", fixed = TRUE))
+    copies <- copies[copies != "."]
+    expect_identical(info_value(rec[8], "NS"), as.character(sum(gts != "./.")))
+    n_alt <- length(strsplit(rec[5], ",", fixed = TRUE)[[1]])
+    af <- strsplit(info_value(rec[8], "AF"), ",", fixed = TRUE)[[1]]
+    if (!length(copies)) expect_identical(af, rep(".", n_alt))
+    else expect_lte(max(abs(as.numeric(af) -                      # written to 4 decimals
+                            vapply(seq_len(n_alt), function(j) mean(copies == j), 0))), 5e-5 + 1e-12)
+  }
+  lines
+}
+
+test_that("write_vcf() rebuilds NS and AF from the genotypes it writes, and drops stale INFO", {
+  H <- suppressMessages(read_stacks_vcf(fx("small.snps.vcf")))
+  H$fields[, "INFO"] <- "NS=99;AF=0.900;DP=500"     # as the file was before filtering
+  H$A1[1, ] <- NA; H$A2[1, ] <- NA                   # no sample typed at record 1
+  H$A1[2, 1:2] <- NA; H$A2[2, 1:2] <- NA
+  out <- tempfile(fileext = ".vcf")
+  write_vcf(H, out, verbose = FALSE)
+  lines <- check_info(out)
+  expect_false(any(grepl("NS=99|AF=0.900|DP=500", lines)))
+  expect_match(lines[!startsWith(lines, "#")][1], "\tNS=0;AF=.\t", fixed = TRUE)
+  for (key in c("##INFO=<ID=NS,", "##INFO=<ID=AF,", "##FORMAT=<ID=GT,"))
+    expect_true(any(startsWith(lines, key)), info = key)
+  expect_false(any(startsWith(lines, "##INFO=<ID=snp_columns,")))
+  expect_equal(suppressMessages(read_stacks_vcf(out))$A1, H$A1)
+
+  ## A haplotype VCF: one AF per ALT allele, and snp_columns= is kept.
+  Hh <- suppressMessages(read_stacks_vcf(fx("small.haps.vcf")))
+  Hh$fields[, "INFO"] <- "NS=99;snp_columns=12,40"
+  Hh$A1[1, 1:3] <- NA; Hh$A2[1, 1:3] <- NA
+  out_h <- tempfile(fileext = ".vcf")
+  write_vcf(Hh, out_h, verbose = FALSE)
+  lines_h <- check_info(out_h)
+  body_h <- strsplit(lines_h[!startsWith(lines_h, "#")], "\t", fixed = TRUE)
+  expect_true(all(vapply(body_h, function(rec) info_value(rec[8], "snp_columns") == "12,40", TRUE)))
+  expect_true(any(startsWith(lines_h, "##INFO=<ID=snp_columns,")))
+  expect_length(strsplit(info_value(body_h[[1]][8], "AF"), ",")[[1]], 2)   # locus_1: two ALT alleles
+  expect_equal(suppressMessages(read_stacks_vcf(out_h))$A1, Hh$A1)
+})
+
 ## ---------------------------------------------------------------------------
 ## write_plink()
 ## ---------------------------------------------------------------------------

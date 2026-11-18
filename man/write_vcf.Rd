@@ -23,16 +23,25 @@ Writes \code{H}, including any changes made by the \verb{filter_*()} functions, 
 VCF file that \code{\link[=read_stacks_vcf]{read_stacks_vcf()}} or other VCF tools can read.
 }
 \details{
-Only the genotypes (\code{GT}) are written from \code{H$A1}/\code{H$A2}. \code{QUAL}, \code{FILTER}
-and \code{INFO} are copied from the original file, but per-sample fields such as
-\code{AD} and \code{DP} are NOT: a filter such as \code{\link[=filter_low_conf_alt]{filter_low_conf_alt()}} can change a
+Only the genotypes (\code{GT}) are written from \code{H$A1}/\code{H$A2}. \code{QUAL} and
+\code{FILTER} are copied from the original file. Per-sample fields such as \code{AD}
+and \code{DP} are NOT: a filter such as \code{\link[=filter_low_conf_alt]{filter_low_conf_alt()}} can change a
 genotype without updating those values, and writing them would mislead
 anyone reading the file. The \code{FORMAT} column is therefore always \code{GT}.
 
-The original file's \verb{##} meta-information lines (\verb{##contig}, \verb{##INFO},
-\verb{##FORMAT}, ...) are not kept: \code{\link[=read_stacks_vcf]{read_stacks_vcf()}} does not store them. Some
-tools (e.g. \code{bcftools}) warn about INFO keys with no \verb{##INFO} definition;
-copy the header lines from the original file if a tool needs them.
+For the same reason, \code{INFO} is rebuilt from the genotypes written: \code{NS}
+(samples with a genotype) and \code{AF} (the frequency of each ALT allele) are
+counted again, so they match the file after \code{\link[=filter_samples]{filter_samples()}} or any
+filter that masks genotypes. They replace the original \code{NS} and \code{AF}, and
+other INFO keys from the original file (such as \code{DP}) are dropped. The one
+exception is a
+haplotype VCF's \verb{snp_columns=}, which says which SNP columns make up each
+haplotype; no filter changes it, so it is kept.
+
+The output's header defines \code{NS}, \code{AF} (and \code{snp_columns}, if kept) and
+\code{GT}. The original file's other \verb{##} lines (such as \verb{##contig}) are not
+kept: \code{\link[=read_stacks_vcf]{read_stacks_vcf()}} does not store them. Copy them from the original
+file if a tool needs them.
 }
 \examples{
 H <- read_stacks_vcf(system.file("extdata", "small.haps.vcf",

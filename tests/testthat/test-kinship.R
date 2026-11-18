@@ -216,3 +216,21 @@ test_that("method = \"beta\" with popmap uses each population as its own referen
   king_pm <- kinship_check(H, pops, method = "king", verbose = FALSE)$pairwise
   expect_equal(king_pm$kinship, king_all$kinship)
 })
+
+test_that("both methods count each pair's shared loci and apply the same floors", {
+  skip_if_not_installed("hierfstat")
+  H <- make_kinship_H(n_loc = 300)
+  ## s1 is typed only at loci 1-160 and s2 only at 141-300: they share 20.
+  H$A1[161:300, "s1"] <- H$A2[161:300, "s1"] <- NA
+  H$A1[1:140, "s2"] <- H$A2[1:140, "s2"] <- NA
+  for (m in c("king", "beta")) {
+    pw <- suppressMessages(kinship_check(H, method = m, threshold = NULL, verbose = FALSE))$pairwise
+    pair <- function(a, b) pw[pw$sample1 == a & pw$sample2 == b, ]
+    expect_identical(pair("s1", "s2")$n_loci_used, 20L, info = m)
+    expect_true(is.na(pair("s1", "s2")$kinship), info = m)      # below min_shared_loci = 30
+    expect_identical(pair("s1", "s3")$n_loci_used, 160L, info = m)
+    expect_true(pair("s1", "s3")$low_confidence, info = m)      # below low_confidence_loci = 200
+    expect_identical(pair("s3", "s4")$n_loci_used, 300L, info = m)
+    expect_false(pair("s3", "s4")$low_confidence, info = m)
+  }
+})

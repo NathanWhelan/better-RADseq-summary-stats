@@ -87,8 +87,12 @@
 #
 #  GOUDET'S BETA (`method = "beta"`, needs hierfstat) is the dosage-based
 #  estimator behind `hierfstat::beta.dosage()`, restricted to the same
-#  biallelic loci. hierfstat handles missing genotypes itself, so no
-#  shared-locus count is kept for this method.
+#  biallelic loci. hierfstat handles missing genotypes itself: its
+#  matching() (hierfstat 0.5.11) divides by tcrossprod() of the "genotyped"
+#  indicator, so each pair's beta rests on the loci both individuals are
+#  genotyped at. Those shared loci are counted here as for KING
+#  (.shared_loci()), so min_shared_loci and low_confidence_loci work the same
+#  for both methods.
 #
 #  BETA NEEDS THE POPMAP. Beta measures how much more alike two individuals
 #  are than the AVERAGE pair of individuals it was given. Given every
@@ -217,6 +221,22 @@
   dimnames(kinship) <- dimnames(n_loci_used) <- list(H$samples, H$samples)
   diag(kinship) <- NA_real_
   list(kinship = kinship, n_loci_used = n_loci_used)
+}
+
+## Not exported. Loci genotyped in BOTH individuals, for every pair: a
+## samples x samples matrix. It is the count .king_kinship() keeps as
+## n_loci_used, and the one hierfstat's matching() divides by for beta.
+## Added up a block of `chunk_rows` records at a time to bound memory.
+.shared_loci <- function(H, chunk_rows = 20000L) {
+  n_rec <- nrow(H$A1)
+  n_samp <- ncol(H$A1)
+  shared <- matrix(0, n_samp, n_samp, dimnames = list(H$samples, H$samples))
+  for (start in seq.int(1L, n_rec, by = chunk_rows)) {
+    rows <- start:min(n_rec, start + chunk_rows - 1L)
+    called <- matrix(as.numeric(!is.na(H$A1[rows, , drop = FALSE])), length(rows), n_samp)
+    shared <- shared + crossprod(called)
+  }
+  shared
 }
 
 ## Not exported. Goudet's beta kinship matrix (hierfstat::beta.dosage()).
@@ -412,10 +432,9 @@ kinship_check <- function(vcf, popmap = NULL, method = "king", threshold = 0.044
     shared_loci <- king$n_loci_used
   } else {
     kinship <- .beta_kinship(H, pop_of, verbose)
-    ## beta.dosage() has no per-pair count of shared loci, so every pair is
-    ## given the total number of records: this never UNDERstates the data a
-    ## pair rests on, but cannot mark thin pairs either.
-    shared_loci <- matrix(nrow(H$A1), n_samp, n_samp, dimnames = list(H$samples, H$samples))
+    ## beta.dosage() returns no count of shared loci, so count them here: the
+    ## same loci its matching() divides by (see the header of this file).
+    shared_loci <- .shared_loci(H)
     diag(shared_loci) <- NA_integer_
   }
 

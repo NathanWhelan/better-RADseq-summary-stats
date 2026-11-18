@@ -244,7 +244,7 @@ pi_allsites <- function(vcf, popmap, locus_from = "auto", window_bp = 1000,
   nc_comp_col <- 3 * n_pops + 2 * n_pairs + 2 * seq_len(n_pops)
 
   ## ---- 3. Read chunks, keeping only per-locus sums --------------------------
-  locus_sums <- NULL
+  chunk_sums <- list()
   het_sites <- called_sites <- stats::setNames(numeric(length(samples)), samples)
   n_rec <- 0
   rule <- NULL
@@ -265,6 +265,25 @@ pi_allsites <- function(vcf, popmap, locus_from = "auto", window_bp = 1000,
       ## RAD locus of each record (see locus_from in ?read_stacks_vcf). The
       ## rule is decided on the first chunk and then applied to every chunk.
       if (is.null(rule)) rule <- .choose_locus_rule(locus_from, fields[, 3])
+      ## locus_from = "auto" means the ID rule only when EVERY record has an
+      ## ID (read_stacks_vcf() sees them all at once). The first chunk can
+      ## have IDs that later records lack; then the whole file needs the
+      ## window rule, so start again from the first record with it.
+      if (rule == "ID" && locus_from == "auto" && !all(nzchar(fields[, 3]) & fields[, 3] != ".")) {
+        .inform(verbose, "  Some records have no ID, so RAD loci come from CHROM + POS ",
+                "(locus_from = \"auto\"). Reading the file again ...")
+        close(con)
+        opened <- .open_vcf(vcf)
+        con <- opened$con                 # closed by the on.exit() above
+        chunk <- opened$pending
+        rule <- "window"
+        chunk_sums <- list()
+        het_sites[] <- 0
+        called_sites[] <- 0
+        n_rec <- 0
+        window_state <- list(chrom = NA_character_, pos = -Inf, label = NA_character_)
+        next
+      }
       labels <- switch(rule,
         ID = {
           .choose_locus_rule("ID", fields[, 3])       # stops if an ID is missing
@@ -316,16 +335,20 @@ pi_allsites <- function(vcf, popmap, locus_from = "auto", window_bp = 1000,
         pieces[, pair_diff_col[q]] <- comparisons - rowSums(C_x * C_y)
         pieces[, pair_comp_col[q]] <- comparisons
       }
-      chunk_sums <- rowsum(pieces, labels, reorder = FALSE)
-      locus_sums <- if (is.null(locus_sums)) chunk_sums
-                    else rowsum(rbind(locus_sums, chunk_sums),
-                                c(rownames(locus_sums), rownames(chunk_sums)), reorder = FALSE)
+      ## Each chunk's per-locus sums are kept, and added up once after the
+      ## last chunk. (Re-adding the running totals at every chunk made the
+      ## work grow with chunks x loci on a genome-scale file.)
+      chunk_sums[[length(chunk_sums) + 1L]] <- rowsum(pieces, labels, reorder = FALSE)
       n_rec <- n_rec + n_chunk
     }
     chunk <- readLines(con, n = chunk_lines)
     if (!length(chunk)) break
   }
-  if (is.null(locus_sums)) stop("No records found after the VCF header.", call. = FALSE)
+  if (!length(chunk_sums)) stop("No records found after the VCF header.", call. = FALSE)
+  ## A locus split across two chunks has a row in each; rowsum() adds them,
+  ## in file order, so the totals are the same as adding chunk by chunk.
+  all_sums <- do.call(rbind, chunk_sums)
+  locus_sums <- rowsum(all_sums, rownames(all_sums), reorder = FALSE)
 
   S <- unname(locus_sums)
   n_loci <- nrow(S)

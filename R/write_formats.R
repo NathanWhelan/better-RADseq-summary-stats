@@ -93,21 +93,62 @@
   codes
 }
 
+## Not exported. The INFO column write_vcf() writes, one string per record,
+## rebuilt from the genotypes in H (see ?write_vcf for why):
+##   NS  samples with a genotype at the record
+##   AF  the frequency of each ALT allele among the typed gene copies, in the
+##       order of the ALT column ("." when no copy is typed; left out when
+##       ALT is ".", since there is no ALT allele)
+## A haplotype VCF's snp_columns= is copied, as no filter changes it.
+## Alleles are numbered as in GT: 1 = REF, 2 = the first ALT, and so on.
+## Returns a character vector with attribute "snp_columns": TRUE when any
+## record kept one (write_vcf() then defines it in the header).
+.vcf_info <- function(H) {
+  alt <- H$fields[, "ALT"]
+  n_alt <- ifelse(alt %in% c(".", ""), 0L, lengths(strsplit(alt, ",", fixed = TRUE)))
+  ns <- rowSums(!is.na(H$A1) | !is.na(H$A2))
+  counts <- .allele_counts(H$A1, H$A2, k = max(c(1L, n_alt + 1L, H$A1, H$A2), na.rm = TRUE))
+  copies <- rowSums(counts)
+  af <- character(length(alt))
+  for (j in seq_len(max(c(0L, n_alt)))) {
+    has <- n_alt >= j
+    value <- formatC(counts[has, j + 1L] / pmax(copies[has], 1), format = "f", digits = 4,
+                     drop0trailing = TRUE)
+    value[copies[has] == 0] <- "."
+    af[has] <- if (j == 1L) value else paste(af[has], value, sep = ",")
+  }
+  info <- paste0("NS=", ns, ifelse(n_alt > 0L, paste0(";AF=", af), ""))
+  original <- H$fields[, "INFO"]
+  has_snp_columns <- grepl("(^|;)snp_columns=", original)
+  info[has_snp_columns] <- paste0(info[has_snp_columns], ";",
+    sub("^(.*;)?(snp_columns=[^;]*).*$", "\\2", original[has_snp_columns]))
+  structure(info, snp_columns = any(has_snp_columns))
+}
+
 #' Write a (filtered) H back out as a VCF file
 #'
 #' Writes `H`, including any changes made by the `filter_*()` functions, as a
 #' VCF file that [read_stacks_vcf()] or other VCF tools can read.
 #'
-#' Only the genotypes (`GT`) are written from `H$A1`/`H$A2`. `QUAL`, `FILTER`
-#' and `INFO` are copied from the original file, but per-sample fields such as
-#' `AD` and `DP` are NOT: a filter such as [filter_low_conf_alt()] can change a
+#' Only the genotypes (`GT`) are written from `H$A1`/`H$A2`. `QUAL` and
+#' `FILTER` are copied from the original file. Per-sample fields such as `AD`
+#' and `DP` are NOT: a filter such as [filter_low_conf_alt()] can change a
 #' genotype without updating those values, and writing them would mislead
 #' anyone reading the file. The `FORMAT` column is therefore always `GT`.
 #'
-#' The original file's `##` meta-information lines (`##contig`, `##INFO`,
-#' `##FORMAT`, ...) are not kept: [read_stacks_vcf()] does not store them. Some
-#' tools (e.g. `bcftools`) warn about INFO keys with no `##INFO` definition;
-#' copy the header lines from the original file if a tool needs them.
+#' For the same reason, `INFO` is rebuilt from the genotypes written: `NS`
+#' (samples with a genotype) and `AF` (the frequency of each ALT allele) are
+#' counted again, so they match the file after [filter_samples()] or any
+#' filter that masks genotypes. They replace the original `NS` and `AF`, and
+#' other INFO keys from the original file (such as `DP`) are dropped. The one
+#' exception is a
+#' haplotype VCF's `snp_columns=`, which says which SNP columns make up each
+#' haplotype; no filter changes it, so it is kept.
+#'
+#' The output's header defines `NS`, `AF` (and `snp_columns`, if kept) and
+#' `GT`. The original file's other `##` lines (such as `##contig`) are not
+#' kept: [read_stacks_vcf()] does not store them. Copy them from the original
+#' file if a tool needs them.
 #'
 #' @references
 #' Danecek, P., Auton, A., Abecasis, G., et al. (2011) The variant call format
@@ -142,14 +183,21 @@ write_vcf <- function(H, path, verbose = TRUE) {
   gt <- matrix(paste0(allele_text(H$A1), "/", allele_text(H$A2)), nrow = n_rec,
                dimnames = dimnames(H$A1))
 
+  info <- .vcf_info(H)
   header <- c("##fileformat=VCFv4.2",
               "##source=RADdiversity::write_vcf",
+              "##INFO=<ID=NS,Number=1,Type=Integer,Description=\"Number of samples with data, counted from the genotypes in this file\">",
+              "##INFO=<ID=AF,Number=A,Type=Float,Description=\"Allele frequency of each ALT allele, counted from the genotypes in this file\">",
+              if (attr(info, "snp_columns"))
+                "##INFO=<ID=snp_columns,Number=.,Type=String,Description=\"SNP columns joined into each haplotype (copied from the original file)\">",
+              "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">",
               paste(c("#CHROM", "POS", "ID", "REF", "ALT", "QUAL", "FILTER", "INFO", "FORMAT",
                       H$samples), collapse = "\t"))
   ## One vector per output column, then paste() joins them row by row with
   ## tabs in a single vectorised call.
-  columns <- c(lapply(c("CHROM", "POS", "ID", "REF", "ALT", "QUAL", "FILTER", "INFO"),
+  columns <- c(lapply(c("CHROM", "POS", "ID", "REF", "ALT", "QUAL", "FILTER"),
                       function(name) H$fields[, name]),
+               list(as.vector(info)),
                list(rep("GT", n_rec)),
                lapply(H$samples, function(s) gt[, s]))
   body <- do.call(paste, c(columns, sep = "\t"))
